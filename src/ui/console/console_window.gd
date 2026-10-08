@@ -17,8 +17,16 @@ extends Window
 ## Headless and the web have no native sub-windows, so there it falls back to a
 ## window embedded in the main one. A native window overlapping the main window
 ## corrupts the main window's picture on macOS, so open() places it beside the
-## main window, never over it. A Ctrl tap in this window forwards
-## `toggle_requested`; other keys go to `unhandled_key`.
+## main window, never over it — or back where the player last left it
+## (`remembered_rect`, which Main fills from Settings). A Ctrl tap in this
+## window forwards `toggle_requested`; other keys go to `unhandled_key`.
+##
+## Docked (Main's fullscreen layout, dock()), it is no longer a separate OS
+## window: it becomes a borderless window embedded in the right-hand strip of
+## the main window, the view on its left, so the two share one fullscreen
+## window (on macOS, one desktop of its own). Its content scale then cancels
+## the main window's fitted scale, so it keeps its point size (times its zoom)
+## however big the screen. undock() makes it a native window again.
 ##
 ## Cmd+= / Cmd+- (Ctrl on other platforms) zoom everything in the window, text
 ## and controls alike, through its content scale, as a browser zooms a page;
@@ -43,6 +51,9 @@ const ZOOM_STEPS: Array[float] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5
 
 ## Multiplies UiScale's factor for this window; 1 is the default size.
 var zoom := 1.0
+## Where the native console last sat (screen pixels); open() puts it back there
+## while that is still on a screen. Empty: open beside the main window.
+var remembered_rect := Rect2i()
 
 var _tabs: TabContainer
 var _inspector: AttributeInspector
@@ -53,6 +64,9 @@ var _movement: MovementPane
 var _view: ViewPane
 var _keymap: Keymap
 var _ctrl := CtrlTap.new()
+var _docked := false
+## The strip of the main window's canvas the docked console fills.
+var _dock_rect := Rect2i()
 
 
 func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable()) -> void:
@@ -165,12 +179,66 @@ func set_resolved(values: Dictionary) -> void:
 
 
 func open() -> void:
-	UiScale.place_beside(self, _parent_window())
+	if _docked:
+		position = _dock_rect.position
+		size = _dock_rect.size
+	elif not is_embedded() and WindowGeometry.restorable_now(remembered_rect):
+		size = remembered_rect.size
+		position = remembered_rect.position
+	else:
+		UiScale.place_beside(self, _parent_window())
 	visible = true
 
 
 func hide_console() -> void:
+	_remember_place()
 	visible = false
+
+
+## Forget where the player left the console and, if it is open, put it back
+## beside the main window.
+func reset_place() -> void:
+	remembered_rect = Rect2i()
+	if visible and not _docked:
+		size = UiScale.px(DEFAULT_SIZE, self)
+		UiScale.place_beside(self, _parent_window())
+
+
+func is_docked() -> bool:
+	return _docked
+
+
+## Become (or, already docked, move to) a borderless window embedded in `rect`
+## of the main window's canvas. Leaves it hidden; open() shows it there.
+func dock(rect: Rect2i) -> void:
+	_dock_rect = rect
+	if not _docked:
+		_remember_place()
+		visible = false   # force_native cannot change while a window is shown
+		force_native = false
+		borderless = true
+		unresizable = true
+		min_size = Vector2i.ZERO
+		_docked = true
+	_apply_zoom()
+	if visible:
+		position = rect.position
+		size = rect.size
+
+
+## Become a native window again, at its remembered size or the default. Leaves
+## it hidden; open() puts it back where it was, or beside the main window.
+func undock() -> void:
+	if not _docked:
+		return
+	visible = false
+	_docked = false
+	force_native = true
+	borderless = false
+	unresizable = false
+	_apply_zoom()
+	min_size = UiScale.px(MIN_SIZE, self)
+	size = remembered_rect.size if remembered_rect.has_area() else UiScale.px(DEFAULT_SIZE, self)
 
 
 func toggle() -> void:
@@ -264,7 +332,20 @@ func _refresh_sources() -> void:
 
 
 func _apply_zoom() -> void:
-	content_scale_factor = UiScale.factor_for(self) * zoom
+	var parent := _parent_window()
+	if _docked and parent != null:
+		# Drawn in the main window's canvas, which follow_size() may have
+		# grown: divide that growth back out.
+		content_scale_factor = zoom / UiScale.points_per_unit(parent)
+	else:
+		content_scale_factor = UiScale.factor_for(self) * zoom
+
+
+## Keep the native console's place for the next open() (and, through
+## Settings, the next launch).
+func _remember_place() -> void:
+	if visible and not _docked and not is_embedded() and mode == Window.MODE_WINDOWED:
+		remembered_rect = Rect2i(position, size)
 
 
 ## The window this one opens beside (the main window), or null before it is added.

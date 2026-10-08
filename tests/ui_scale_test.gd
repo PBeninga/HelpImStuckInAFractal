@@ -1,8 +1,7 @@
 extends "res://tests/test_case.gd"
 ## UiScale: the factor honours the override and clamps the screen's scale; apply()
 ## scales a native window and leaves an embedded one (and a stretched one) alone;
-## px() converts logical units; fit_main_window() keeps a default-sized main
-## window at its point size once; center_over() centres an embedded window in
+## px() converts logical units; center_over() centres an embedded window in
 ## its embedder; beside_position() keeps a native window off the main window;
 ## fit() and follow_size() grow the main window's scale with its size.
 
@@ -52,24 +51,6 @@ func run() -> void:
 	check_eq(stretched.content_scale_mode, Window.CONTENT_SCALE_MODE_CANVAS_ITEMS, "a stretched window keeps its mode")
 	check_approx(stretched.content_scale_factor, 1.0, "and its factor")
 	stretched.free()
-
-	# --- fit_main_window: once, and only at the project's default pixel size ---
-	var default_size := Vector2i(
-		ProjectSettings.get_setting("display/window/size/viewport_width"),
-		ProjectSettings.get_setting("display/window/size/viewport_height"))
-	var resized := Window.new()
-	resized.size = Vector2i(900, 600)
-	UiScale.fit_main_window(resized, Vector2i(1280, 800))
-	check_eq(resized.size, Vector2i(900, 600), "a window the player resized is left alone")
-	resized.free()
-	var main_window := Window.new()
-	main_window.size = default_size
-	UiScale.fit_main_window(main_window, Vector2i(1280, 800))
-	check_eq(main_window.size, Vector2i(2560, 1600), "a default-sized window keeps its point size at factor 2")
-	main_window.size = default_size
-	UiScale.fit_main_window(main_window, Vector2i(1280, 800))
-	check_eq(main_window.size, default_size, "the fit happens once per process")
-	main_window.free()
 
 	# --- fit: how much bigger than the design a window is, within [1, MAX_FIT] ---
 	check_approx(UiScale.fit(Vector2i(1280, 800), Vector2i(1280, 800)), 1.0, "the design size fits at 1")

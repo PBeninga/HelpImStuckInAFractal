@@ -4,8 +4,8 @@ extends RefCounted
 ## HiDPI on, so on a 2x screen (a Retina Mac, or a browser at devicePixelRatio
 ## 2) window sizes are physical pixels and, unscaled, every font, grip and
 ## dropdown came out half size. Each native window applies factor() as its
-## content scale and sizes itself in px(); the main window is fitted once so it
-## keeps its point size.
+## content scale and sizes itself in px(). (Where the main window opens, and how
+## big, is WindowGeometry's.)
 ##
 ## An EMBEDDED window (the noise window: the project embeds sub-windows, and
 ## headless and the web embed every one, the console included) is drawn inside
@@ -24,11 +24,6 @@ const MAX_FIT := 4.0
 
 ## Tests set this to stand in for the screen's scale; 0 means ask the display.
 static var override := 0.0
-
-## Set once fit_main_window() has resized the main window, so the title menu
-## and the explorer (which both call it) fit it only the first time.
-static var _fitted := false
-
 
 ## Pixels per logical unit: the override, else the screen's scale clamped into
 ## [1, 4]. Headless reports 1.
@@ -92,26 +87,10 @@ static func _refit(window: Window) -> void:
 		window.content_scale_factor = f
 
 
-## Once per process and never on the web (the canvas follows the page): if the
-## main window is still at the project's default pixel size, resize it to
-## px(logical) so it keeps its point size on a HiDPI screen, re-centred on where
-## it was. A window the player already resized, or maximised, is left alone.
-static func fit_main_window(window: Window, logical: Vector2i) -> void:
-	if _fitted or window == null or OS.has_feature("web"):
-		return
-	if window.mode != Window.MODE_WINDOWED or window.size != _default_window_size():
-		return
-	_fitted = true
-	var target := px(logical)   # the main window is never embedded
-	if target == window.size:
-		return
-	var grown := target - window.size
-	window.size = target
-	window.position -= grown / 2
-	if not _is_embedded(window):
-		var usable := DisplayServer.screen_get_usable_rect(window.current_screen)
-		if usable.has_area():
-			window.position = window.position.max(usable.position)
+## Points per unit of `window`'s canvas: above 1 once follow_size() has grown
+## its content scale past factor().
+static func points_per_unit(window: Window) -> float:
+	return window.content_scale_factor / factor()
 
 
 ## Put `window` over `parent_window`. Embedded: centred in the embedder's
@@ -144,9 +123,8 @@ static func place_beside(window: Window, parent_window: Window) -> void:
 	for i in DisplayServer.get_screen_count():
 		if i != current:
 			screens.append(DisplayServer.screen_get_usable_rect(i))
-	# A hidden native window has no OS window yet to measure; macOS's title bar
-	# is 28 points.
-	var title := px(Vector2i(0, 28)).y
+	# A hidden native window has no OS window yet to measure.
+	var title := WindowGeometry.title_px()
 	window.position = beside_position(window.size, title,
 		Rect2i(parent_window.position, parent_window.size), screens)
 

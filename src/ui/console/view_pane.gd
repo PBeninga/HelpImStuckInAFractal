@@ -3,9 +3,10 @@ extends ScrollContainer
 ## The console's View tab: everything the old pause menu held that is not a
 ## shape knob. A Save view… / Load view… row with the current file's name and a
 ## status line, the Camera mode (Fly / Orbit), the Noise editor… button, the
-## mouse sensitivity, the Renderer options (detail, march steps, Fast Controls,
-## Reset camera) and Back to Menu. It hands each choice back through its
-## signals; Main owns the files, the noise window and the scene change.
+## mouse sensitivity, the Window buttons (Fullscreen, Reset window), the
+## Renderer options (detail, march steps, Fast Controls, Reset camera) and Back
+## to Menu. It hands each choice back through its signals; Main owns the files,
+## the noise window, the windows and the scene change.
 ##
 ## The sensitivity is the player's (the Settings autoload keeps it), so Main
 ## wires it through `sensitivity_changed` / set_sensitivity(): naming the
@@ -15,6 +16,8 @@ signal save_requested
 signal load_requested
 signal noise_requested
 signal menu_requested
+signal fullscreen_requested
+signal reset_window_requested
 signal sensitivity_changed(value: float)
 
 ## The autoload's script, for its range constants only.
@@ -24,6 +27,8 @@ var save_button: Button
 var load_button: Button
 var noise_button: Button
 var menu_button: Button
+var fullscreen_button: Button
+var reset_window_button: Button
 var camera_option: OptionButton
 var sens_slider: HSlider
 var sens_value: Label
@@ -97,6 +102,22 @@ func _init() -> void:
 	noise_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	list.add_child(noise_button)
 
+	# The browser places the canvas itself, and only a click's own handler may
+	# ask it for fullscreen, so the web build has no Window row.
+	var window_heading := _heading("WINDOW")
+	window_heading.visible = not OS.has_feature("web")
+	list.add_child(window_heading)
+	var window_row := HBoxContainer.new()
+	window_row.add_theme_constant_override("separation", 8)
+	fullscreen_button = _button("Fullscreen",
+		"Fill the screen with one window: the view on the left, this console docked on the right. On a Mac it gets a desktop of its own.")
+	reset_window_button = _button("Reset window",
+		"Put the game window back at its default size (half the screen) in the middle of its screen, and the console beside it.")
+	window_row.add_child(fullscreen_button)
+	window_row.add_child(reset_window_button)
+	window_row.visible = window_heading.visible
+	list.add_child(window_row)
+
 	list.add_child(_heading("RENDERER"))
 	renderer = RendererOptions.new()
 	list.add_child(renderer)
@@ -110,6 +131,8 @@ func _init() -> void:
 	load_button.pressed.connect(load_requested.emit)
 	noise_button.pressed.connect(noise_requested.emit)
 	menu_button.pressed.connect(menu_requested.emit)
+	fullscreen_button.pressed.connect(fullscreen_requested.emit)
+	reset_window_button.pressed.connect(reset_window_requested.emit)
 	camera_option.item_selected.connect(_on_camera_selected)
 	sens_slider.value_changed.connect(_on_sens_changed)
 	show_file("")
@@ -132,6 +155,11 @@ func show_file(display_name: String) -> void:
 func show_status(text: String) -> void:
 	status_label.text = text
 	status_label.visible = text != ""
+
+
+## Label the Fullscreen button for the layout in force.
+func show_fullscreen(on: bool) -> void:
+	fullscreen_button.text = "Exit fullscreen" if on else "Fullscreen"
 
 
 ## Show the sensitivity without emitting `sensitivity_changed`.
