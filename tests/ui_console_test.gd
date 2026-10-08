@@ -1,8 +1,8 @@
 extends "res://tests/test_case.gd"
 ## The console driven like a player, in a scaled headless root: the wheel over a
 ## row label, a slider and an unfocused spin box scrolls the Shape list without
-## changing any value; a trackpad pan scrolls; the Colour dropdown opens on a
-## click and a click on "Blue" recolours; a Source dropdown binds Axis A; a
+## changing any value; a trackpad pan scrolls; a click on the Colour tab shows
+## it, its Colour dropdown opens on a click and a click on "Blue" recolours; a Source dropdown binds Axis A; a
 ## click on a slider track and a drag of its grabber set the value; typing into
 ## a spin box and pressing Enter writes the table; and the Movement pane's Add
 ## axis, key capture, rename, zero and remove all work by clicks and keys.
@@ -129,8 +129,13 @@ func _pan_scrolls() -> void:
 
 
 func _colour_dropdown() -> void:
-	var option := console.inspector().row(&"color_mode").value_control() as OptionButton
-	check(await ui.scroll_to(scroll, option), "the wheel brings the Colour row into view")
+	var tab_bar := console.tabs().get_tab_bar()
+	await ui.click_at(ui.global_rect(tab_bar).position + tab_bar.get_tab_rect(1).get_center())
+	await ui.frames(1)
+	check_eq(console.tabs().current_tab, 1, "a click on the Colour tab shows it")
+	var colour_scroll := console.colour_inspector().get_child(0) as ScrollContainer
+	var option := console.colour_inspector().row(&"color_mode").value_control() as OptionButton
+	check(await ui.scroll_to(colour_scroll, option), "the wheel brings the Colour row into view")
 	await ui.click(option)
 	var popup := option.get_popup()
 	check(popup.visible, "a click on the Colour dropdown opens its list")
@@ -145,6 +150,8 @@ func _colour_dropdown() -> void:
 	check_eq(int(table.get_default(&"color_mode")), 5, "clicking Blue sets color_mode to Blue (5)")
 	check_eq(option.get_item_text(option.selected), "Blue", "the dropdown now shows Blue")
 	check(not popup.visible, "and the list closed")
+	console.show_tab(0)
+	await ui.frames(1)
 
 
 func _source_dropdown() -> void:
@@ -177,7 +184,7 @@ func _layout_at_default_size() -> void:
 		"the Movement pane sits below it")
 	check(ui.global_rect(inspector).size.y > ui.global_rect(pane).size.y,
 		"and the inspector gets most of the height (%.0f over %.0f)" % [ui.global_rect(inspector).size.y, ui.global_rect(pane).size.y])
-	for id in [&"box_scale", &"fold_limit", &"color_mode"]:
+	for id in [&"box_scale", &"fold_limit"]:
 		var c := inspector.row(id).value_control()
 		if c is HSlider:
 			check(c.size.x >= 200.0, "the %s slider is wide enough to drag (%.0f px)" % [id, c.size.x])

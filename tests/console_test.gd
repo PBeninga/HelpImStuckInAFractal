@@ -45,8 +45,19 @@ func run() -> void:
 	check_approx(console.content_scale_factor, UiScale.factor_for(console), "and takes its content scale")
 	check(console.position.y >= 0, "it opens inside the main window, title bar reachable")
 
-	# --- the Shape pane has one row per spec ---
-	check_eq(inspector.row_count(), table.specs.size(), "one row per spec")
+	# --- the Shape and Colour tabs share the specs out: one row per spec in all ---
+	var colour := console.colour_inspector()
+	check_eq(inspector.row_count() + colour.row_count(), table.specs.size(), "one row per spec across the two tabs")
+	check(inspector.row(&"box_scale") != null and colour.row(&"box_scale") == null, "Scale is on the Shape tab")
+	check(colour.row(&"color_mode") != null and inspector.row(&"color_mode") == null, "Colour is on the Colour tab")
+	check(colour.row(&"light_specular") != null, "so is the lighting")
+	check(colour.row(&"palette_a_r") != null, "and the palette's twelve numbers")
+	check_eq(console.tabs().get_tab_count(), 2, "two tabs")
+	check_eq(console.tabs().get_tab_title(0), "Shape", "the first is Shape")
+	check_eq(console.tabs().get_tab_title(1), "Colour", "the second Colour")
+	check(console.palette_window() != null and console.palette_window().get_parent() != null
+		and colour.is_ancestor_of(console.palette_window()), "the palette window heads the Colour tab's list")
+	check(console.palette().table() == table, "and edits the console's own table")
 
 	# --- a row edit lands in the table ---
 	inspector.row(&"box_scale").spin_box().value = 1.0
