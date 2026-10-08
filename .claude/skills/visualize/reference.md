@@ -53,8 +53,8 @@ to `basename:line`. Blurbs may use `` `backticks` `` for code and `\n` for a new
 
 `docs/viz/glossary.js` registers terms with `VIZ.glossary({ id: { term, body, links, match? } })`.
 The engine marks each term's FIRST mention in every tooltip blurb, the pane subtitle, block notes,
-card bodies, and table cells (once per table, not once per row). Marks are highlighted, and hovering
-one shows a popup with the body and its links. That works on the canvas and inside a tooltip, pinned
+card bodies, and table cells (once per table, not once per row). A mark's text is coloured (no box behind
+it: WebKit measures a tspan as its whole line), and hovering one shows a popup with the body and its links. That works on the canvas and inside a tooltip, pinned
 or not. Panes need no markup. `match` entries are strings (case-insensitive whole words, never part
 of an identifier like `fold_limit` or a path) or RegExps. Without `match`, the term itself is
 matched. Text in `` `backticks` `` is never matched. `[[id]]` or `[[id|shown text]]` in any prose

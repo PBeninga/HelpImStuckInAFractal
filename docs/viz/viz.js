@@ -156,14 +156,14 @@ function glossLines(s, maxChars, used = new Set()) {
     return acc;
   }, []));
 }
-// One line of glossLines as SVG text. A mark is a tspan, highlighted once its tab is laid out.
+// One line of glossLines as SVG text. A mark is a tspan whose text is coloured (viz.css, .gl): no box
+// behind it, since WebKit measures a tspan as its whole <text> line.
 function glossText(parent, x, y, runs, cls, extra) {
   const t = el("text", Object.assign({ x, y, class: cls }, extra || {}), parent);
   for (const r of runs) {
     if (!r.g) { t.appendChild(document.createTextNode(r.t)); continue; }
     const ts = el("tspan", { class: "gl", "data-gloss": r.g }, t);
     ts.textContent = r.t;
-    if (building) building.marks.push(ts);
   }
   return t;
 }
@@ -638,7 +638,6 @@ function legend(g, pane, x0, y0, maxW) {
 function buildTab(t) {
   const pane = t.pane;
   building = t;
-  t.marks = [];
   const frame = el("rect", { class: "pane-frame", rx: 24 }, t.g);
   const inner = el("g", { transform: `translate(${PANE_PAD} ${PANE_PAD})` }, t.g);
   let y = 0;
@@ -676,13 +675,6 @@ function buildTab(t) {
     tabW = Math.max(tabW, x - COL_GAP);
     y += rowH + ROW_GAP;
   }
-  // Highlight the glossary marks: measure them all, then insert (one layout, not one per mark).
-  const boxes = t.marks.map(ts => ts.getBBox());
-  t.marks.forEach((ts, i) => {
-    const b = boxes[i], txt = ts.parentNode;
-    txt.parentNode.insertBefore(el("rect", { x: b.x - 2, y: b.y, width: b.width + 4, height: b.height, rx: 3,
-      class: "gl-bg", "data-gloss": ts.getAttribute("data-gloss") }), txt);
-  });
   const hb = inner.getBBox();   // the header alone can be wider than the blocks
   const w = Math.max(tabW, hb.x + hb.width) + 2 * PANE_PAD, h = y - ROW_GAP + 2 * PANE_PAD;
   frame.setAttribute("x", 0); frame.setAttribute("y", 0);
