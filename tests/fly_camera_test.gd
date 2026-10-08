@@ -125,3 +125,89 @@ func run() -> void:
 
 	fly.queue_free()
 	await frames(1)
+
+	await _zoom_floor_guard()
+
+
+## A camera on the default view's line of sight, `back` short of the surface.
+func _place(cam: CameraState, s: Array, back: float) -> void:
+	var t := CameraState.make_default().transform
+	t.origin = Vector3(s[0] - s[3] * back, s[1] - s[4] * back, s[2] - s[5] * back)
+	cam.transform = t
+
+
+## [distance to the surface, the zoom floor] at the camera.
+func _depth(cam: CameraState, params: FractalParams) -> Array:
+	return [DistanceEstimator.estimate(cam.eye(), params), params.zoom_floor(cam.eye())]
+
+
+## One physics tick with `action` held ("" for no key).
+func _tick(action: StringName) -> void:
+	if action != &"":
+		Input.action_press(action)
+	await physics_frame
+	if action != &"":
+		Input.action_release(action)
+
+
+## The fly camera refuses a move below FractalParams.zoom_floor (the 32-bit
+## limit), says so through at_zoom_limit, and always lets the camera back off.
+func _zoom_floor_guard() -> void:
+	var ctx := _fresh()
+	var params: FractalParams = ctx[0]
+	var cam: CameraState = ctx[1]
+	var fly: FlyCamera = ctx[2]
+	var s := SurfaceFixture.default_surface(params)
+	check_eq(fly.at_zoom_limit, false, "a new fly camera is not at the zoom limit")
+
+	# just above the floor, W held: it closes in, then stops at the floor
+	_place(cam, s, 7e-4)
+	var dz := _depth(cam, params)
+	check(dz[0] > 1.2 * dz[1] and dz[0] < 2.5 * dz[1],
+		"the camera starts just above the floor (%s over %s)" % [dz[0], dz[1]])
+	var start := cam.eye()
+	fly.enabled = true
+	Input.action_press("move_forward")
+	for _i in 300:
+		await physics_frame
+		if fly.at_zoom_limit:
+			break
+	check(fly.at_zoom_limit, "holding W reaches the zoom limit")
+	check(cam.eye() != start, "after closing in")
+	dz = _depth(cam, params)
+	check(dz[0] >= dz[1], "and stops at the floor, not past it (%s over %s)" % [dz[0], dz[1]])
+	var held := cam.eye()
+	await physics_frame
+	Input.action_release("move_forward")
+	check(cam.eye() == held and fly.at_zoom_limit, "W still held: the camera stays put and the limit stays up")
+	await _tick(&"")
+	check(not fly.at_zoom_limit, "no key held clears it")
+	await _tick(&"move_forward")
+	check(fly.at_zoom_limit and cam.eye() == held, "W again: refused again")
+	await _tick(&"move_back")
+	check(cam.eye() != held and DistanceEstimator.estimate(cam.eye(), params) > dz[0],
+		"moving away is accepted")
+	check(not fly.at_zoom_limit, "and clears the limit")
+
+	# below the floor (e.g. from a loaded save): it may back off, not close in
+	_place(cam, s, 2.5e-4)
+	dz = _depth(cam, params)
+	check(dz[0] < 0.8 * dz[1] and dz[0] > 0.2 * dz[1],
+		"the camera starts below the floor (%s under %s)" % [dz[0], dz[1]])
+	var below := cam.eye()
+	await _tick(&"move_forward")
+	check(cam.eye() == below and fly.at_zoom_limit, "below the floor, W is refused")
+	await _tick(&"move_back")
+	check(cam.eye() != below and DistanceEstimator.estimate(cam.eye(), params) > dz[0],
+		"but S backs away")
+	check(not fly.at_zoom_limit, "clearing the limit")
+
+	# disabling the camera (Orbit mode) clears a raised limit
+	_place(cam, s, 2.5e-4)
+	await _tick(&"move_forward")
+	check(fly.at_zoom_limit, "refused again")
+	fly.enabled = false
+	await _tick(&"")
+	check(not fly.at_zoom_limit, "a disabled camera never reports the limit")
+	fly.queue_free()
+	await frames(1)
