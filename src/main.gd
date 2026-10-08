@@ -15,6 +15,9 @@ extends Node
 const MENU_SCENE := "res://src/ui/main_menu.tscn"
 ## The main window's size in points (logical units); see UiScale.
 const WINDOW_SIZE := Vector2i(1280, 800)
+## For now the console opens beside the main window at startup (the mouse stays
+## captured and the main window keeps focus); false starts it hidden.
+const OPEN_CONSOLE_AT_START := true
 
 var params: FractalParams
 var camera: CameraState
@@ -103,6 +106,9 @@ func _ready() -> void:
 	camera.changed.connect(func(): governor.mark_changed())
 	_resolve_once()
 	_apply_mode()
+	if OPEN_CONSOLE_AT_START:
+		# Deferred so the main window has its final size and place to sit beside.
+		_open_console_at_start.call_deferred()
 
 
 func workspace_files() -> WorkspaceFiles:
@@ -192,6 +198,13 @@ func _build_view_pane() -> void:
 	_view_pane.load_requested.connect(_files.prompt_load)
 	_view_pane.noise_requested.connect(_open_noise)
 	_view_pane.sensitivity_changed.connect(func(v: float): Settings.mouse_sensitivity = v)
+
+
+## Show the console beside the main window, then hand focus back to the main
+## window so flying starts as it would with the console closed.
+func _open_console_at_start() -> void:
+	_console.open()
+	get_window().grab_focus()
 
 
 ## The View tab's Noise editor button: open it (the mouse is already free).
