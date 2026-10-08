@@ -5,7 +5,7 @@ shader_type canvas_item;
 // math is highp (WebGL 2 => float32), which is Godot's canvas_item default.
 //
 // One Mandelbox iteration (mb_step) runs for both de() and field(): the fold
-// (box, cylinder or octahedral, optionally mixed toward the Menger fold),
+// (box, cylinder or octahedral, or the box-to-abs hybrid fold),
 // sphere fold, optional per-iteration 4D rotation, scale (drifting with the
 // iteration) and add. Each shape uniform is named exactly as its catalogue id
 // (src/fractal/shape_catalogue.gd), so the uniform set equals
@@ -37,7 +37,7 @@ uniform float min_radius;
 uniform float fixed_radius;
 uniform int fold_order;       // 0 box -> sphere, 1 sphere -> box
 uniform int fold_shape;       // 0 box, 1 cylinder, 2 octahedral
-uniform float hybrid_mix;     // 0 off; toward the Menger fold on hybrid iterations
+uniform float hybrid_mix;     // 0 off; box fold -> abs fold on hybrid iterations
 uniform int hybrid_every;     // the hybrid iterations: i % every == every - 1
 uniform float scale_drift;    // iteration i scales by box_scale + scale_drift * i
 uniform float w;              // the sample point's fourth coordinate
@@ -204,19 +204,26 @@ vec4 menger_fold(vec4 p) {
 	return p;
 }
 
-// The fold step of iteration i: the chosen fold, mixed toward the Menger fold
-// of the same input on a hybrid iteration. Each is 1-Lipschitz, so is the mix,
-// and the running derivative needs no factor.
+// The hybrid fold: reflect each component through [lo, hi], sliding from the
+// box fold's [-L, L] at mix 0 to [0, infinity) at mix 1, the abs fold. (Mixing
+// the two folds' results would cancel far out; see DistanceEstimator.)
+vec4 mb_hybrid_fold(vec4 p) {
+	float lo = -fold_limit * (1.0 - hybrid_mix);
+	float hi = (fold_limit + hybrid_mix) / max(1.0 - hybrid_mix, 1e-6);
+	return clamp(p, vec4(lo), vec4(hi)) * 2.0 - p;
+}
+
+// The fold step of iteration i: the chosen fold, or the hybrid fold on a
+// hybrid iteration. Each reflects through a convex set's boundary, so each is
+// 1-Lipschitz and the running derivative needs no factor.
 vec4 mb_fold(vec4 p, int i) {
-	vec4 f;
-	if (fold_shape == 1) { f = mb_cylinder_fold(p); }
-	else if (fold_shape == 2) { f = mb_octahedral_fold(p); }
-	else { f = mb_box_fold(p); }
 	if (hybrid_mix > 0.0) {
 		int every = max(hybrid_every, 1);
-		if (i % every == every - 1) { f = mix(f, menger_fold(p), hybrid_mix); }
+		if (i % every == every - 1) { return mb_hybrid_fold(p); }
 	}
-	return f;
+	if (fold_shape == 1) { return mb_cylinder_fold(p); }
+	if (fold_shape == 2) { return mb_octahedral_fold(p); }
+	return mb_box_fold(p);
 }
 
 // The six per-iteration angles, fixed order xy, xz, xw, yz, yw, zw.

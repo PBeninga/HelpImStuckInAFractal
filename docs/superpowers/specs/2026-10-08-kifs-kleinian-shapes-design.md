@@ -3,7 +3,7 @@
 Port two of Fractacular's six techniques into this 3D raymarcher — the
 kaleidoscopic IFS (KIFS) and the pseudo-Kleinian limit set — and add three
 Mandelbox variations from Fractacular's `fractal-fields-reference.md`: a
-cylinder or octahedral fold in place of the box fold, a KIFS-fold hybrid, and a
+cylinder or octahedral fold in place of the box fold, an abs-fold (KIFS) hybrid, and a
 scale that drifts with the iteration. Newton, Lyapunov and the ℂ² quadratic map
 are out of scope (no distance estimate that fits the sphere tracer).
 
@@ -56,9 +56,14 @@ Kleinian | precision | colour… palette (unchanged).
   set is continuous and 1-Lipschitz, where a per-face reflection chosen by sign
   would jump at the coordinate planes. w gets the 1D box fold.
 - **Hybrid**: on iterations i with i mod hybrid_every == hybrid_every − 1 the
-  fold result is mix(fold(p), menger(p), hybrid_mix), menger(p) = abs(p) then
-  sort x ≥ y ≥ z. A convex mix of two 1-Lipschitz maps is 1-Lipschitz, so the
-  running derivative is unchanged. hybrid_mix 0 skips it entirely.
+  fold is replaced by a reflection of each component through [lo, hi], with
+  lo = −L(1 − mix) and hi = (L + mix)/(1 − mix): the box fold at mix 0, the
+  abs fold (KIFS's fold into the positive corner) at mix 1, a true fold in
+  between. hybrid_mix 0 skips it entirely. (The first build blended the box
+  fold's result with the Menger fold's; far from the centre the box fold sends
+  x to about −x and the Menger fold to |x|, so mid mixes cancelled, nothing
+  escaped, and the whole bounding cube rendered solid.) The shape grows with
+  hi, so the Mandelbox's bound widens to min(1 + hi, 20) while a hybrid is on.
 - **Scale drift**: iteration i uses s_i = box_scale + scale_drift·i in both the
   scale and the derivative.
 

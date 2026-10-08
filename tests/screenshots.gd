@@ -131,8 +131,63 @@ func _run() -> void:
 			_check_noise(ridges, plain)
 		plain_view.queue_free()
 
+	await _shapes(view, def)
 	await _capture_windows(view)
 	view.queue_free()
+
+
+## One frame per new fractal and Mandelbox fold option: shape_<name>.png. Each
+## must not be (almost) blank and must differ from the default view.
+func _shapes(view: FractalView, def: Image) -> void:
+	view.set_noise_graph(null)   # the noise_ridges shot left its field wired
+	var shots := [
+		["kifs_menger", {&"shape": 1}, Vector3(3.2, 2.4, 1.9)],
+		["kifs_sierpinski", {&"shape": 1, &"kifs_fold": 1, &"kifs_scale": 2.0}, Vector3(3.5, -2.0, 2.2)],
+		["kifs_polyfold", {&"shape": 1, &"kifs_fold": 2, &"kifs_scale": 2.2}, Vector3(3.0, 2.2, 2.5)],
+		["kifs_rotated", {&"shape": 1, &"kifs_rot1_xy": 20.0, &"kifs_rot2_yz": 12.0, &"kifs_twist": 4.0}, Vector3(3.2, 2.4, 1.9)],
+		["kleinian", {&"shape": 2}, Vector3(2.5, 1.6, 1.2)],
+		["kleinian_far", {&"shape": 2, &"kleinian_view_distance": 30.0}, Vector3(2.5, 1.6, 1.2)],
+		["mb_cylinder", {&"fold_shape": 1}, CameraState.DEFAULT_EYE],
+		["mb_octahedral", {&"fold_shape": 2}, CameraState.DEFAULT_EYE],
+		["mb_hybrid", {&"hybrid_mix": 0.5, &"hybrid_every": 2}, CameraState.DEFAULT_EYE],
+		["mb_hybrid_full", {&"hybrid_mix": 1.0, &"hybrid_every": 2}, CameraState.DEFAULT_EYE],
+		["mb_scale_drift", {&"scale_drift": 0.02}, CameraState.DEFAULT_EYE],
+	]
+	for shot in shots:
+		var id: String = "shape_" + shot[0]
+		var sp := FractalParams.new()
+		sp.apply_resolved(shot[1])
+		var scam := CameraState.new()
+		var eye: Vector3 = shot[2]
+		scam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+		view.setup(sp, scam)
+		view.set_render_scale(1.0)
+		await _render(view)
+		var img := view._viewport.get_texture().get_image()
+		if img == null:
+			_fail(id, "no_image")
+			continue
+		img.save_png(ProjectSettings.globalize_path(SHOT_DIR + "/%s.png" % id))
+		var lit := _lit_fraction(img)
+		if lit < 0.03:
+			_fail(id, "blank (%.3f lit)" % lit)
+		elif def != null:
+			_check_differs(id, img, def)
+		else:
+			_pass(id)
+
+
+## The share of pixels that are not (almost) black.
+func _lit_fraction(img: Image) -> float:
+	var lit := 0
+	var total := 0
+	for y in range(0, img.get_height(), 4):
+		for x in range(0, img.get_width(), 4):
+			total += 1
+			var c := img.get_pixel(x, y)
+			if c.r + c.g + c.b > 0.06:
+				lit += 1
+	return float(lit) / float(maxi(total, 1))
 
 
 ## The console and the noise editor, rendered embedded in this one window (so

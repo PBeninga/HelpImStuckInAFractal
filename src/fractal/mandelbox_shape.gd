@@ -1,7 +1,7 @@
 class_name MandelboxShape
 extends RefCounted
 ## The Mandelbox's own knobs, in inspector order: the Box group (the fold and
-## its shape, the Menger hybrid, the sphere fold and the scale), per-component
+## its shape, the abs-fold hybrid, the sphere fold and the scale), per-component
 ## Julia with four constants, and the six iteration rotation angles. The shared
 ## rows (the shape switch, w, precision, colour, lighting, palette) are
 ## ShapeCatalogue's, which assembles every shape's rows and shows these only
@@ -82,8 +82,8 @@ static func specs() -> Array[AttributeSpec]:
 	out.append(AttributeSpec.make({
 		"id": "hybrid_mix", "label": "Hybrid mix", "type": F,
 		"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "group": "Box",
-		"tooltip": "On the hybrid iterations (Hybrid every), how far the fold's result is pulled toward KIFS's Menger fold: fold into the positive corner, then sort x >= y >= z.",
-		"effects": "0 is the plain Mandelbox, and Hybrid every does nothing. 1 swaps the fold outright on those iterations, crossing the box with a Menger sponge. In between the two blend continuously: bind it to an axis or Time to morph from one to the other.",
+		"tooltip": "On the hybrid iterations (Hybrid every), how far the fold morphs from the box fold toward the abs fold, KIFS's fold into the positive corner. The box fold reflects each component back inside [-L, L]; the morph slides that interval to [0, infinity), where it is |x|.",
+		"effects": "0 is the plain Mandelbox, and Hybrid every does nothing. 1 swaps in the abs fold outright on those iterations, the classic box/abs (KIFS) hybrid. In between the shape morphs continuously; bind it to an axis or Time to sweep from one to the other. The hybrid iterations use this morph whatever the Fold shape.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "hybrid_every", "label": "Hybrid every", "type": ENUM,
@@ -92,7 +92,7 @@ static func specs() -> Array[AttributeSpec]:
 		"enum_values": [1, 2, 3],
 		"group": "Box",
 		"tooltip": "Which iterations the hybrid mix applies on.",
-		"effects": "Every iteration gives the most Menger-like shape; every 2nd alternates the two folds, the classic hybrid; every 3rd keeps more of the box. Does nothing while Hybrid mix is 0.",
+		"effects": "Every 2nd alternates the two folds, the classic hybrid; every 3rd keeps more of the box; every iteration is the most KIFS-like, and at a mix of 1 needs a gentler Scale (try -1.5) or nothing is left. Does nothing while Hybrid mix is 0.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "scale_drift", "label": "Scale drift", "type": F,
@@ -149,7 +149,7 @@ static func specs() -> Array[AttributeSpec]:
 ## Heading tooltips for the Mandelbox's groups.
 static func group_tooltips() -> Dictionary:
 	return {
-		"Box": "Box: the fold-and-scale step repeated at every pixel. The fold reflects the point back inside a box, cylinder or octahedron of size Fold limit (optionally mixed toward the Menger fold); the sphere fold inflates points inside Min radius and inverts the shell out to Fixed radius; then everything is multiplied by Scale (plus any drift).",
+		"Box": "Box: the fold-and-scale step repeated at every pixel. The fold reflects the point back inside a box, cylinder or octahedron of size Fold limit (or, on hybrid iterations, morphs toward the abs fold); the sphere fold inflates points inside Min radius and inverts the shell out to Fixed radius; then everything is multiplied by Scale (plus any drift).",
 		"Julia": "Julia: which components add a fixed constant instead of the pixel's own coordinate. None checked is the plain Mandelbox; all four checked is a Julia Mandelbox; mixtures are hybrids.",
 		"Iteration rotation": "Iteration rotation: a 4D rotation applied inside every iteration, between the folds and the scale. This changes the fractal itself, not just the view.",
 	}
