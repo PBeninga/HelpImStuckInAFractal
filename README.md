@@ -31,7 +31,7 @@ binary.
 Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** and
 **Colour** tabs, with a row for every Mandelbox, colour and lighting knob, and
 the **View** tab (Save / Load view, the Camera mode, the mouse sensitivity, the
-Noise editor button, the Renderer options and Back to Menu), stacked above the
+Noise editor button, the Window buttons, the Renderer options and Back to Menu), stacked above the
 **Movement** pane of virtual axes.
 Everything the console does not own is driven directly by the mouse and
 keyboard. **Escape** only frees the mouse: nothing pauses, and it never opens
@@ -43,7 +43,24 @@ window: on macOS (Godot 4.6.1, GL Compatibility) a separate window overlapping
 the main one corrupts its picture (the fractal squeezed into the uncovered
 strip, or black) until it is moved away. On a single laptop screen with the
 main window at its default size there is no room beside it, so shrink the main
-window or drag the console aside. (On the web it is a window inside the page.)
+window, drag the console aside, or use **Fullscreen** (below). (On the web it is
+a window inside the page.)
+
+The main window first opens over **half of its screen's pixels** (each side
+about 71 % of the screen's), centred. After that the game remembers where you
+left the main window and the console, and reopens them there (kept in
+`user://settings.cfg`; a monitor that has since been unplugged falls back to
+the default). The View tab's **Window** row has:
+
+- **Fullscreen** — one fullscreen window (on a Mac, a desktop of its own) with
+  the view on the left and the console docked on the right, at 40 % of the
+  width (never under the console's 700-point minimum, never over 60 %). A Ctrl
+  tap still hides and shows the docked console, and the view takes the whole
+  width while it is hidden. The window's own green button does the same.
+  **Exit fullscreen** (or leaving fullscreen any other way) makes the console a
+  separate window again.
+- **Reset window** — back to the default size in the middle of its screen, with
+  the console beside it, forgetting the remembered places.
 The noise editor is a window **inside the main window**, always drawn above the
 view: drag it by its title bar, close it with its ✕. An open window takes the
 keyboard, but the keys it does not use — Escape, N, a Ctrl tap, ⌘S, ⌘P — still
