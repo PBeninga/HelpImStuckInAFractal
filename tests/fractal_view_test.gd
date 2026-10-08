@@ -93,6 +93,24 @@ func run() -> void:
 	check_approx(float(mat.get_shader_parameter("palette_d_b")), 0.1, "so does a palette component")
 	check_eq(int(mat.get_shader_parameter("palette_source")), 2, "and the palette input")
 
+	# the camera's distance to the surface sets the coarse pass's iteration
+	# count: the site's 16 at the default view, more up close, and a Detail
+	# change re-pushes it
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "the default view's coarse pass keeps 16 iterations")
+	var home := cam.transform
+	var close := home
+	close.origin = cam.eye() + cam.forward() * (view.center_ray().distance() - 1e-3)
+	cam.transform = close
+	var close_near := maxf(DistanceEstimator.estimate(cam.eye(), params), FractalParams.NEAR_FLOOR)
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), params.coarse_iters(close_near),
+		"a camera 1e-3 short of the surface pushes its own count")
+	check(int(mat.get_shader_parameter("coarse_iters")) > 16, "which is above 16 (%s)" % mat.get_shader_parameter("coarse_iters"))
+	params.detail = 10.0
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), params.coarse_iters(close_near), "a Detail change re-pushes it")
+	params.detail = 1.0
+	cam.transform = home
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "and moving back restores 16")
+
 	view.queue_free()
 	await frames(1)
 

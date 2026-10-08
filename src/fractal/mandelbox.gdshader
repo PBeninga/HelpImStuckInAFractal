@@ -22,6 +22,10 @@ uniform float detail_falloff;
 uniform float near_dist;
 uniform int coarse_steps;
 uniform int fine_steps;
+// The coarse pass's iteration count, 16..32: more as the camera nears the
+// surface, so the smoother surface it marches toward stays within its hit
+// threshold of the real one (FractalParams.coarse_iters). 16 at the default view.
+uniform int coarse_iters;
 // The load shedder's distance fog: rays stop at fog_dist x near_dist and fade
 // into fog_color on the way there. fog_dist 0 is no fog.
 uniform float fog_dist;
@@ -326,12 +330,14 @@ void fragment() {
 		float total = max(tb.x, 0.0);
 		bool left_cube = total > t_exit;
 
-		// Phase 1: low precision (N=16), up to coarse_steps (<= 384) steps.
+		// Phase 1: low precision (N = coarse_iters, 16 at the default view), up to
+		// coarse_steps (<= 384) steps. An unpushed 0 reads as the site's 16.
+		int n_coarse = clamp(coarse_iters, 16, 32);
 		int n1 = coarse_steps;
 		for (int i = 0; i < 384; i++) {
 			if (left_cube || i >= coarse_steps) { break; }
 			vec3 pos = eye + dir * total;
-			float d = de(pos, 16);
+			float d = de(pos, n_coarse);
 			if (d < hit_eps(total) * 2.0) { n1 = i; break; }
 			total += d * noise_step_scale();
 			if (total > t_exit) { left_cube = true; break; }
