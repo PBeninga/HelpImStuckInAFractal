@@ -5,10 +5,11 @@ extends Node
 ## and is the single mouse-event dispatcher. Each frame it resolves the shape
 ## table + axis values + clock into the params every consumer reads. Saving and
 ## loading a view: WorkspaceFiles picks the file, Workspace does the reading and
-## writing, the pause menu shows the result. Escape pauses the tree and opens
-## the PauseMenu; a Ctrl tap (or the pause menu's Console button) opens the
-## console. Reset camera (in the console and the Settings menu's Renderer tab)
-## puts the camera back where the current file has it.
+## writing, the console's View tab shows the result. Escape only frees the
+## mouse; a Ctrl tap opens the console, whose View tab holds Save / Load, the
+## camera mode, the renderer and Back to Menu. Reset camera (in the Movement
+## pane and the View tab's Renderer options) puts the camera back where the
+## current file has it.
 
 const MENU_SCENE := "res://src/ui/main_menu.tscn"
 ## The main window's size in points (logical units); see UiScale.
@@ -30,10 +31,10 @@ var _clock: Clock
 var _console: ConsoleWindow
 var _last_mode := -1
 var _files: WorkspaceFiles
-var _pause: PauseMenu
+var _view_pane: ViewPane
 var _noise: NoiseWindow
 var _loading := false
-## True once a Ctrl tap or a file panel has freed the mouse; a click in the view
+## True once Escape, a Ctrl tap or a file panel has freed the mouse; a click in the view
 ## clears it and recaptures. Capture no longer depends on the console's state.
 var _free_requested := false
 ## The intended capture state. Tracked here rather than read back from
@@ -44,10 +45,6 @@ var _ctrl := CtrlTap.new()
 ## the Ctrl tap: the main window's, the console's and the noise window's. One
 ## array, shared by reference with the fly camera and the axis controller.
 var _text_viewports: Array = []
-## The sub-windows pause() hid and resume() shows again: an embedded window is
-## drawn above every canvas layer, so an open one would cover the pause menu (and
-## a native console would sit there unresponsive while the tree is paused).
-var _hidden_by_pause: Array[Window] = []
 ## Where Reset camera goes: the camera as the current file has it (as last
 ## loaded or saved), or the starting view while no file is current.
 var _home_transform: Transform3D
@@ -89,12 +86,13 @@ func _ready() -> void:
 	fly.set_text_viewports(_focus_viewports())
 
 	_build_workspace_files()
-	_build_pause_menu()
+	_build_view_pane()
 	_build_noise_window()
 
 	# The sensitivity is the player's, not the view's: Settings owns it.
 	params.mouse_sensitivity = Settings.mouse_sensitivity
-	Settings.changed.connect(func(): params.mouse_sensitivity = Settings.mouse_sensitivity)
+	_view_pane.set_sensitivity(Settings.mouse_sensitivity)
+	Settings.changed.connect(_on_settings_changed)
 	params.changed.connect(_sync_sensitivity_to_settings)
 
 	_ctrl.typing_guard = func() -> bool: return TextFocus.any(_focus_viewports())
@@ -109,8 +107,8 @@ func workspace_files() -> WorkspaceFiles:
 	return _files
 
 
-func pause_menu() -> PauseMenu:
-	return _pause
+func view_pane() -> ViewPane:
+	return _view_pane
 
 
 func noise_window() -> NoiseWindow:
@@ -182,60 +180,31 @@ func _toggle_noise() -> void:
 	_update_mouse()
 
 
-func _build_pause_menu() -> void:
-	_pause = PauseMenu.new()
-	_pause.name = "PauseMenu"
-	add_child(_pause)
-	_pause.setup(params)
-	_pause.settings_menu.set_params(params)
-	_pause.settings_menu.renderer.reset_camera_requested.connect(reset_camera)
-	# The Renderer tab edits params while the tree is paused. Keep the governor
-	# running so each edit still gets its full-resolution final frame.
-	governor.process_mode = Node.PROCESS_MODE_ALWAYS
-	_pause.resume_requested.connect(resume)
-	_pause.menu_requested.connect(back_to_menu)
-	_pause.save_requested.connect(_files.prompt_save)
-	_pause.load_requested.connect(_files.prompt_load)
-	_pause.noise_requested.connect(_open_noise_from_menu)
-	_pause.console_requested.connect(_open_console_from_menu)
+func _build_view_pane() -> void:
+	_view_pane = _console.view_pane()
+	_view_pane.setup(params)
+	_view_pane.show_file(_files.display_name())
+	_view_pane.renderer.reset_camera_requested.connect(reset_camera)
+	_view_pane.menu_requested.connect(back_to_menu)
+	_view_pane.save_requested.connect(_files.prompt_save)
+	_view_pane.load_requested.connect(_files.prompt_load)
+	_view_pane.noise_requested.connect(_open_noise)
+	_view_pane.sensitivity_changed.connect(func(v: float): Settings.mouse_sensitivity = v)
 
 
-func _open_noise_from_menu() -> void:
+## The View tab's Noise editor button: open it (the mouse is already free).
+func _open_noise() -> void:
 	_noise.open()
-	resume()
-
-
-## The pause menu's Console button: open it and resume with the mouse left free
-## (as a Ctrl tap does), so the console can be used straight away.
-func _open_console_from_menu() -> void:
-	_console.open()
-	_free_requested = true
-	resume()
-
-
-func pause() -> void:
-	get_tree().paused = true
-	for w: Window in [_console, _noise]:
-		if w != null and w.visible:
-			w.visible = false
-			_hidden_by_pause.append(w)
-	_pause.open()
-	_update_mouse()
-
-
-func resume() -> void:
-	_pause.close()
-	get_tree().paused = false
-	for w in _hidden_by_pause:
-		if is_instance_valid(w):
-			w.visible = true
-	_hidden_by_pause.clear()
 	_update_mouse()
 
 
 func back_to_menu() -> void:
-	get_tree().paused = false
 	get_tree().change_scene_to_file(MENU_SCENE)
+
+
+func _on_settings_changed() -> void:
+	params.mouse_sensitivity = Settings.mouse_sensitivity
+	_view_pane.set_sensitivity(Settings.mouse_sensitivity)
 
 
 func _sync_sensitivity_to_settings() -> void:
@@ -244,8 +213,8 @@ func _sync_sensitivity_to_settings() -> void:
 
 
 func _on_file_current_changed(display_name: String) -> void:
-	if _pause != null:
-		_pause.show_file(display_name)
+	if _view_pane != null:
+		_view_pane.show_file(display_name)
 
 
 func _build_workspace_files() -> void:
@@ -256,8 +225,6 @@ func _build_workspace_files() -> void:
 	_files.load_from.connect(load_view_from)
 	_files.current_changed.connect(_on_file_current_changed)
 	_files.prompting.connect(_on_prompting)
-	if _pause != null:
-		_pause.show_file(_files.display_name())
 	var directory := WorkspaceFiles.directory()
 	if directory != WorkspaceFiles.REPO_DIR:
 		_report("Saves go to %s: this build cannot write into the project." % directory)
@@ -354,8 +321,8 @@ func _on_shed_level_changed(level: int) -> void:
 
 func _report(line: String) -> void:
 	print(line)
-	if _pause != null:
-		_pause.show_status(line)
+	if _view_pane != null:
+		_view_pane.show_status(line)
 
 
 ## A file panel is opening (possibly from Cmd+S with the mouse captured): free
@@ -380,7 +347,7 @@ func _apply_mode() -> void:
 
 func _update_mouse() -> void:
 	_captured = params.camera_mode == FractalParams.CameraMode.FLY \
-			and not _pause.visible and not _free_requested \
+			and not _free_requested \
 			and not (_noise != null and _noise.visible)
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED if _captured else Input.MOUSE_MODE_VISIBLE)
 
@@ -427,8 +394,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	if event.is_action_pressed("pause"):
-		pause()
+	# Escape frees the mouse and nothing else: the console and the noise window
+	# stay as they are. A click in the view recaptures.
+	if event.is_action_pressed("cancel"):
+		_free_requested = true
+		_update_mouse()
 		get_viewport().set_input_as_handled()
 		return
 

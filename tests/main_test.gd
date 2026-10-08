@@ -137,11 +137,12 @@ func run() -> void:
 	main._free_requested = false
 	main._update_mouse()
 
-	# the pause menu owns Save / Load / Camera / Noise
-	var pause = main.pause_menu()   # untyped: see menus_test.gd
+	# the console's View tab owns Save / Load / Camera / Noise / Renderer
+	var vp: ViewPane = main.view_pane()
+	check(vp == console.view_pane(), "the View tab is the console's")
 	var files: WorkspaceFiles = main.workspace_files()
-	check(pause.save_requested.is_connected(files.prompt_save), "pause Save opens the save panel")
-	check(pause.load_requested.is_connected(files.prompt_load), "pause Load opens the open panel")
+	check(vp.save_requested.is_connected(files.prompt_save), "View Save opens the save panel")
+	check(vp.load_requested.is_connected(files.prompt_load), "View Load opens the open panel")
 
 	# save and load: the real path round-trips a knob (the shape table), the
 	# axes and the camera
@@ -150,7 +151,7 @@ func run() -> void:
 	main.camera.speed_factor = 2.0
 	main.save_view_to(tmp)
 	check_eq(files.current_path, tmp, "a save that worked becomes current")
-	check_eq(pause.file_label.text, "main_test_view.json", "and the pause menu names it")
+	check_eq(vp.file_label.text, "main_test_view.json", "and the View tab names it")
 	main.table().set_default(&"fold_limit", 0.3)
 	main.camera.speed_factor = 1.0
 	main.load_view_from(tmp)
@@ -158,25 +159,21 @@ func run() -> void:
 	await frames(1)
 	check_approx(main.params.fold_limit, 0.72, "and the resolve pushes it into params")
 	check_approx(main.camera.speed_factor, 2.0, "and the camera")
-	check(pause.status_label.text.begins_with("Loaded"), "the pause menu reports the load: %s" % pause.status_label.text)
+	check(vp.status_label.text.begins_with("Loaded"), "the View tab reports the load: %s" % vp.status_label.text)
 	main.load_view_from("user://no_such_view.json")
 	check_eq(files.current_path, tmp, "a failed load does not change the current file")
 
 	# Reset camera goes back to the current file's camera and speed factor, from
-	# the console's Movement pane and from the Settings menu's Renderer tab
+	# the console's Movement pane and from the View tab's Renderer options
 	var file_view: Transform3D = main.camera.transform
 	main.camera.transform = file_view.translated(Vector3(0.5, -1, 2))
 	main.camera.speed_factor = 7.0
 	console.movement_pane().reset_camera_button.pressed.emit()
 	check(main.camera.transform.is_equal_approx(file_view), "the console's Reset camera restores the file's camera")
 	check_approx(main.camera.speed_factor, 2.0, "and its speed factor")
-	main.pause()
-	pause.settings_button.pressed.emit()
 	main.camera.transform = file_view.rotated(Vector3(0, 0, 1), 0.3)
-	pause.settings_menu.renderer.reset_camera_button.pressed.emit()
-	check(main.camera.transform.is_equal_approx(file_view), "the Settings menu's Reset camera does too")
-	check(paused and pause.settings_menu.visible, "and Settings stays open")
-	main.resume()
+	vp.renderer.reset_camera_button.pressed.emit()
+	check(main.camera.transform.is_equal_approx(file_view), "the View tab's Reset camera does too")
 	# a save makes the saved camera the new reset point
 	main.camera.transform = file_view.translated(Vector3(0, 0, 1))
 	var resaved: Transform3D = main.camera.transform
@@ -186,12 +183,12 @@ func run() -> void:
 	check(main.camera.transform.is_equal_approx(resaved), "after a save, Reset camera goes to the saved camera")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 
-	# the pause menu's Camera row switches mode
-	pause.camera_option.select(1)
-	pause.camera_option.item_selected.emit(1)
-	check_eq(main.params.camera_mode, FractalParams.CameraMode.ORBIT, "the pause Camera row switches to orbit")
-	pause.camera_option.select(0)
-	pause.camera_option.item_selected.emit(0)
+	# the View tab's Camera row switches mode
+	vp.camera_option.select(1)
+	vp.camera_option.item_selected.emit(1)
+	check_eq(main.params.camera_mode, FractalParams.CameraMode.ORBIT, "the View Camera row switches to orbit")
+	vp.camera_option.select(0)
+	vp.camera_option.item_selected.emit(0)
 	await frames(1)
 
 	# the view ignores the mouse, so drags reach Main through the real GUI pass
@@ -215,6 +212,9 @@ func run() -> void:
 	# the sensitivity follows Settings, and a loaded view does not override it
 	settings.mouse_sensitivity = 0.33
 	check_approx(main.params.mouse_sensitivity, 0.33, "params follow the Settings sensitivity")
+	check_approx(vp.sens_slider.value, 0.33, "and so does the View tab's slider")
+	vp.sens_slider.value = 0.2
+	check_approx(settings.mouse_sensitivity, 0.2, "which writes Settings")
 
 	# N opens the noise editor and frees the mouse; a click in Fly mode closes it
 	var nw = main.noise_window()
@@ -229,34 +229,36 @@ func run() -> void:
 	main._unhandled_input(nclick)
 	check(not nw.visible, "a click in Fly mode closes the noise editor")
 
-	# the pause menu's Noise button opens the editor and resumes
-	main.pause()
-	pause.noise_button.pressed.emit()
-	check(nw.visible and not paused, "the pause Noise button opens the editor and resumes")
+	# the View tab's Noise button opens the editor
+	vp.noise_button.pressed.emit()
+	check(nw.visible, "the View Noise button opens the editor")
+	check(not main.is_mouse_captured(), "with the mouse free")
 	nw.close()
+	main._free_requested = false
 	main._update_mouse()
 
-	# the pause menu's Console button opens the console, keeps the mouse free and
-	# resumes (the way in when a browser swallows the Ctrl tap)
+	# Escape frees the mouse and does nothing else: no pause, the console stays
+	# shut, and a click in the view recaptures
 	check(main.is_mouse_captured() and not console.visible, "flying, console closed")
-	main.pause()
-	pause.console_button.pressed.emit()
-	check(console.visible, "the pause Console button opens the console")
-	check(not paused and not pause.visible, "and resumes")
-	check(not main.is_mouse_captured(), "with the mouse left free to use it")
-	# The console holds keyboard focus once open (an embedded window takes it
-	# when shown), so keys it does not use are handed on to Main: Escape pauses.
-	# Embedded windows draw above the pause menu, so pausing hides them and
-	# resuming brings them back.
+	await press_action("cancel")
+	check(not main.is_mouse_captured(), "Escape frees the mouse")
+	check(not paused, "without pausing the tree")
+	check(not console.visible, "and without opening the console")
+	main._unhandled_input(nclick)
+	check(main.is_mouse_captured(), "a click in the view recaptures")
+	# Escape never closes the console: with it open and holding keyboard focus,
+	# its unused keys reach Main, and Escape there only frees the mouse
+	_tap_ctrl(main)
+	check(console.visible and not main.is_mouse_captured(), "a Ctrl tap opens the console and frees the mouse")
+	main._unhandled_input(nclick)
+	check(main.is_mouse_captured() and console.visible, "a click recaptures with the console left open")
 	var esc := InputEventKey.new()
 	esc.physical_keycode = KEY_ESCAPE
 	esc.keycode = KEY_ESCAPE
 	esc.pressed = true
 	console._unhandled_input(esc)
-	check(paused and pause.visible, "Escape in the focused console reaches Main and pauses")
-	check(not console.visible, "pausing hides the console so the pause menu is not covered")
-	main.resume()
-	check(not paused and console.visible, "resuming shows the console again")
+	check(not main.is_mouse_captured(), "Escape in the focused console reaches Main and frees the mouse")
+	check(console.visible and not paused, "and leaves the console open, unpaused")
 	_tap_ctrl(main)
 	check(not console.visible and main.is_mouse_captured(), "a Ctrl tap then closes it and recaptures")
 
@@ -292,21 +294,11 @@ func run() -> void:
 	check_eq(nw.graph().nodes.size(), 3, "loading the view restored the noise graph")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ntmp))
 
-	# Escape pauses and opens the pause menu; Escape again resumes
+	# the View tab's Renderer options edit the view's params
 	main.params.camera_mode = FractalParams.CameraMode.FLY
 	await frames(1)
-	check(not pause.visible, "the pause menu starts hidden")
-	await press_action("pause")
-	check(paused and pause.visible, "Escape pauses and opens the pause menu")
-	check_eq(pause.menu_button.text, "Back to Menu", "it offers Back to Menu")
-	pause.settings_button.pressed.emit()
-	check(pause.settings_menu.visible, "and Settings")
-	var tabs: TabContainer = pause.settings_menu.tabs
-	check(not tabs.is_tab_disabled(1), "in game, the Renderer tab is enabled")
-	var dark: float = pause.dim.color.a
-	tabs.current_tab = 1
-	check(pause.dim.color.a < dark, "the Renderer tab lightens the dim")
-	var ro = pause.settings_menu.renderer
+	check_eq(vp.menu_button.text, "Back to Menu", "the View tab offers Back to Menu")
+	var ro: RendererOptions = vp.renderer
 	ro.falloff_slider.value = 1.25
 	check_approx(main.params.detail_falloff, 1.25, "its falloff slider edits the view's params")
 	ro.steps_slider.value = 256
@@ -316,16 +308,6 @@ func run() -> void:
 	ro.reset_button.pressed.emit()
 	check(main.params.detail == 1.0 and main.params.detail_falloff == 0.0 and main.params.max_steps == 128,
 		"Reset puts the renderer defaults back")
-	check_eq(main.governor.process_mode, Node.PROCESS_MODE_ALWAYS,
-		"the governor keeps running while paused, so edits get a final frame")
-	tabs.current_tab = 0
-	check_approx(pause.dim.color.a, dark, "back on Controls the dim returns")
-	tabs.current_tab = 1
-	await press_action("pause")
-	check(paused and pause.visible and not pause.settings_menu.visible,
-		"Escape in its settings goes back to the pause list")
-	await press_action("pause")
-	check(not paused and not pause.visible, "Escape again resumes")
 
 	# the load shedder's top level caps the Fly speed and shows in the console
 	var top := LoadShedder.top()
@@ -339,11 +321,9 @@ func run() -> void:
 	main.governor.shed_level_changed.emit(0)
 	check(not shed_label.visible, "level 0 hides the readout")
 
-	# Back to Menu unpauses and swaps to the main menu
-	await press_action("pause")
-	pause.menu_button.pressed.emit()
+	# Back to Menu swaps to the main menu
+	vp.menu_button.pressed.emit()
 	await frames(2)
-	check(not paused, "Back to Menu unpauses")
 	check(current_scene != null and current_scene.name == "MainMenu", "and loads the main menu")
 	if current_scene:
 		current_scene.queue_free()

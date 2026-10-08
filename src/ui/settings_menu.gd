@@ -1,22 +1,14 @@
 class_name SettingsMenu
 extends VBoxContainer
-## The settings page shared by the main menu and the pause menu, as two tabs.
-## Controls edits the Settings autoload directly. Renderer edits the open view's
-## FractalParams, so it is only enabled once set_params() hands it a view (the
-## pause menu does; the main menu has no view). `back` asks the owner to show its
-## own list again.
+## The title menu's settings page. Its Controls tab edits the Settings autoload
+## directly. (The open view's renderer options live in the console's View tab.)
+## `back` asks the owner to show its own list again.
 
 signal back
-## The Renderer tab was shown or hidden (the pause menu lightens its dim for it).
-signal renderer_shown(on: bool)
-
-const CONTROLS_TAB := 0
-const RENDERER_TAB := 1
 
 var tabs: TabContainer
 var sens_slider: HSlider
 var sens_value: Label
-var renderer: RendererOptions
 var back_button: Button
 
 
@@ -59,35 +51,16 @@ func _init() -> void:
 	controls.add_child(row)
 	tabs.add_child(controls)
 
-	renderer = RendererOptions.new()
-	tabs.add_child(renderer)
-	tabs.set_tab_disabled(RENDERER_TAB, true)
-	tabs.set_tab_tooltip(RENDERER_TAB, "Renderer options belong to the open view: open them from the pause menu (Esc) while exploring.")
-
 	back_button = MenuButtons.make("Back")
 	add_child(back_button)
 
 	sens_slider.value_changed.connect(func(v): Settings.mouse_sensitivity = v)
 	back_button.pressed.connect(back.emit)
-	tabs.tab_changed.connect(func(_i): renderer_shown.emit(renderer_active()))
-	visibility_changed.connect(func(): renderer_shown.emit(renderer_active()))
 
 
 func _ready() -> void:
 	Settings.changed.connect(_refresh)
 	_refresh()
-
-
-## Hand the Renderer tab the open view's params, which enables it.
-func set_params(params: FractalParams) -> void:
-	renderer.setup(params)
-	tabs.set_tab_disabled(RENDERER_TAB, false)
-	tabs.set_tab_tooltip(RENDERER_TAB, "")
-
-
-## True while this page is shown on its Renderer tab.
-func renderer_active() -> bool:
-	return visible and tabs.current_tab == RENDERER_TAB
 
 
 func _refresh() -> void:

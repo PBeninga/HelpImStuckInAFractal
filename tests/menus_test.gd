@@ -35,11 +35,9 @@ func run() -> void:
 	settings.mouse_sensitivity = 0.15
 	check_approx(menu.settings_menu.sens_slider.value, 0.15, "and follows outside changes")
 	var tabs: TabContainer = menu.settings_menu.tabs
-	check_eq(tabs.get_tab_count(), 2, "settings has two tabs")
-	check_eq([tabs.get_tab_title(0), tabs.get_tab_title(1)], ["Controls", "Renderer"], "Controls and Renderer")
-	check(tabs.is_tab_disabled(1), "with no view open, the Renderer tab is disabled")
-	check(tabs.get_tab_tooltip(1) != "", "and says where to find it")
-	await press_action("pause")
+	check_eq(tabs.get_tab_count(), 1, "settings has one tab")
+	check_eq(tabs.get_tab_title(0), "Controls", "Controls (the renderer is in the console's View tab)")
+	await press_action("cancel")
 	check(not menu.settings_menu.visible and menu.play_button.is_visible_in_tree(),
 		"Escape goes back to the list")
 	menu.settings_button.pressed.emit()
@@ -49,51 +47,55 @@ func run() -> void:
 	menu.queue_free()
 	await frames(1)
 
-	# --- the pause menu's controls block: Save/Load/Camera/Fast/Console/Noise ---
-	# Untyped (like MainMenu above): naming PauseMenu would compile its
-	# SettingsMenu/Settings-autoload dependency at this test's own compile time.
+	# --- the console's View tab: Save/Load/Camera/Sensitivity/Noise/Renderer/Menu ---
 	var params := FractalParams.new()
-	var pause = load("res://src/ui/pause_menu.gd").new()
-	root.add_child(pause)
-	pause.setup(params)
+	var vp := ViewPane.new()
+	root.add_child(vp)
+	vp.setup(params)
 	await frames(1)
-	check_eq(pause.save_button.text, "Save view…", "pause menu has a Save view button")
-	check_eq(pause.load_button.text, "Load view…", "pause menu has a Load view button")
-	check_eq(pause.noise_button.text, "Noise editor…", "pause menu has a Noise editor button")
-	check_eq(pause.console_button.text, "Console…", "pause menu has a Console button")
-	check(pause.console_button.tooltip_text.contains("Ctrl"), "whose tooltip names the Ctrl tap")
-	check(pause.camera_option.item_count == 2, "pause menu has a Camera option (Fly / Orbit)")
-	check(pause.fast_check != null, "pause menu has a Fast Controls checkbox")
+	check_eq(vp.name, &"View", "the tab is named View")
+	check_eq(vp.save_button.text, "Save view…", "View has a Save view button")
+	check_eq(vp.load_button.text, "Load view…", "View has a Load view button")
+	check_eq(vp.noise_button.text, "Noise editor…", "View has a Noise editor button")
+	check_eq(vp.menu_button.text, "Back to Menu", "View has a Back to Menu button")
+	check(vp.camera_option.item_count == 2, "View has a Camera option (Fly / Orbit)")
+	check(vp.renderer.fast_check != null, "and the Renderer options with Fast Controls")
 	# the camera option writes params
-	pause.camera_option.select(1)
-	pause.camera_option.item_selected.emit(1)
+	vp.camera_option.select(1)
+	vp.camera_option.item_selected.emit(1)
 	check_eq(params.camera_mode, FractalParams.CameraMode.ORBIT, "the Camera option writes params.camera_mode")
 	# the fast checkbox writes params
-	pause.fast_check.button_pressed = false
-	pause.fast_check.toggled.emit(false)
+	vp.renderer.fast_check.toggled.emit(false)
 	check_eq(params.fast_controls, false, "the Fast Controls checkbox writes params.fast_controls")
 	# external change refreshes the widgets
 	params.camera_mode = FractalParams.CameraMode.FLY
 	await frames(1)
-	check_eq(pause.camera_option.selected, 0, "an external camera-mode change refreshes the option")
+	check_eq(vp.camera_option.selected, 0, "an external camera-mode change refreshes the option")
+	# the sensitivity goes out by signal and comes in without one
+	var sens := []
+	vp.sensitivity_changed.connect(func(v): sens.append(v))
+	vp.set_sensitivity(0.3)
+	check(sens.is_empty() and is_equal_approx(vp.sens_slider.value, 0.3), "set_sensitivity shows a value silently")
+	vp.sens_slider.value = 0.25
+	check(sens.size() == 1 and is_equal_approx(sens[0], 0.25), "dragging the slider emits sensitivity_changed")
 	# the file name and status helpers
-	pause.show_file("my_view.json")
-	check_eq(pause.file_label.text, "my_view.json", "show_file names the current save")
-	pause.show_status("Saved my_view.json")
-	check(pause.status_label.visible and pause.status_label.text.begins_with("Saved"), "show_status reports a line")
-	# save/load/noise emit their signals
+	vp.show_file("my_view.json")
+	check_eq(vp.file_label.text, "my_view.json", "show_file names the current save")
+	vp.show_status("Saved my_view.json")
+	check(vp.status_label.visible and vp.status_label.text.begins_with("Saved"), "show_status reports a line")
+	# the buttons emit their signals
 	var fired := {}
-	pause.save_requested.connect(func(): fired["save"] = true)
-	pause.load_requested.connect(func(): fired["load"] = true)
-	pause.noise_requested.connect(func(): fired["noise"] = true)
-	pause.console_requested.connect(func(): fired["console"] = true)
-	pause.save_button.pressed.emit()
-	pause.load_button.pressed.emit()
-	pause.noise_button.pressed.emit()
-	pause.console_button.pressed.emit()
-	check(fired.has("save") and fired.has("load") and fired.has("noise"), "Save/Load/Noise emit their signals")
-	check(fired.has("console"), "Console emits console_requested")
-	pause.queue_free()
+	vp.save_requested.connect(func(): fired["save"] = true)
+	vp.load_requested.connect(func(): fired["load"] = true)
+	vp.noise_requested.connect(func(): fired["noise"] = true)
+	vp.menu_requested.connect(func(): fired["menu"] = true)
+	vp.save_button.pressed.emit()
+	vp.load_button.pressed.emit()
+	vp.noise_button.pressed.emit()
+	vp.menu_button.pressed.emit()
+	check(fired.has("save") and fired.has("load") and fired.has("noise") and fired.has("menu"),
+		"Save/Load/Noise/Back to Menu emit their signals")
+	vp.queue_free()
 	await frames(1)
 
 	settings.mouse_sensitivity = original

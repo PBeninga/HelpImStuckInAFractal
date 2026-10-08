@@ -52,9 +52,11 @@ func run() -> void:
 	check(colour.row(&"color_mode") != null and inspector.row(&"color_mode") == null, "Colour is on the Colour tab")
 	check(colour.row(&"light_specular") != null, "so is the lighting")
 	check(colour.row(&"palette_a_r") != null, "and the palette's twelve numbers")
-	check_eq(console.tabs().get_tab_count(), 2, "two tabs")
+	check_eq(console.tabs().get_tab_count(), 3, "three tabs")
 	check_eq(console.tabs().get_tab_title(0), "Shape", "the first is Shape")
 	check_eq(console.tabs().get_tab_title(1), "Colour", "the second Colour")
+	check_eq(console.tabs().get_tab_title(2), "View", "the third View")
+	check(console.view_pane() != null and console.view_pane().get_parent() == console.tabs(), "which is the View pane")
 	check(console.palette_window() != null and console.palette_window().get_parent() != null
 		and colour.is_ancestor_of(console.palette_window()), "the palette window heads the Colour tab's list")
 	check(console.palette().table() == table, "and edits the console's own table")

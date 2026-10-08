@@ -74,6 +74,6 @@ func show_settings(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed(&"pause") and settings_menu.visible:
+	if event.is_action_pressed(&"cancel") and settings_menu.visible:
 		show_settings(false)
 		get_viewport().set_input_as_handled()

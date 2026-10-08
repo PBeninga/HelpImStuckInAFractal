@@ -6,7 +6,7 @@ extends Window
 ##
 ## Unlike the console it is embedded in the main window (dragged by its title
 ## bar, closed with its ✕, drawn above the view). Main owns it: it opens and closes it
-## (the N key and the pause menu's Noise editor… button), and reads its graph
+## (the N key and the console View tab's Noise editor… button), and reads its graph
 ## for a view save.
 
 ## In points (logical units); UiScale.px turns them into window pixels.
@@ -112,7 +112,7 @@ func toggle() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event.is_action_pressed(&"toggle_noise_editor") or event.is_action_pressed(&"pause"):
+	if event.is_action_pressed(&"toggle_noise_editor") or event.is_action_pressed(&"cancel"):
 		close_requested.emit()
 		set_input_as_handled()
 	elif event is InputEventKey:

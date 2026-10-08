@@ -1,12 +1,14 @@
 class_name ConsoleWindow
 extends Window
 ## The console ("Fractacular embedded") for the one Mandelbox shape being flown
-## through in the main window: two tabs stacked above the Movement pane in a
+## through in the main window: three tabs stacked above the Movement pane in a
 ## VSplit. The Shape tab is the inspector for the Box, Julia, Iteration rotation
 ## and Render groups; the Colour tab is Fractacular's Colour window (the cosine
 ## palette's sliders, curves and strip) above the Colour, Lighting and Palette
-## rows, in one scrolling list. Stacked, the tabs get the full width, so the
-## sliders have room (side by side, the panes' minimum widths overflowed the
+## rows, in one scrolling list; the View tab is Save / Load view, the camera
+## mode, the mouse sensitivity, the Noise editor button, the Renderer options
+## and Back to Menu. Stacked, the tabs get the full width, so the sliders have
+## room (side by side, the panes' minimum widths overflowed the
 ## window); the Movement pane keeps its natural height (a line per axis and a
 ## few readouts) and the tabs take the rest.
 ##
@@ -48,6 +50,7 @@ var _colour_inspector: AttributeInspector
 var _palette: Palette
 var _palette_window: PaletteWindow
 var _movement: MovementPane
+var _view: ViewPane
 var _keymap: Keymap
 var _ctrl := CtrlTap.new()
 
@@ -93,6 +96,9 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_tabs.add_child(_colour_inspector)
 	_colour_inspector.setup(table, group_tooltips, MandelboxShape.COLOUR_GROUPS, _palette_window)
 
+	_view = ViewPane.new()
+	_tabs.add_child(_view)
+
 	_movement = MovementPane.new()
 	_movement.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_movement.size_flags_vertical = Control.SIZE_FILL
@@ -128,7 +134,12 @@ func tabs() -> TabContainer:
 	return _tabs
 
 
-## Bring the Shape (0) or Colour (1) tab to the front.
+## The View tab: files, camera mode, noise editor, renderer, Back to Menu.
+func view_pane() -> ViewPane:
+	return _view
+
+
+## Bring the Shape (0), Colour (1) or View (2) tab to the front.
 func show_tab(index: int) -> void:
 	_tabs.current_tab = clampi(index, 0, _tabs.get_tab_count() - 1)
 
