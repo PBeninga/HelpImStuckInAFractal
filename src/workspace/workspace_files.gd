@@ -55,7 +55,7 @@ static func ensure_directory() -> Error:
 	return DirAccess.make_dir_recursive_absolute(absolute)
 
 
-## The pause menu opens these panels while the tree is paused. Godot's own
+## Should anything open these panels while the tree is paused, Godot's own
 ## panel (embedded, and on the web) is a child of this node, so it must keep
 ## processing or it ignores every key and click.
 func _init() -> void:

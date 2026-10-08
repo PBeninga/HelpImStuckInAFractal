@@ -1,6 +1,6 @@
 class_name RendererOptions
 extends VBoxContainer
-## The settings menu's Renderer tab. Edits the open view's FractalParams: how
+## The console View tab's Renderer options. Edits the open view's FractalParams: how
 ## detail falls off with distance from the camera, the march's step budget, Fast
 ## Controls and the lowest render scale it may use. These are saved with the view.
 ## Its Reset camera button asks Main to put the camera back where the current

@@ -3,14 +3,14 @@ extends "res://tests/test_case.gd"
 ## and keyboard input in a scaled headless root: Play from the title menu; a
 ## Ctrl tap opens the console and frees the mouse; typing into the Scale row
 ## reaches the shader; Fold limit bound to Axis A at gain 0.5 moves while E is
-## held; WASD flies the camera and the wheel changes its speed; the pause
-## menu's Noise editor… and Console… buttons open their windows, and Escape
-## reaches Main even while one of them holds keyboard focus; a Value noise is
-## added and wired; Save view… then New + Load view… restores the shape, the
-## binding, the camera and the noise; a resized window asks the view for a
-## frame; Back to Menu returns to the title.
+## held; WASD flies the camera and the wheel changes its speed; Escape only
+## frees the mouse and never closes the console; the console's View tab opens
+## the noise window; a Value noise is added and wired; Save view… then New +
+## Load view… (on the View tab) restores the shape, the binding, the camera and
+## the noise; a resized window asks the view for a frame; the View tab's Back
+## to Menu returns to the title.
 ##
-## Main, MainMenu and PauseMenu are used untyped (as main_test.gd does): their
+## Main and MainMenu are used untyped (as main_test.gd does): their
 ## scripts name the Settings autoload, which a `-s` script cannot see when it
 ## is compiled.
 
@@ -46,7 +46,7 @@ func run() -> void:
 		await _scale_row_reaches_shader()
 		await _axis_drives_fold_limit()
 		await _fly_with_keys_and_wheel()
-		await _pause_menu_opens_windows()
+		await _escape_and_view_tab()
 		await _wire_value_noise()
 		await _save_new_and_reload()
 		await _resize_requests_frame()
@@ -209,38 +209,49 @@ func _fly_with_keys_and_wheel() -> void:
 			"uncaptured mouse motion leaves the heading alone (headless cannot capture; look is covered in fly_camera_test)")
 
 
-func _pause_menu_opens_windows() -> void:
-	var pause = main.pause_menu()
+func _escape_and_view_tab() -> void:
+	var console: ConsoleWindow = main.console()
+	check(main.is_mouse_captured() and not console.visible, "flying, console closed")
 	await ui.tap(KEY_ESCAPE)
-	check(paused and pause.visible, "Escape pauses and shows the pause menu")
-	check(pause.noise_button.is_visible_in_tree(), "the pause menu offers Noise editor…")
-	await ui.click(pause.noise_button)
+	check(not main.is_mouse_captured(), "Escape frees the mouse")
+	check(not paused and not console.visible, "and does nothing else: no pause, no console")
+	await ui.click_at(Vector2(640, 400))
+	check(main.is_mouse_captured(), "a click in the view recaptures")
+
+	var vp := await _show_view_tab()
+	check(vp.noise_button.is_visible_in_tree(), "the View tab offers Noise editor…")
+	await ui.click(vp.noise_button)
 	await ui.frames(1)
 	check(main.noise_window().visible, "a click on Noise editor… opens the noise window")
-	check(not paused and not pause.visible, "and resumes")
 	check(not main.is_mouse_captured(), "with the mouse free to use it")
 
 	# The noise window opened focused, and a focused noise window takes Escape
-	# for itself: the first Escape closes it, the second pauses.
+	# for itself and closes. Escape never closes the console.
 	await ui.tap(KEY_ESCAPE)
-	check(not main.noise_window().visible and not paused, "Escape first closes the focused noise window")
+	check(not main.noise_window().visible, "Escape closes the focused noise window")
+	check(console.visible, "but leaves the console open")
 	await ui.tap(KEY_ESCAPE)
-	check(paused and pause.visible, "a second Escape pauses again")
-	await ui.click(pause.console_button)
-	await ui.frames(1)
-	check(main.console().visible, "a click on Console… opens the console")
-	check(not paused and not pause.visible, "and resumes")
-	check(not main.is_mouse_captured(), "with the mouse free")
-	# the console holds keyboard focus now; Escape still reaches Main and pauses
-	await ui.tap(KEY_ESCAPE)
-	check(paused and pause.visible, "Escape with the console focused pauses")
-	check(not main.console().visible, "the console steps aside so it does not cover the pause menu")
-	await ui.click(pause.resume_button)
-	await ui.frames(1)
-	check(not paused and main.console().visible, "a click on Resume resumes with the console back")
+	check(console.visible and not paused, "a second Escape leaves the console open too")
 	await ui.tap(KEY_CTRL)
 	await ui.frames(1)
-	check(not main.console().visible and main.is_mouse_captured(), "a Ctrl tap closes the console and recaptures")
+	check(not console.visible and main.is_mouse_captured(), "a Ctrl tap closes the console and recaptures")
+
+
+## Open the console (if shut) and click its View tab. Returns the tab.
+func _show_view_tab() -> ViewPane:
+	var console: ConsoleWindow = main.console()
+	if not console.visible:
+		await ui.tap(KEY_CTRL)
+		await ui.frames(1)
+	var bar := console.tabs().get_tab_bar()
+	var title := ui.global_rect(bar).position + bar.get_tab_rect(2).get_center()
+	await ui.click_at(title)
+	if console.tabs().current_tab != 2:
+		# The console had lost focus (a file panel closed over it): the first
+		# click only focuses it, as it would for a player.
+		await ui.click_at(title)
+	check_eq(console.tabs().current_tab, 2, "a click on the View tab shows it")
+	return console.view_pane()
 
 
 func _wire_value_noise() -> void:
@@ -270,13 +281,11 @@ func _wire_value_noise() -> void:
 	check(main.view.shader_uniform_names().has(StringName("n_%s_scale" % vn)), "wired to Displace, it reaches the view's shader")
 
 
-## Pause, click Save view… or Load view…, point the panel at user:// and type
-## the file name. Returns the panel.
+## On the console's View tab, click Save view… or Load view…, point the panel at
+## user:// and type the file name. Returns the panel.
 func _use_view_panel(save: bool) -> FileDialog:
-	var pause = main.pause_menu()
-	if not pause.visible:
-		await ui.tap(KEY_ESCAPE)
-	await ui.click(pause.save_button if save else pause.load_button)
+	var vp := await _show_view_tab()
+	await ui.click(vp.save_button if save else vp.load_button)
 	await ui.frames(1)
 	var files: WorkspaceFiles = main.workspace_files()
 	var dialog := files.save_dialog() if save else files.load_dialog()
@@ -298,15 +307,11 @@ func _save_new_and_reload() -> void:
 	check(not nw.visible, "N closes the noise window")
 
 	var dialog := await _use_view_panel(true)
-	# The panel opens while the pause menu has the tree paused; it keeps
-	# processing (WorkspaceFiles runs PROCESS_MODE_ALWAYS), so it takes the keys.
 	check(not dialog.visible, "typing a name into the Save view… panel and Enter closes it")
 	check(FileAccess.file_exists(SAVE), "and writes user://ui_journey.json")
-	var pause = main.pause_menu()
-	check_eq(pause.file_label.text, SAVE.get_file(), "the pause menu names the saved file")
-	if pause.visible:
-		await ui.click(pause.resume_button)
-		await ui.frames(1)
+	check_eq(main.view_pane().file_label.text, SAVE.get_file(), "the View tab names the saved file")
+	main.console().hide_console()
+	await ui.frames(1)
 
 	# change everything: shape, binding, camera, noise
 	main.table().set_default(&"box_scale", -2.5)
@@ -333,9 +338,6 @@ func _save_new_and_reload() -> void:
 	check(b != null and b.source == &"a" and is_equal_approx(b.gain, 0.5), "and the Axis A binding at gain 0.5")
 	check(main.camera.eye().distance_to(saved_eye) < 1e-4, "and the camera")
 	check_eq(nw.graph().nodes.size(), saved_nodes, "and the noise graph")
-	if main.pause_menu().visible:
-		await ui.click(main.pause_menu().resume_button)
-		await ui.frames(1)
 
 
 func _resize_requests_frame() -> void:
@@ -356,12 +358,14 @@ func _resize_requests_frame() -> void:
 
 
 func _back_to_menu() -> void:
-	await ui.tap(KEY_ESCAPE)
-	var pause = main.pause_menu()
-	check(pause.visible, "Escape opens the pause menu")
-	await ui.click(pause.menu_button)
+	var vp := await _show_view_tab()
+	# Wheel over the empty right-hand side: a button under the pointer (the
+	# left edge, where scroll_to wheels) keeps the wheel from the scroll.
+	var view := ui.global_rect(vp)
+	await ui.wheel(Vector2(view.end.x - 40.0, view.get_center().y), true, 20)
+	check(view.encloses(ui.global_rect(vp.menu_button)), "the wheel brings Back to Menu into view")
+	await ui.click(vp.menu_button)
 	var menu := await _wait_for(func(n: Node) -> bool: return _is(n, MENU_SCRIPT))
 	check(menu != null, "a click on Back to Menu returns to the title")
-	check(not paused, "unpaused")
 	await ui.frames(1)
 	check(not is_instance_valid(main) or not main.is_inside_tree(), "and the explorer is gone")

@@ -29,12 +29,13 @@ binary.
 ## Controls
 
 Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** and
-**Colour** tabs, with a row for every Mandelbox, colour and lighting knob,
-stacked above the **Movement** pane of virtual axes.
+**Colour** tabs, with a row for every Mandelbox, colour and lighting knob, and
+the **View** tab (Save / Load view, the Camera mode, the mouse sensitivity, the
+Noise editor button, the Renderer options and Back to Menu), stacked above the
+**Movement** pane of virtual axes.
 Everything the console does not own is driven directly by the mouse and
-keyboard. Press **Escape** to pause: the pause menu offers Save view / Load
-view, the Camera mode, Fast Controls, Console and Noise editor buttons, and
-Resume / Settings / Back to Menu; Escape again steps back out.
+keyboard. **Escape** only frees the mouse: nothing pauses, and it never opens
+or closes the console. Click the view to take the mouse back.
 
 The console opens **beside** the main window — or on another monitor when
 there is no room beside it — and can be dragged anywhere. Keep it off the main
@@ -46,17 +47,16 @@ window or drag the console aside. (On the web it is a window inside the page.)
 The noise editor is a window **inside the main window**, always drawn above the
 view: drag it by its title bar, close it with its ✕. An open window takes the
 keyboard, but the keys it does not use — Escape, N, a Ctrl tap, ⌘S, ⌘P — still
-reach the game; pausing tucks the windows away and resuming brings them back.
+reach the game.
 
-**Settings** (from the title menu or the pause menu) has two tabs.
+The **mouse sensitivity** (the title menu's **Settings**, or the console's View
+tab) is the player's preference, not part of a view: it is kept in
+`user://settings.cfg`, survives restarts, and loading a saved view does not
+change it.
 
-- **Controls** holds the mouse sensitivity. It is the player's preference, not
-  part of a view: it is kept in `user://settings.cfg`, survives restarts, and
-  loading a saved view does not change it.
-- **Renderer** tunes how the open view is rendered, and is saved with the view
-  (so it is only enabled from the pause menu). While it is showing, the pause
-  dim lightens so each change can be seen behind the menu. Its **Reset camera**
-  button puts the camera back where the current save file has it (below).
+The **Renderer** options on the console's View tab tune how the open view is
+rendered, and are saved with the view. Their **Reset camera** button puts the
+camera back where the current save file has it (below).
 
 | Renderer option | what it does |
 |---|---|
@@ -65,7 +65,7 @@ reach the game; pausing tucks the windows away and resuming brings them back.
 | **Detail falloff** | how quickly detail coarsens past that range; 0 (the default) keeps detail matched to the pixel at every distance |
 | **Max march steps** | the step budget per ray (default 128: 96 coarse + 32 fine) |
 | **Min resolution** | the lowest render scale Fast Controls may drop to while moving (default 25%) |
-| **Fast Controls** | the same toggle as in the Q panel |
+| **Fast Controls** | drop the render scale while anything moves, then snap back to full resolution when it stops |
 
 A ray stops once the distance estimate falls below
 `precision / detail × t × max(1, t / (range × d₀))^falloff`, where `t` is the
@@ -100,7 +100,7 @@ still frame always renders at full quality. The console's Movement pane shows
 | **Ctrl** (tap) | open the console and free the mouse; tap again to close it and recapture. Fires on release, so Ctrl+S and Ctrl+P still work |
 | **Q / E** | the default virtual **Axis A** (negative / positive). Bind a Shape row to Axis A to give Q and E that knob |
 | **N** | toggle the noise-field editor (also releases/recaptures the mouse) |
-| **Escape** | pause menu (releases the mouse; resuming recaptures it). While the noise editor has the keyboard, Escape closes it first |
+| **Escape** | free the mouse (click the view to recapture). Nothing else: no pause, and the console stays as it is. While the noise editor has the keyboard, Escape closes it |
 | **W / A / S / D** | move forward / left / back / right |
 | **Space / Backspace** | move up / down (world-relative to the camera's own up) |
 | **Shift** (hold) | sprint — multiply the travel speed by 4 while held |
@@ -114,7 +114,7 @@ from far away and slows down automatically as you approach the fractal.
 
 ### Orbit camera
 
-Switch to **Orbit** from the pause menu's Camera option. The mouse is never
+Switch to **Orbit** from the Camera option on the console's View tab. The mouse is never
 captured in this mode.
 
 | action | what it does |
@@ -127,8 +127,8 @@ captured in this mode.
 
 ### Console (Ctrl)
 
-A Ctrl tap (or the pause menu's **Console…** button) opens the console, a
-separate OS window: the **Shape** and **Colour** tabs on top, taking the full
+A Ctrl tap opens the console, a
+separate OS window: the **Shape**, **Colour** and **View** tabs on top, taking the full
 width and most of the height, and the **Movement** pane below them at its
 natural height (drag the bar between them to share the height differently).
 **⌘=** / **⌘−** (Ctrl elsewhere) zoom everything in the console, text and
@@ -194,15 +194,13 @@ with no current file it opens the Save panel.
 **⌘P** (Ctrl+P elsewhere) copies a screenshot of the fractal, without any UI, to
 the clipboard as a PNG. On Linux this needs `xclip`.
 
-### Pause menu (Escape)
+### View tab (console)
 
-Escape pauses and opens the menu, which holds what the old Q panel kept that is
-not a shape knob: a **Save view…** / **Load view…** row with the current file's
-name and a status line, the **Camera** mode (Fly / Orbit), the **Fast Controls**
-toggle (let the resolution governor drop render scale while you interact), a
-**Console…** button (opens the console and resumes with the mouse free — the
-way in when a browser swallows the Ctrl tap), a **Noise editor…** button, and
-Resume / **Settings** / Back to Menu. Settings holds the mouse sensitivity.
+The console's View tab holds what is not a shape knob: a **Save view…** /
+**Load view…** row with the current file's name and a status line, the
+**Camera** mode (Fly / Orbit), the **mouse sensitivity**, a **Noise editor…**
+button, the **Renderer** options (above, with Fast Controls and Reset camera)
+and **Back to Menu**.
 
 ## Keymap
 
@@ -235,7 +233,7 @@ A save is a small JSON file, **version 2**:
 - **`fractal`** — the non-shape preferences: `fast_controls`, `camera_mode`
   (`"fly"`/`"orbit"`) and `mouse_sensitivity`.
 - **`camera`** — the eye, forward and up vectors and the speed factor. **Reset
-  camera** (in the console's Movement pane and the Settings menu's Renderer tab)
+  camera** (in the console's Movement pane and the View tab's Renderer options)
   puts the camera and speed factor back to these, as the current file was last
   loaded or saved; with no file current it goes to the starting view.
 - **`noise`** — the noise graph, when one is wired (additive; see below).
@@ -257,7 +255,7 @@ project, so it saves to `user://saves/` instead.
 
 ## Noise fields
 
-Press **N** (or the **Noise editor…** button in the pause menu) to open the
+Press **N** (or the **Noise editor…** button on the console's View tab) to open the
 noise-field editor: an in-app node graph, ported from Fractacular's Isolation
 window, that builds a 3D scalar field and overlays it on the Mandelbox. Wiring it
 to the **Output** node does two things to the picture, live as you edit:
