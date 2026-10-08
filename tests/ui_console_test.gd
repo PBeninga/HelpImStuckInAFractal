@@ -22,13 +22,13 @@ var scroll: ScrollContainer
 func run() -> void:
 	ui = UiDriver.new(self)
 	await ui.setup()
-	table = AttributeTable.new(MandelboxShape.specs())
+	table = AttributeTable.new(ShapeCatalogue.specs())
 	km = Keymap.new()
 	km.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	console = ConsoleWindow.new()
-	console.setup(table, km, clock, MandelboxShape.group_tooltips(), func() -> float: return 1.0)
+	console.setup(table, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	# Shorter than the list, so there is real scroll range.
 	console.size = Vector2i(1000, 400)

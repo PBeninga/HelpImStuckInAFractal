@@ -45,8 +45,8 @@ func run() -> void:
 	check_eq(p.COLOR_MODE_IDS[-1], Palette.MODE_ID, "with the Palette's mode id")
 
 	# every resolved key is a catalogue id, and its field opens on the catalogue default
-	var shape_table := AttributeTable.new(MandelboxShape.specs())
-	check_eq(FractalParams.RESOLVED_KEYS, MandelboxShape.catalogue_ids(), "RESOLVED_KEYS are the catalogue ids, in order")
+	var shape_table := AttributeTable.new(ShapeCatalogue.specs())
+	check_eq(FractalParams.RESOLVED_KEYS, ShapeCatalogue.catalogue_ids(), "RESOLVED_KEYS are the catalogue ids, in order")
 	for k in FractalParams.RESOLVED_KEYS:
 		var want: Variant = shape_table.get_default(k)
 		if want is float:

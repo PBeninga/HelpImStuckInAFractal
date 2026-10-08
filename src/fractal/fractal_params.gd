@@ -24,16 +24,22 @@ const COLOR_MODE_NAMES: Array[String] = [
 
 ## The resolved shape fields, in catalogue order. apply_resolved writes these.
 const RESOLVED_KEYS: Array[StringName] = [
-	&"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order", &"w",
-	&"julia_all", &"julia_0", &"julia_1", &"julia_2", &"julia_3",
-	&"c_0", &"c_1", &"c_2", &"c_3",
-	&"iter_rot_xy", &"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw",
-	&"precision",
-	&"color_mode", &"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
-	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess",
-	&"light_yaw", &"light_pitch", &"exposure", &"saturation",
-	&"palette_a_r", &"palette_a_g", &"palette_a_b", &"palette_b_r", &"palette_b_g", &"palette_b_b",
-	&"palette_c_r", &"palette_c_g", &"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
+	&"shape", &"w", &"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order",
+	&"fold_shape", &"hybrid_mix", &"hybrid_every", &"scale_drift", &"julia_all", &"julia_0",
+	&"julia_1", &"julia_2", &"julia_3", &"c_0", &"c_1", &"c_2", &"c_3", &"iter_rot_xy",
+	&"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw", &"kifs_scale",
+	&"kifs_fold", &"kifs_poly_k", &"kifs_twist", &"kifs_offset_0", &"kifs_offset_1",
+	&"kifs_offset_2", &"kifs_offset_3", &"kifs_rot1_xy", &"kifs_rot1_xz", &"kifs_rot1_xw",
+	&"kifs_rot1_yz", &"kifs_rot1_yw", &"kifs_rot1_zw", &"kifs_rot2_xy", &"kifs_rot2_xz",
+	&"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw", &"kleinian_box_0",
+	&"kleinian_box_1", &"kleinian_box_2", &"kleinian_box_3", &"kleinian_radius",
+	&"kleinian_shift_0", &"kleinian_shift_1", &"kleinian_shift_2", &"kleinian_shift_3",
+	&"kleinian_thickness", &"kleinian_view_distance", &"precision", &"color_mode",
+	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
+	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess", &"light_yaw",
+	&"light_pitch", &"exposure", &"saturation", &"palette_a_r", &"palette_a_g", &"palette_a_b",
+	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
+	&"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
 
 ## The colour, lighting and palette fields after color_mode: each is pushed to
@@ -325,8 +331,17 @@ const COARSE_BOX_HALF := 2.0
 ## unchanged; it rises inside about 0.3 of the surface and reaches 32 by about
 ## 3e-6. A |box_scale| of 1 or less has no shrinking detail: 32. Uses the
 ## unshed detail: the still frame renders at load level 0.
+##
+## The KIFS shrinks its detail by its own scale each iteration, so the same
+## rule runs on kifs_scale. The Kleinian has no steady rate (its inversion
+## magnifies only inside the sphere, by a varying amount), so it always gets
+## the full 32; its loop stops early anyway once the point settles. (With a
+## scale drift the Mandelbox's rate changes along the orbit; |box_scale| is the
+## rate it starts at.)
 func coarse_iters(near: float) -> int:
-	var s := absf(box_scale)
+	if shape == Shape.KLEINIAN:
+		return DistanceEstimator.ITERATIONS
+	var s := absf(kifs_scale if shape == Shape.KIFS else box_scale)
 	if s <= 1.0:
 		return DistanceEstimator.ITERATIONS
 	var gap := maxf(2.0 * precision / detail * maxf(near, 0.0), 1e-300)

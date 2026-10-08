@@ -4,7 +4,7 @@ extends Window
 ## through in the main window: three tabs stacked above the Movement pane in a
 ## VSplit. The Shape tab is the inspector for the Box, Julia, Iteration rotation
 ## and Render groups, headed by a read-only line saying whether the shape is
-## self-similar (MandelboxShape.self_similarity, fed by Main); the Colour tab is Fractacular's Colour window (the cosine
+## self-similar (ShapeCatalogue.self_similarity, fed by Main); the Colour tab is Fractacular's Colour window (the cosine
 ## palette's sliders, curves and strip) above the Colour, Lighting and Palette
 ## rows, in one scrolling list; the View tab is Save / Load view, the camera
 ## mode, the mouse sensitivity, the Noise editor button, the Renderer options
@@ -50,7 +50,7 @@ const MIN_SIZE := Vector2i(700, 400)
 ## The zoom levels Cmd+= and Cmd+- step through, browser style.
 const ZOOM_STEPS: Array[float] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0]
 
-const SELF_SIMILAR_TOOLTIP := "Whether this shape is exactly self-similar: every deep region is a magnified copy of a shallower region of the same shape, so a deep zoom could be rendered from the shallower copy. Only Julia mode with c fixed in x, y and z, an iteration that magnifies and no noise displacement qualify. Read-only; nothing renders differently. See docs/reference/self-similar-substitution.md."
+const SELF_SIMILAR_TOOLTIP := "Whether this shape is exactly self-similar: every deep region is a magnified copy of a shallower region of the same shape, so a deep zoom could be rendered from the shallower copy. On the Mandelbox only Julia mode with c fixed in x, y and z, an iteration that magnifies, no scale drift and no noise displacement qualify; the KIFS qualifies without a twist, the Kleinian always (both without noise). Read-only; nothing renders differently. See docs/reference/self-similar-substitution.md."
 
 ## Multiplies UiScale's factor for this window; 1 is the default size.
 var zoom := 1.0
@@ -100,13 +100,13 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_self_similar.name = "SelfSimilar"
 	_self_similar.mouse_filter = Control.MOUSE_FILTER_STOP   # so its tooltip shows
 	_self_similar.tooltip_text = SELF_SIMILAR_TOOLTIP
-	show_self_similarity(MandelboxShape.self_similarity(table.defaults()))
+	show_self_similarity(ShapeCatalogue.self_similarity(table.defaults()))
 	_inspector = AttributeInspector.new()
 	_inspector.name = "Shape"
 	_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.add_child(_inspector)
-	_inspector.setup(table, group_tooltips, MandelboxShape.SHAPE_GROUPS, _self_similar)
+	_inspector.setup(table, group_tooltips, ShapeCatalogue.SHAPE_GROUPS, _self_similar)
 
 	_palette = Palette.new(table)
 	_palette_window = PaletteWindow.new()
@@ -117,7 +117,7 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_colour_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_colour_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.add_child(_colour_inspector)
-	_colour_inspector.setup(table, group_tooltips, MandelboxShape.COLOUR_GROUPS, _palette_window)
+	_colour_inspector.setup(table, group_tooltips, ShapeCatalogue.COLOUR_GROUPS, _palette_window)
 
 	_view = ViewPane.new()
 	_tabs.add_child(_view)
@@ -176,7 +176,7 @@ func self_similarity_label() -> Label:
 	return _self_similar
 
 
-## Show a MandelboxShape.self_similarity() result on the Shape tab's line.
+## Show a ShapeCatalogue.self_similarity() result on the Shape tab's line.
 func show_self_similarity(result: Dictionary) -> void:
 	if _self_similar == null:
 		return

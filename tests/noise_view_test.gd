@@ -14,7 +14,7 @@ var BASE_UNIFORMS: Array = []
 
 func _base_uniforms() -> Array:
 	var out: Array = ShaderTest.RENDERER_UNIFORMS.duplicate()
-	for id in MandelboxShape.catalogue_ids():
+	for id in ShapeCatalogue.catalogue_ids():
 		out.append(String(id))
 	return out
 

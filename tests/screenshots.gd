@@ -46,7 +46,7 @@ func _run() -> void:
 	# for one second (value 1.0) so box_scale resolves to -2.09 + 0.5 = -1.59.
 	# The picture must differ from the default view — the binding really drove
 	# the shape. Rendered through the same view, then the view is restored.
-	var bound_table := AttributeTable.new(MandelboxShape.specs())
+	var bound_table := AttributeTable.new(ShapeCatalogue.specs())
 	var bind := Binding.new(); bind.source = &"a"; bind.gain = 0.5
 	bound_table.set_binding(&"box_scale", bind)
 	var bound_axes := Axes.new(); bound_axes.add(&"a", "Axis A", 1.0); bound_axes.set_value(&"a", 1.0)
@@ -97,7 +97,7 @@ func _run() -> void:
 	params.color_mode = 1   # back to Ice Fractal before capturing the default again
 	var np := FractalParams.new()
 	var ncam := CameraState.make_default()
-	var ntable := AttributeTable.new(MandelboxShape.specs())
+	var ntable := AttributeTable.new(ShapeCatalogue.specs())
 	var naxes := Axes.new()
 	var loaded := Workspace.load_file("res://saves/noiseRidges.json", ntable, naxes, np, ncam)
 	if not loaded["ok"]:
@@ -141,13 +141,13 @@ func _run() -> void:
 func _capture_windows(view: FractalView) -> void:
 	root.gui_embed_subwindows = true
 
-	var table := AttributeTable.new(MandelboxShape.specs())
+	var table := AttributeTable.new(ShapeCatalogue.specs())
 	var keymap := Keymap.new()
 	keymap.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	var console := ConsoleWindow.new()
-	console.setup(table, keymap, clock, MandelboxShape.group_tooltips(), func() -> float: return 1.0)
+	console.setup(table, keymap, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	console.open()
 	console.position = Vector2i.ZERO

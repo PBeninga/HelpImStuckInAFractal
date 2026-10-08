@@ -21,19 +21,27 @@ const PLANES := DistanceEstimator.PLANES
 
 enum FoldSet { COORDINATE, DIAGONAL, POLYFOLD }
 
+## The FractalParams fields of R1 and R2, in PLANES order.
+const ROT_IDS := [
+	[&"kifs_rot1_xy", &"kifs_rot1_xz", &"kifs_rot1_xw", &"kifs_rot1_yz", &"kifs_rot1_yw", &"kifs_rot1_zw"],
+	[&"kifs_rot2_xy", &"kifs_rot2_xz", &"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw"],
+]
 
-static func estimate_at(px: float, py: float, pz: float, params: FractalParams) -> float:
+
+## `iters` is clamped to [0, ITERATIONS], as DistanceEstimator's.
+static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
+		iters: int = ITERATIONS) -> float:
 	var s := params.kifs_scale
 	var fold_set := params.kifs_fold
-	var sector := TAU / float(maxi(roundi(params.kifs_poly_k), 2))
+	var sector := TAU / float(maxi(int(floor(params.kifs_poly_k + 0.5)), 2))
 	var twist := deg_to_rad(params.kifs_twist)
 	var o := [params.kifs_offset_0, params.kifs_offset_1, params.kifs_offset_2, params.kifs_offset_3]
-	var r1 := _angles(params, "rot1")
-	var r2 := _angles(params, "rot2")
+	var r1 := _angles(params, 0)
+	var r2 := _angles(params, 1)
 
 	var p := [px, py, pz, params.w]
 	var n := 0
-	for i in ITERATIONS:
+	for i in clampi(iters, 0, ITERATIONS):
 		if not r1.is_empty():
 			_rotate(p, r1)
 		if fold_set == FoldSet.COORDINATE:
@@ -71,13 +79,16 @@ static func estimate_at(px: float, py: float, pz: float, params: FractalParams) 
 	return d * pow(s, -float(n))
 
 
-## The six angles of rotation `which` ("rot1" or "rot2") as [cos, sin] pairs
-## in PLANES order, or [] when every angle is 0 (the rotation is skipped).
-static func _angles(params: FractalParams, which: String) -> Array:
+## The six angles of rotation `which` (0 for R1, 1 for R2) as [cos, sin]
+## pairs in PLANES order, or [] when every angle is 0 (the rotation is skipped).
+## The fly camera's centre ray calls this every estimate, so the field names
+## are prebuilt rather than formatted each time.
+static func _angles(params: FractalParams, which: int) -> Array:
+	var ids: Array = ROT_IDS[which]
 	var out := []
 	var any := false
-	for pair in PLANES:
-		var a: float = params.get("kifs_%s_%s%s" % [which, "xyzw"[pair[0]], "xyzw"[pair[1]]])
+	for id in ids:
+		var a: float = params.get(id)
 		if absf(a) > 1e-6:
 			any = true
 		var r := deg_to_rad(a)

@@ -28,13 +28,13 @@ func _chord(keycode: Key) -> InputEventKey:
 
 
 func run() -> void:
-	var table := AttributeTable.new(MandelboxShape.specs())
+	var table := AttributeTable.new(ShapeCatalogue.specs())
 	var km := Keymap.new()
 	km.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	var console := ConsoleWindow.new()
-	console.setup(table, km, clock, MandelboxShape.group_tooltips(), func() -> float: return 1.0)
+	console.setup(table, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	console.open()
 	await frames(1)

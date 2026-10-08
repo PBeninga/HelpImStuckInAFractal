@@ -7,7 +7,7 @@ const TMP := "user://workspace_test.json"
 
 
 func _table() -> AttributeTable:
-	return AttributeTable.new(MandelboxShape.specs())
+	return AttributeTable.new(ShapeCatalogue.specs())
 
 
 func run() -> void:
