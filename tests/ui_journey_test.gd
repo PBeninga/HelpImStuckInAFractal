@@ -33,8 +33,9 @@ func run() -> void:
 	original_sens = settings.mouse_sensitivity
 	original_zoom = settings.console_zoom
 	settings.config_path = SETTINGS
-	# The autoload has already read the player's file; a zoomed console would
-	# put every click the driver aims at it in the wrong place.
+	# The autoload has already read the player's file. The journey runs at the
+	# default zoom: zoomed in, the View tab shows too little of its pane for
+	# its buttons to be clicked without scrolling to them first.
 	settings.console_zoom = 1.0
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE))
 
