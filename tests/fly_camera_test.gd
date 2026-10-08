@@ -58,18 +58,20 @@ func run() -> void:
 	check(fly.current_speed() > clampf(near, 1e-6, 20.0) * cam.speed_factor,
 		"the default view looks further than its nearest surface, so it flies faster than D(eye)")
 
-	# --- sprint: x4 at once, doubling each second held, capped; eases off when
+	# --- sprint: x4 at once, climbing SPRINT_RATE each second held, capped; eases off when
 	# Shift is let go; stops dead when the move keys are ---
 	var base_speed := fly.current_speed()
 	fly.step_boost(1.0 / 60.0, true, true)
-	check(fly.boost() >= FlyCamera.SPRINT_MULTIPLIER and fly.boost() < FlyCamera.SPRINT_MULTIPLIER * 1.1,
-		"the first sprint frame jumps to about SPRINT_MULTIPLIER (got %s)" % fly.boost())
+	check_approx(fly.boost(), FlyCamera.SPRINT_MULTIPLIER + FlyCamera.SPRINT_RATE / 60.0,
+		"the first sprint frame jumps to SPRINT_MULTIPLIER, plus one frame's climb", 1e-9)
 	check_approx(fly.current_speed(), base_speed * fly.boost(), "current speed is base x boost", 1e-9)
 	var b0 := fly.boost()
-	fly.step_boost(FlyCamera.SPRINT_DOUBLING, true, true)
-	check_approx(fly.boost(), b0 * 2.0, "holding Shift doubles the boost every SPRINT_DOUBLING s", 1e-6)
-	for i in 600:
-		fly.step_boost(1.0 / 60.0, true, true)   # ten more seconds
+	fly.step_boost(1.0, true, true)
+	check_approx(fly.boost(), b0 + FlyCamera.SPRINT_RATE, "holding Shift adds SPRINT_RATE to the boost every second", 1e-6)
+	fly.step_boost(1.0, true, true)
+	check_approx(fly.boost(), b0 + 2.0 * FlyCamera.SPRINT_RATE, "and the same again the next second: a straight line", 1e-6)
+	for i in 900:
+		fly.step_boost(1.0 / 60.0, true, true)   # fifteen more seconds
 	check_approx(fly.boost(), FlyCamera.SPRINT_MAX, "the boost tops out at SPRINT_MAX")
 	fly.step_boost(FlyCamera.BOOST_HALVING, true, false)
 	check_approx(fly.boost(), FlyCamera.SPRINT_MAX * 0.5, "releasing Shift halves it every BOOST_HALVING s", 1e-6)
