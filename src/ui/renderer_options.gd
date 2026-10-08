@@ -3,6 +3,10 @@ extends VBoxContainer
 ## The settings menu's Renderer tab. Edits the open view's FractalParams: how
 ## detail falls off with distance from the camera, the march's step budget, Fast
 ## Controls and the lowest render scale it may use. These are saved with the view.
+## Its Reset camera button asks Main to put the camera back where the current
+## file has it.
+
+signal reset_camera_requested
 
 var detail_slider: HSlider
 var range_slider: HSlider
@@ -11,6 +15,7 @@ var steps_slider: HSlider
 var fast_check: CheckBox
 var min_scale_slider: HSlider
 var reset_button: Button
+var reset_camera_button: Button
 
 var _params: FractalParams
 var _values := {}   # slider -> its value Label
@@ -43,10 +48,16 @@ func _init() -> void:
 	fast_check.tooltip_text = "Lower the resolution while moving to hold 30 fps; render one full frame when still."
 	add_child(fast_check)
 
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 12)
+	add_child(buttons)
 	reset_button = Button.new()
 	reset_button.text = "Reset renderer defaults"
-	reset_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	add_child(reset_button)
+	buttons.add_child(reset_button)
+	reset_camera_button = Button.new()
+	reset_camera_button.text = "Reset camera"
+	reset_camera_button.tooltip_text = "Put the camera's position, view and speed factor back where the current save file has them (the starting view when no file is loaded)."
+	buttons.add_child(reset_camera_button)
 
 	detail_slider.value_changed.connect(func(v): _write(func(): _params.detail = v))
 	range_slider.value_changed.connect(func(v): _write(func(): _params.detail_range = v))
@@ -55,6 +66,7 @@ func _init() -> void:
 	min_scale_slider.value_changed.connect(func(v): _write(func(): _params.min_render_scale = v))
 	fast_check.toggled.connect(func(on): _write(func(): _params.fast_controls = on))
 	reset_button.pressed.connect(reset_defaults)
+	reset_camera_button.pressed.connect(reset_camera_requested.emit)
 
 
 func setup(params: FractalParams) -> void:

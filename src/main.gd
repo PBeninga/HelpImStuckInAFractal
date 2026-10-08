@@ -7,7 +7,8 @@ extends Node
 ## loading a view: WorkspaceFiles picks the file, Workspace does the reading and
 ## writing, the pause menu shows the result. Escape pauses the tree and opens
 ## the PauseMenu; a Ctrl tap (or the pause menu's Console button) opens the
-## console.
+## console. Reset camera (in the console and the Settings menu's Renderer tab)
+## puts the camera back where the current file has it.
 
 const MENU_SCENE := "res://src/ui/main_menu.tscn"
 ## The main window's size in points (logical units); see UiScale.
@@ -47,6 +48,10 @@ var _text_viewports: Array = []
 ## drawn above every canvas layer, so an open one would cover the pause menu (and
 ## a native console would sit there unresponsive while the tree is paused).
 var _hidden_by_pause: Array[Window] = []
+## Where Reset camera goes: the camera as the current file has it (as last
+## loaded or saved), or the starting view while no file is current.
+var _home_transform: Transform3D
+var _home_speed := 1.0
 
 
 func _ready() -> void:
@@ -57,6 +62,7 @@ func _ready() -> void:
 	UiScale.follow_size(get_window(), WINDOW_SIZE)
 	params = FractalParams.new()
 	camera = CameraState.make_default()
+	_remember_home()
 
 	_table = AttributeTable.new(MandelboxShape.specs())
 	_keymap = Keymap.new()
@@ -142,6 +148,7 @@ func _build_console() -> void:
 	# The zoom is the player's, like the sensitivity: Settings keeps it.
 	_console.set_zoom(Settings.console_zoom)
 	_console.zoom_changed.connect(func(z: float): Settings.console_zoom = z)
+	_console.reset_camera_requested.connect(reset_camera)
 
 
 func _build_axis_controller() -> void:
@@ -181,6 +188,7 @@ func _build_pause_menu() -> void:
 	add_child(_pause)
 	_pause.setup(params)
 	_pause.settings_menu.set_params(params)
+	_pause.settings_menu.renderer.reset_camera_requested.connect(reset_camera)
 	# The Renderer tab edits params while the tree is paused. Keep the governor
 	# running so each edit still gets its full-resolution final frame.
 	governor.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -282,6 +290,7 @@ func save_view_to(path: String) -> void:
 		_report("Save failed (error %d): %s" % [err, path])
 		return
 	_files.note_saved(path)
+	_remember_home()
 	_report("Saved %s" % path.get_file())
 
 
@@ -295,6 +304,7 @@ func load_view_from(path: String) -> void:
 		_report("Load failed: %s" % warnings[0])
 		return
 	_files.note_loaded(path)
+	_remember_home()
 	_resolve_once()   # push the loaded table straight into params
 	var noise: Variant = result.get("noise", null)
 	if noise is Dictionary and _noise != null:
@@ -307,6 +317,23 @@ func load_view_from(path: String) -> void:
 		_report("Loaded %s" % path.get_file())
 	else:
 		_report("Loaded %s with %d warning(s): %s" % [path.get_file(), warnings.size(), "; ".join(warnings)])
+
+
+## Put the camera (and its speed factor) back where the current file has it, or
+## at the starting view while no file is current. In Orbit, re-centre on what
+## the camera now looks at.
+func reset_camera() -> void:
+	camera.transform = _home_transform
+	camera.speed_factor = _home_speed
+	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
+		_orbit.enter()
+	var file_name := _files.display_name() if _files != null else ""
+	_report("Camera reset to %s" % (file_name if file_name != "" else "the starting view"))
+
+
+func _remember_home() -> void:
+	_home_transform = camera.transform
+	_home_speed = camera.speed_factor
 
 
 ## Cmd/Ctrl+P: put the fractal (without any UI) on the clipboard.

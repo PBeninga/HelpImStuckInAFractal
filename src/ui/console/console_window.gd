@@ -27,6 +27,8 @@ signal toggle_requested
 signal unhandled_key(event: InputEventKey)
 ## The zoom level changed (by a key or set_zoom()).
 signal zoom_changed(zoom: float)
+## The Movement pane's Reset camera button was pressed.
+signal reset_camera_requested
 
 ## In points (logical units); UiScale.px turns them into window pixels.
 const DEFAULT_SIZE := Vector2i(1000, 700)
@@ -70,6 +72,7 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_movement.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_movement.size_flags_vertical = Control.SIZE_FILL
 	_movement.setup(keymap, clock, speed_source)
+	_movement.reset_camera_requested.connect(reset_camera_requested.emit)
 	split.add_child(_movement)
 
 	_ctrl.typing_guard = func() -> bool: return TextFocus.any([self])
