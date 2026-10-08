@@ -101,13 +101,15 @@ func run() -> void:
 	main._update_mouse()
 
 	# The same with real clicks through the root, where the console is embedded
-	# in the main window: a click on the console is the console's own, a click
-	# on the view beside it recaptures, and the console stays open throughout.
+	# in the main window (headless has no native sub-windows; on the desktop it
+	# is its own OS window): a click on the console is the console's own, a
+	# click on the view beside it recaptures, and the console stays open.
 	var ui := UiDriver.new(self)
 	await ui.setup()
 	_tap_ctrl(main)
 	await frames(1)
-	check(console.visible and console.is_embedded(), "the console opens embedded in the main window")
+	check(console.force_native, "the console asks to be a native OS window")
+	check(console.visible and console.is_embedded(), "headless, it falls back to embedded in the main window")
 	await ui.click(console.inspector().row(&"box_scale").get_child(0) as Control)
 	check(console.visible and not main.is_mouse_captured(),
 		"a click on the console stays in the console: it is open and the mouse is still free")

@@ -3,7 +3,7 @@ extends "res://tests/test_case.gd"
 ## scales a native window and leaves an embedded one (and a stretched one) alone;
 ## px() converts logical units; fit_main_window() keeps a default-sized main
 ## window at its point size once; center_over() centres an embedded window in
-## its embedder.
+## its embedder; beside_position() keeps a native window off the main window.
 
 
 func run() -> void:
@@ -91,3 +91,22 @@ func run() -> void:
 		"a window bigger than its embedder is pinned top-left, title bar still visible")
 	holder.queue_free()
 	await frames(1)
+
+	# --- beside_position: never over the parent while there is room elsewhere ---
+	UiScale.override = 1.0
+	var parent := Rect2i(100, 100, 1280, 800)
+	var wide: Array[Rect2i] = [Rect2i(0, 0, 3000, 1200)]
+	check_eq(UiScale.beside_position(Vector2i(1000, 700), 28, parent, wide), Vector2i(1388, 100),
+		"right of the parent, a gap away, top-aligned")
+	var left_room: Array[Rect2i] = [Rect2i(-1200, 0, 2600, 1200)]
+	check_eq(UiScale.beside_position(Vector2i(1000, 700), 28, parent, left_room), Vector2i(-908, 100),
+		"left of the parent when the right has no room")
+	var laptop: Array[Rect2i] = [Rect2i(0, 25, 1728, 1080), Rect2i(1728, 0, 1920, 1080)]
+	check_eq(UiScale.beside_position(Vector2i(1000, 700), 28, Rect2i(224, 150, 1280, 800), laptop),
+		Vector2i(1728 + 460, 28 + 176), "centred on another screen when neither side fits")
+	var alone: Array[Rect2i] = [laptop[0]]
+	check_eq(UiScale.beside_position(Vector2i(1000, 700), 28, Rect2i(300, 150, 1280, 800), alone),
+		Vector2i(0, 150), "no room anywhere: against the screen edge with more room")
+	check_eq(UiScale.beside_position(Vector2i(1000, 700), 28, Rect2i(100, 800, 1280, 800), wide).y, 500,
+		"kept on screen vertically")
+	UiScale.override = 0.0

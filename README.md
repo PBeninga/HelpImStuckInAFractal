@@ -27,20 +27,24 @@ binary.
 
 ## Controls
 
-Tap **Ctrl** to open the **console**: the **Shape** inspector, with a row for
+Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** inspector, with a row for
 every Mandelbox knob, stacked above the **Movement** pane of virtual axes.
 Everything the console does not own is driven directly by the mouse and
 keyboard. Press **Escape** to pause: the pause menu offers Save view / Load
 view, the Camera mode, Fast Controls, Console and Noise editor buttons, and
 Resume / Settings / Back to Menu; Escape again steps back out.
 
-The console and the noise editor are windows **inside the main window**, always
-drawn above the view: drag one by its title bar, close it with its ✕, and
-enlarge or maximise the main window when you want more room for them. (They
-cannot be dragged to another monitor: separate OS windows corrupted the main
-window's picture on macOS.) An open window takes the keyboard, but the keys it
-does not use — Escape, N, a Ctrl tap, ⌘S, ⌘P — still reach the game; pausing
-tucks the windows away and resuming brings them back.
+The console opens **beside** the main window — or on another monitor when
+there is no room beside it — and can be dragged anywhere. Keep it off the main
+window: on macOS (Godot 4.6.1, GL Compatibility) a separate window overlapping
+the main one corrupts its picture (the fractal squeezed into the uncovered
+strip, or black) until it is moved away. On a single laptop screen with the
+main window at its default size there is no room beside it, so shrink the main
+window or drag the console aside. (On the web it is a window inside the page.)
+The noise editor is a window **inside the main window**, always drawn above the
+view: drag it by its title bar, close it with its ✕. An open window takes the
+keyboard, but the keys it does not use — Escape, N, a Ctrl tap, ⌘S, ⌘P — still
+reach the game; pausing tucks the windows away and resuming brings them back.
 
 **Settings** (from the title menu or the pause menu) has two tabs.
 
@@ -99,7 +103,7 @@ still frame always renders at full quality. The console's Movement pane shows
 | **Shift** (hold) | sprint — multiply the travel speed by 4 while held |
 | mouse move | mouse-look while captured (yaw about world +Z, pitch about the camera's right; no roll) |
 | mouse wheel | adjust the speed factor (×1.25 per tick up, ÷1.25 down; clamped 0.01–100) |
-| click | with the mouse free, click the view to recapture the mouse (and close the noise editor); the console stays open over the view so its readouts stay in sight. A click on the console itself stays in the console |
+| click | with the mouse free, click the view to recapture the mouse (and close the noise editor); the console stays open so its readouts stay in sight. A click on the console itself stays in the console |
 
 Movement speed scales with the distance to the nearest surface — roughly one
 second covers the gap to whatever you are looking at — so flight stays usable
@@ -121,7 +125,7 @@ captured in this mode.
 ### Console (Ctrl)
 
 A Ctrl tap (or the pause menu's **Console…** button) opens the console, a
-window inside the main window: the **Shape** pane on top, taking the full width
+separate OS window: the **Shape** pane on top, taking the full width
 and most of the height, and the **Movement** pane below it at its natural
 height (drag the bar between them to share the height differently).
 
@@ -229,7 +233,7 @@ to the **Output** node does two things to the picture, live as you edit:
 - **Tint** — the surface colour is blended toward the Output's **Tint colour** by
   the field, scaled by **Tint strength**.
 
-The editor is a window inside the main window, like the console: drag it by its
+The editor is a window inside the main window (unlike the console): drag it by its
 title bar; its ✕, or N or Escape while it has the keyboard, closes it. Opening
 the editor frees the mouse; a click in the view in Fly mode closes it and
 recaptures. **Orbit** mode (Camera dropdown) is the
@@ -294,7 +298,7 @@ The UI suites drive the real widgets the way a player does, still headless.
 `tests/ui_driver.gd` (`UiDriver`) turns the 64x64 headless root into a
 1280x800 logical surface and pushes synthetic mouse, wheel, trackpad-pan and
 key events through the root at window-aware global coordinates, so clicks
-land in the embedded console and noise windows, their dropdown popups and
+land in the console and noise windows (embedded, headless), their dropdown popups and
 file panels through Godot's own hit-testing. `ui_driver_test.gd` checks each
 primitive; `ui_console_test.gd` scrolls the Shape list, picks dropdown items,
 clicks and drags sliders, types values and edits axes; `ui_noise_test.gd` adds
