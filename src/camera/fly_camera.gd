@@ -2,12 +2,25 @@ class_name FlyCamera
 extends Node
 ## Free-fly camera: mouse-look (yaw about world +Z, pitch about the camera's own
 ## right, no roll) and WASD + Space/Backspace (up/down) movement whose speed
-## scales with the distance to the nearest surface; holding Shift sprints.
-## Reads and writes a shared CameraState.
+## follows how far away the surface straight ahead is (the CenterRay), capped
+## by the distance to the nearest surface in any direction. Holding Shift
+## sprints and keeps accelerating; letting go of Shift eases back down, and
+## letting go of every move key stops dead. Reads and writes a shared
+## CameraState.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
-const SPRINT_MULTIPLIER := 4.0               # Shift (the "sprint" action) scales travel speed
+## The centre-ray distance may raise the speed to at most this many times the
+## nearest-surface distance, so flying alongside a wall while looking down a
+## long corridor cannot carry you sideways through the wall.
+const NEAR_CAP := 10.0
+## Sprint ("sprint", Shift) starts at SPRINT_MULTIPLIER, doubles every
+## SPRINT_DOUBLING seconds held, and stops growing at SPRINT_MAX. Released, the
+## boost halves every BOOST_HALVING seconds back down to 1.
+const SPRINT_MULTIPLIER := 4.0
+const SPRINT_DOUBLING := 1.0
+const SPRINT_MAX := 1000.0
+const BOOST_HALVING := 0.5
 
 var enabled := false
 ## The load shedder's cap on travel speed: 1.0 normally, lower at its top level.
@@ -15,14 +28,20 @@ var speed_limit := 1.0
 
 var _params: FractalParams
 var _camera: CameraState
+var _ray: CenterRay
+## The sprint multiplier on the base speed: 1 at rest, see step_boost().
+var _boost := 1.0
 ## Viewports whose text focus silences WASD, so typing in the console or a
 ## panel never flies the camera. Set by Main; empty for a standalone camera.
 var _text_viewports: Array = []
 
 
-func setup(params: FractalParams, camera: CameraState) -> void:
+## `ray` is the view's centre ray, so the speed and the probe dot share one
+## march; a standalone camera makes its own.
+func setup(params: FractalParams, camera: CameraState, ray: CenterRay = null) -> void:
 	_params = params
 	_camera = camera
+	_ray = ray if ray != null else CenterRay.new(params, camera)
 
 
 ## The viewports (main window + console) whose text focus silences movement.
@@ -55,6 +74,7 @@ func _physics_process(delta: float) -> void:
 	if not enabled:
 		return
 	var dir := move_direction()
+	step_boost(delta, dir.length() > 0.0, Input.is_action_pressed("sprint"))
 	if dir.length() == 0.0:
 		return
 	var t := _camera.transform
@@ -98,15 +118,37 @@ func move_direction() -> Vector3:
 	return dir
 
 
-## Travel speed: ~one second covers the distance to the nearest surface, times
-## the load shedder's speed_limit. Holding Shift (the "sprint" action)
-## multiplies it by SPRINT_MULTIPLIER.
+## Travel speed: base_speed() times the sprint boost.
 func current_speed() -> float:
-	var d := DistanceEstimator.estimate(_camera.eye(), _params)
-	var speed := clampf(d, 1e-6, 20.0) * _camera.speed_factor * speed_limit
-	if Input.is_action_pressed("sprint"):
-		speed *= SPRINT_MULTIPLIER
-	return speed
+	return base_speed() * _boost
+
+
+## Speed before sprinting: ~one second covers the distance to the surface
+## straight ahead, but never more than NEAR_CAP times the distance to the
+## nearest surface (a miss, at infinity, takes the cap), times the speed factor
+## and the load shedder's speed_limit.
+func base_speed() -> float:
+	var near := DistanceEstimator.estimate(_camera.eye(), _params)
+	var d := minf(_ray.distance(), near * NEAR_CAP)
+	return clampf(d, 1e-6, 20.0) * _camera.speed_factor * speed_limit
+
+
+## The current sprint multiplier (1 when not sprinting).
+func boost() -> float:
+	return _boost
+
+
+## Advance the sprint boost by `delta` seconds. Not moving: back to 1 at once,
+## so letting go of the move keys stops dead and the next start is gentle.
+## Sprinting: at least SPRINT_MULTIPLIER, doubling every SPRINT_DOUBLING s up to
+## SPRINT_MAX. Moving without Shift: halving every BOOST_HALVING s down to 1.
+func step_boost(delta: float, moving: bool, sprinting: bool) -> void:
+	if not moving:
+		_boost = 1.0
+	elif sprinting:
+		_boost = minf(maxf(_boost, SPRINT_MULTIPLIER) * pow(2.0, delta / SPRINT_DOUBLING), SPRINT_MAX)
+	else:
+		_boost = maxf(_boost * pow(0.5, delta / BOOST_HALVING), 1.0)
 
 
 func scroll(up: bool) -> void:

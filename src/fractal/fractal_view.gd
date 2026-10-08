@@ -9,12 +9,23 @@ extends Control
 ## so the still frame is sharp on a HiDPI screen.
 
 const TAN_HALF_FOV := 0.36397023426620234  # tan(20 degrees), half of a 40 deg vertical FOV
+## The probe dot's radius as a fraction of its distance: about 5 px across the
+## 800 px-high view's 40 deg field, whatever the distance.
+const PROBE_ANGULAR_RADIUS := 0.005
 
 ## A noise rebuild failed to compile, or recovered. "" means all clear. The panel
 ## shows the message on its status line; the console gets it too.
 signal noise_status(text: String)
 
 var render_scale := 1.0
+## Paint the centre-ray probe's dot on the surface (see CenterRay).
+var show_probe := false:
+	set(v):
+		if v == show_probe:
+			return
+		show_probe = v
+		_push_probe()
+		request_frame()
 var continuous := false
 ## The governor's load-shed level (0 = full quality); see set_load_level().
 var load_level := 0
@@ -34,6 +45,7 @@ var _base_shader: Shader
 var _base_code := ""
 var _noise_graph: NoiseGraph
 var _shed: Dictionary = LoadShedder.settings(0)
+var _center_ray: CenterRay
 
 
 func _ready() -> void:
@@ -62,12 +74,17 @@ func _ready() -> void:
 		_push_params()
 	if _camera != null:
 		_push_camera()
+		_push_probe()
 	if _noise_graph != null:
 		_rebuild_noise()
 	request_frame()
 
 
 func setup(params: FractalParams, camera: CameraState) -> void:
+	if _center_ray == null or params != _params or camera != _camera:
+		# Made before the view connects its own handlers, so the ray has heard
+		# of a change before the view asks it where the dot goes.
+		_center_ray = CenterRay.new(params, camera)
 	_params = params
 	_camera = camera
 	if not params.changed.is_connected(_on_params_changed):
@@ -76,7 +93,14 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 		camera.changed.connect(_on_camera_changed)
 	_push_params()
 	_push_camera()
+	_push_probe()
 	request_frame()
+
+
+## The ray through the middle of the screen, shared with the fly camera so the
+## speed and the dot come from one march. null before setup().
+func center_ray() -> CenterRay:
+	return _center_ray
 
 
 ## Show a noise field on the fractal. The view listens to the graph: a structural
@@ -152,6 +176,7 @@ func _rebuild_noise() -> void:
 func _repush_all() -> void:
 	_push_params()
 	_push_camera()
+	_push_probe()
 	if _material != null:
 		_material.set_shader_parameter("aspect", _aspect())
 	_push_noise()
@@ -279,12 +304,28 @@ func _content_scale() -> float:
 
 func _on_params_changed() -> void:
 	_push_params()
+	_push_probe()
 	request_frame()
 
 
 func _on_camera_changed() -> void:
 	_push_camera()
+	_push_probe()
 	request_frame()
+
+
+## The probe dot: on while shown and the centre ray hits, at the hit point,
+## sized to stay the same on screen. Marches only while shown (the fly camera
+## asks for the distance itself while it moves).
+func _push_probe() -> void:
+	if _material == null:
+		return
+	var on := show_probe and _center_ray != null and _center_ray.hit()
+	_material.set_shader_parameter("probe_on", on)
+	if on:
+		_material.set_shader_parameter("probe_point", _center_ray.point())
+		_material.set_shader_parameter("probe_radius",
+			maxf(_center_ray.distance() * PROBE_ANGULAR_RADIUS, 1e-12))
 
 
 func _push_params() -> void:

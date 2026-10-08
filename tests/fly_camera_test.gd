@@ -49,19 +49,57 @@ func run() -> void:
 	await frames(1)
 	check(under_cmd == Vector3.ZERO, "no movement while Cmd is held (got %s)" % under_cmd)
 
-	# --- speed equals D(eye) * factor within [1e-6, 20] * factor ---
+	# --- speed is min(centre ray, NEAR_CAP x D(eye)) within [1e-6, 20], times the factor ---
 	var params: FractalParams = ctx[0]
-	var expected := clampf(DistanceEstimator.estimate(cam.eye(), params), 1e-6, 20.0) * cam.speed_factor
-	check_approx(fly.current_speed(), expected, "speed is clamped D(eye) * factor", 1e-6)
+	var near := DistanceEstimator.estimate(cam.eye(), params)
+	var ahead: float = CenterRay.march(cam.eye(), cam.forward(), params)[0]
+	var expected := clampf(minf(ahead, near * FlyCamera.NEAR_CAP), 1e-6, 20.0) * cam.speed_factor
+	check_approx(fly.current_speed(), expected, "speed follows the centre ray, capped by the nearest surface", 1e-6)
+	check(fly.current_speed() > clampf(near, 1e-6, 20.0) * cam.speed_factor,
+		"the default view looks further than its nearest surface, so it flies faster than D(eye)")
 
-	# --- holding Shift ("sprint") multiplies the travel speed by SPRINT_MULTIPLIER ---
+	# --- sprint: x4 at once, doubling each second held, capped; eases off when
+	# Shift is let go; stops dead when the move keys are ---
 	var base_speed := fly.current_speed()
-	Input.action_press("sprint")
-	var sprint_speed := fly.current_speed()
-	Input.action_release("sprint")
-	check_approx(sprint_speed, base_speed * FlyCamera.SPRINT_MULTIPLIER,
-		"sprint multiplies the speed", 1e-6)
-	check_approx(fly.current_speed(), base_speed, "releasing sprint restores the speed", 1e-6)
+	fly.step_boost(1.0 / 60.0, true, true)
+	check(fly.boost() >= FlyCamera.SPRINT_MULTIPLIER and fly.boost() < FlyCamera.SPRINT_MULTIPLIER * 1.1,
+		"the first sprint frame jumps to about SPRINT_MULTIPLIER (got %s)" % fly.boost())
+	check_approx(fly.current_speed(), base_speed * fly.boost(), "current speed is base x boost", 1e-9)
+	var b0 := fly.boost()
+	fly.step_boost(FlyCamera.SPRINT_DOUBLING, true, true)
+	check_approx(fly.boost(), b0 * 2.0, "holding Shift doubles the boost every SPRINT_DOUBLING s", 1e-6)
+	for i in 600:
+		fly.step_boost(1.0 / 60.0, true, true)   # ten more seconds
+	check_approx(fly.boost(), FlyCamera.SPRINT_MAX, "the boost tops out at SPRINT_MAX")
+	fly.step_boost(FlyCamera.BOOST_HALVING, true, false)
+	check_approx(fly.boost(), FlyCamera.SPRINT_MAX * 0.5, "releasing Shift halves it every BOOST_HALVING s", 1e-6)
+	fly.step_boost(1.0 / 60.0, true, true)
+	check(fly.boost() > FlyCamera.SPRINT_MAX * 0.5, "Shift again picks the climb back up from there")
+	for i in 600:
+		fly.step_boost(1.0 / 60.0, true, false)
+	check_approx(fly.boost(), 1.0, "without Shift it eases all the way back to 1, no lower")
+	fly.step_boost(1.0 / 60.0, true, true)
+	fly.step_boost(1.0, true, true)
+	fly.step_boost(1.0 / 60.0, false, true)
+	check_approx(fly.boost(), 1.0, "letting go of every move key drops the boost to 1 at once")
+	check_approx(fly.current_speed(), base_speed, "so the next start is at the base speed", 1e-9)
+
+	# --- the physics step really moves by speed x dt, and not at all with no keys ---
+	var before := cam.eye()
+	fly.enabled = true
+	await physics_frame
+	check(cam.eye() == before, "no move keys: the camera does not move")
+	Input.action_press("move_forward")
+	await physics_frame
+	Input.action_release("move_forward")
+	check(cam.eye() != before and (cam.eye() - before).normalized().is_equal_approx(cam.forward()),
+		"move_forward flies along forward")
+	await physics_frame
+	var stopped := cam.eye()
+	await physics_frame
+	check(cam.eye() == stopped, "and stops on the frame the key is released")
+	fly.enabled = false
+	cam.transform = CameraState.make_default().transform
 
 	# --- the wheel scales the factor by 1.25, clamped to [0.01, 100] ---
 	var f0 := cam.speed_factor

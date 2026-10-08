@@ -26,6 +26,12 @@ uniform int fine_steps;
 // into fog_color on the way there. fog_dist 0 is no fog.
 uniform float fog_dist;
 uniform vec3 fog_color;
+// The centre-ray probe: a dot painted on the surface where the ray through the
+// middle of the screen hits (CenterRay, marched on the CPU). Off when the probe
+// is hidden or the ray misses.
+uniform bool probe_on;
+uniform vec3 probe_point;
+uniform float probe_radius;
 
 // --- shape uniforms (names == catalogue ids) ---
 uniform float box_scale;
@@ -110,6 +116,19 @@ float fog_amount(float t) {
 	if (fog_dist <= 0.0) { return 0.0; }
 	float t_fog = fog_dist * near_dist;
 	return smoothstep(0.35 * t_fog, t_fog, t);
+}
+
+// The probe dot over a surface colour at hit point v: a white disc of radius
+// probe_radius around probe_point with a thin dark rim, so it reads on bright
+// surfaces too. Measured in world space, it lies on the geometry and stretches
+// across a slanted surface.
+vec3 probe_dot(vec3 col, vec3 v) {
+	if (!probe_on) { return col; }
+	float r = length(v - probe_point) / probe_radius;
+	if (r >= 1.0) { return col; }
+	float rim = smoothstep(0.55, 0.7, r) * (1.0 - smoothstep(0.85, 1.0, r));
+	vec3 dot_col = mix(vec3(1.0), vec3(0.0), rim);
+	return mix(dot_col, col, smoothstep(0.85, 1.0, r));
 }
 
 // Reflect every component that leaves [-L, L] back inside.
@@ -340,7 +359,8 @@ void fragment() {
 			float ce = n2 == fine_steps ? 1.0 : min(float(n1 + n2) / 128.0, 1.0);
 			float inv = 1.0 - ce;
 			if (color_mode == 0) {
-				COLOR = vec4(mix(vec3(inv), fog_color, fog_amount(total)), 1.0);  // Grayscale needs no normal: stay cheap
+				// Grayscale needs no normal: stay cheap
+				COLOR = vec4(probe_dot(mix(vec3(inv), fog_color, fog_amount(total)), eye + dir * total), 1.0);
 			} else {
 				vec3 v = eye + dir * total;
 			vec3 h = v * 0.5;
@@ -414,7 +434,7 @@ void fragment() {
 					float luma = dot(col, vec3(0.299, 0.587, 0.114));
 					col = mix(vec3(luma), col, saturation);
 				}
-				COLOR = vec4(mix(noise_tint(col, v), fog_color, fog_amount(total)), 1.0);
+				COLOR = vec4(probe_dot(mix(noise_tint(col, v), fog_color, fog_amount(total)), v), 1.0);
 			}
 		}
 	}
