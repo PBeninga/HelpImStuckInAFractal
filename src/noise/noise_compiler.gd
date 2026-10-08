@@ -123,6 +123,16 @@ static func compile_preview(graph: NoiseGraph, node_id: StringName, port: int) -
 		+ body + color_line + "}\n"
 
 
+## Whether `graph` moves the fractal's surface: something is wired to the
+## Output's Displace input and its Amplitude is not 0. A Tint-only graph
+## colours the surface without moving it. Null is no graph.
+static func displaces(graph: NoiseGraph) -> bool:
+	if graph == null or graph.input_link(graph.output_id(), 0).is_empty():
+		return false
+	var out_state := graph.node(graph.output_id())
+	return out_state != null and float(out_state.table.get_value(&"amplitude")) != 0.0
+
+
 ## {uniform name: value} for every live parameter in the graph, for pushing to a
 ## material without a recompile. Covers every FLOAT param of every node plus the
 ## Output's three floats and its tint colour; names the current shader does not

@@ -289,6 +289,43 @@ static func group_tooltips() -> Dictionary:
 	}
 
 
+## Whether the shape is exactly self-similar, so a deep zoom could in principle
+## be rendered from a magnified copy of a shallower region of the same shape
+## (see docs/reference/self-similar-substitution.md). `values` maps catalogue
+## ids to resolved values (missing ids read as their defaults); `displaced` is
+## whether a noise field moves the surface (NoiseCompiler.displaces). Returns
+## {"qualifies": bool, "reason": String}. Pure: reads nothing else.
+##
+## One iteration is z -> scale * fold(z) + c, and a set fixed by it (Julia mode)
+## maps onto itself: the structure around a point is the next iterate's
+## structure, magnified. That needs c fixed in x, y and z (its w is the slice's
+## own W, the same at every pixel, so it counts as fixed either way), an
+## iteration that magnifies somewhere (|scale| times the sphere fold's largest
+## gain, (fixed / min radius)^2, above 1), and no noise displacement (a
+## position-based field is not carried along by the iteration). Iteration
+## rotation is linear and keeps it.
+static func self_similarity(values: Dictionary, displaced := false) -> Dictionary:
+	if displaced:
+		return {"qualifies": false, "reason": "noise field displaces the surface"}
+	var all := bool(values.get(&"julia_all", false))
+	var follow: Array[String] = []
+	for i in 3:
+		if not all and not bool(values.get(StringName("julia_%d" % i), false)):
+			follow.append(AXES[i])
+	if follow.size() == 3:
+		return {"qualifies": false, "reason": "c follows the point"}
+	if not follow.is_empty():
+		return {"qualifies": false, "reason": "partial Julia: c follows the point in %s" % ", ".join(follow)}
+	var scale := absf(float(values.get(&"box_scale", -2.09)))
+	var mr := maxf(float(values.get(&"min_radius", 0.7)), 1e-6)   # the shader floors mr^2 at 1e-12
+	var fr := maxf(float(values.get(&"fixed_radius", 1.0)), 1e-6)
+	if scale * maxf(1.0, (fr * fr) / (mr * mr)) <= 1.0:
+		return {"qualifies": false, "reason": "no iteration magnifies (|scale| too small)"}
+	if all or bool(values.get(&"julia_3", false)):
+		return {"qualifies": true, "reason": "Julia: all four c fixed"}
+	return {"qualifies": true, "reason": "Julia: x, y, z fixed (w is the slice's own)"}
+
+
 ## Every catalogue id, in order. Equals the shader's shape-uniform set.
 static func catalogue_ids() -> Array[StringName]:
 	var out: Array[StringName] = []

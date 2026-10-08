@@ -3,7 +3,9 @@ extends "res://tests/test_case.gd"
 ## in range, ids unique, every group has a heading, and the id set is the
 ## expected 47 catalogue ids; the lighting defaults are the site's constants;
 ## the Palette mode's rows show only in that mode; the console's two tabs
-## between them show every group exactly once.
+## between them show every group exactly once; self_similarity() says which
+## shapes are exactly self-similar (Julia with c fixed in x, y and z, a
+## magnifying iteration, no noise displacement) and why.
 
 const EXPECTED_IDS := [
 	&"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order", &"w",
@@ -104,3 +106,65 @@ func run() -> void:
 	check(not c0.is_shown({&"julia_all": false, &"julia_0": false}), "c_0 hidden with no Julia on")
 	check(c0.is_shown({&"julia_all": false, &"julia_0": true}), "c_0 shown when julia_0 is on")
 	check(c0.is_shown({&"julia_all": true, &"julia_0": false}), "c_0 shown when julia_all is on")
+
+	_self_similarity(table)
+
+
+func _self_similarity(table: AttributeTable) -> void:
+	var defaults := table.defaults()
+	var r := MandelboxShape.self_similarity(defaults)
+	check(r.has("qualifies") and r.has("reason"), "self_similarity returns {qualifies, reason}")
+	check(not r["qualifies"], "the default Mandelbox (c follows the point) does not qualify")
+	check_eq(r["reason"], "c follows the point", "and says why")
+
+	var julia := defaults.duplicate()
+	julia[&"julia_all"] = true
+	r = MandelboxShape.self_similarity(julia)
+	check(r["qualifies"], "Julia (all) qualifies")
+	check_eq(r["reason"], "Julia: all four c fixed", "with all four c fixed")
+
+	var four := defaults.duplicate()
+	for i in 4:
+		four[StringName("julia_%d" % i)] = true
+	r = MandelboxShape.self_similarity(four)
+	check(r["qualifies"], "all four per-component toggles qualify too")
+	check_eq(r["reason"], "Julia: all four c fixed", "for the same reason")
+
+	var xyz := defaults.duplicate()
+	for i in 3:
+		xyz[StringName("julia_%d" % i)] = true
+	xyz[&"w"] = 0.3
+	r = MandelboxShape.self_similarity(xyz)
+	check(r["qualifies"], "x, y, z fixed qualifies: c's w is the slice's W, the same everywhere")
+	check(String(r["reason"]).contains("x, y, z fixed"), "and says so (%s)" % r["reason"])
+
+	var partial := defaults.duplicate()
+	partial[&"julia_0"] = true
+	r = MandelboxShape.self_similarity(partial)
+	check(not r["qualifies"], "partial Julia (x only) does not qualify")
+	check_eq(r["reason"], "partial Julia: c follows the point in y, z", "and names the components that follow")
+
+	var rotated := julia.duplicate()
+	rotated[&"iter_rot_xy"] = 5.0
+	rotated[&"iter_rot_xw"] = 3.0
+	check(MandelboxShape.self_similarity(rotated)["qualifies"], "iteration rotation keeps Julia self-similar")
+
+	r = MandelboxShape.self_similarity(julia, true)
+	check(not r["qualifies"], "a noise displacement disqualifies even Julia")
+	check_eq(r["reason"], "noise field displaces the surface", "and says so")
+
+	var flat := julia.duplicate()
+	flat[&"box_scale"] = 0.8
+	flat[&"min_radius"] = 1.0
+	flat[&"fixed_radius"] = 1.0
+	r = MandelboxShape.self_similarity(flat)
+	check(not r["qualifies"], "|scale| 0.8 with no sphere-fold gain never magnifies: no deeper copy to use")
+	check(String(r["reason"]).contains("magnif"), "and says so (%s)" % r["reason"])
+	flat[&"min_radius"] = 0.5
+	check(MandelboxShape.self_similarity(flat)["qualifies"],
+		"the same scale with an inner-sphere gain of 4 magnifies, so it qualifies")
+	var neg := julia.duplicate()
+	neg[&"box_scale"] = -1.5
+	check(MandelboxShape.self_similarity(neg)["qualifies"], "a negative scale counts by its size")
+
+	check(not MandelboxShape.self_similarity({})["qualifies"], "an empty dictionary reads as the default (c follows)")
