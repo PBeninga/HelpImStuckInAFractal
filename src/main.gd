@@ -255,13 +255,16 @@ func _process(_delta: float) -> void:
 
 
 ## Resolve the shape table + axis values + clock into params, and feed the
-## console's readouts. Cheap (about thirty scalars); apply_resolved emits at
-## most once, and nothing when no binding is active.
+## console's readouts (the rows and the Shape tab's self-similarity line).
+## Cheap (about thirty scalars); apply_resolved emits at most once, and nothing
+## when no binding is active.
 func _resolve_once() -> void:
 	var values := BindingResolver.resolve(_table, _keymap.axes().values(), _clock.t)
 	params.apply_resolved(values)
 	if _console != null and _console.visible:
 		_console.set_resolved(values)
+		_console.show_self_similarity(MandelboxShape.self_similarity(
+			values, NoiseCompiler.displaces(view.noise_graph())))
 
 
 # ------------------------------------------------------------- save / load

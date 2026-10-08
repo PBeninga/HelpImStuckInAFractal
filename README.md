@@ -140,8 +140,13 @@ natural height (drag the bar between them to share the height differently).
 controls, a step at a time from 50% to 200%, and **⌘0** resets; the window keeps
 its size and the panes reflow. The zoom is remembered between runs.
 
-**Shape tab.** One row per Mandelbox knob, grouped **Box** / **Julia** /
-**Iteration rotation** / **Render**:
+**Shape tab.** A read-only **Self-similar: yes / no (reason)** line heads the
+tab: whether the current shape is exactly self-similar (Julia mode with the
+constant fixed in x, y and z, an iteration that magnifies, no noise
+displacement), following the shape and the noise graph live. It is
+information only; [docs/reference/self-similar-substitution.md](docs/reference/self-similar-substitution.md)
+explains what it means for deep zoom. Below it, one row per Mandelbox knob,
+grouped **Box** / **Julia** / **Iteration rotation** / **Render**:
 
 - **Box** — Scale, Fold limit, Min radius, Fixed radius, Fold order (Box→Sphere
   or Sphere→Box) and **W**, the fourth coordinate of the 4D sample point (0 is

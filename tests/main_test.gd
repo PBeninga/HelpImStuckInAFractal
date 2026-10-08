@@ -296,6 +296,28 @@ func run() -> void:
 	check_eq(nw.graph().nodes.size(), 3, "loading the view restored the noise graph")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ntmp))
 
+	# the console's Shape tab says whether the shape is self-similar, and follows
+	# both the shape and the noise graph (the loaded graph displaces the surface)
+	console.open()
+	await frames(1)
+	var ss := console.self_similarity_label()
+	check_eq(ss.text, "Self-similar: no (noise field displaces the surface)", "a displacing noise field is never self-similar")
+	nw.editor().new_requested.emit()
+	await frames(1)
+	check_eq(ss.text, "Self-similar: no (c follows the point)", "with the field gone, the default Mandelbox still is not")
+	main.table().set_default(&"julia_all", true)
+	await frames(1)
+	check_eq(ss.text, "Self-similar: yes (Julia: all four c fixed)", "Julia (all) is, and the line follows the shape")
+	var dvn: StringName = nw.graph().add_node(&"value_noise", Vector2(200, 200))
+	nw.graph().connect_ports(nw.graph().position_id(), 0, dvn, 0)
+	nw.graph().connect_ports(dvn, 0, nw.graph().output_id(), 0)
+	await frames(1)
+	check_eq(ss.text, "Self-similar: no (noise field displaces the surface)", "wiring Displace turns it off again")
+	nw.editor().new_requested.emit()
+	main.table().set_default(&"julia_all", false)
+	await frames(1)
+	console.hide_console()
+
 	# the View tab's Renderer options edit the view's params
 	main.params.camera_mode = FractalParams.CameraMode.FLY
 	await frames(1)

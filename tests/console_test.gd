@@ -3,7 +3,8 @@ extends "res://tests/test_case.gd"
 ## source dropdown lists the axes and updates on Keymap.changed; the readout
 ## follows set_resolved; the Movement pane adds, rebinds and removes an axis
 ## through the API and the key-capture button; a Ctrl tap emits toggle_requested;
-## the zoom steps, clamps, signals and follows the Cmd/Ctrl chords.
+## the zoom steps, clamps, signals and follows the Cmd/Ctrl chords; the Shape
+## tab's self-similarity line shows what it is given.
 
 
 func _ctrl(pressed: bool) -> InputEventKey:
@@ -60,6 +61,16 @@ func run() -> void:
 	check(console.palette_window() != null and console.palette_window().get_parent() != null
 		and colour.is_ancestor_of(console.palette_window()), "the palette window heads the Colour tab's list")
 	check(console.palette().table() == table, "and edits the console's own table")
+
+	# --- the self-similarity line: read-only, at the head of the Shape tab ---
+	var ss := console.self_similarity_label()
+	check(ss != null and inspector.is_ancestor_of(ss), "the self-similarity line is on the Shape tab")
+	check(ss != null and ss.get_index() == 0, "at the head of its list, above the Box rows")
+	check(ss != null and ss.tooltip_text.contains("self-similar"), "with a tooltip saying what it means")
+	console.show_self_similarity({"qualifies": true, "reason": "Julia: all four c fixed"})
+	check_eq(ss.text, "Self-similar: yes (Julia: all four c fixed)", "a qualifying shape reads yes, with the reason")
+	console.show_self_similarity({"qualifies": false, "reason": "c follows the point"})
+	check_eq(ss.text, "Self-similar: no (c follows the point)", "a shape that does not reads no, with the reason")
 
 	# --- a row edit lands in the table ---
 	inspector.row(&"box_scale").spin_box().value = 1.0
