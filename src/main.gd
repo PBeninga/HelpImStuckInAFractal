@@ -9,7 +9,8 @@ extends Node
 ## mouse; a Ctrl tap opens the console, whose View tab holds Save / Load, the
 ## camera mode, the renderer and Back to Menu. Reset camera (in the Movement
 ## pane and the View tab's Renderer options) puts the camera back where the
-## current file has it.
+## current file has it. R shows or hides the centre-ray probe dot (a Settings
+## preference).
 
 const MENU_SCENE := "res://src/ui/main_menu.tscn"
 ## The main window's size in points (logical units); see UiScale.
@@ -68,7 +69,7 @@ func _ready() -> void:
 	view.setup(params, camera)
 	governor.setup(params, view)
 	governor.shed_level_changed.connect(_on_shed_level_changed)
-	fly.setup(params, camera)
+	fly.setup(params, camera, view.center_ray())
 
 	_orbit = get_node_or_null("OrbitCamera")
 	if _orbit:
@@ -92,6 +93,7 @@ func _ready() -> void:
 	# The sensitivity is the player's, not the view's: Settings owns it.
 	params.mouse_sensitivity = Settings.mouse_sensitivity
 	_view_pane.set_sensitivity(Settings.mouse_sensitivity)
+	view.show_probe = Settings.show_center_ray
 	Settings.changed.connect(_on_settings_changed)
 	params.changed.connect(_sync_sensitivity_to_settings)
 
@@ -205,6 +207,7 @@ func back_to_menu() -> void:
 func _on_settings_changed() -> void:
 	params.mouse_sensitivity = Settings.mouse_sensitivity
 	_view_pane.set_sensitivity(Settings.mouse_sensitivity)
+	view.show_probe = Settings.show_center_ray
 
 
 func _sync_sensitivity_to_settings() -> void:
@@ -412,6 +415,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		if TextFocus.any(_focus_viewports()):
 			return
 		_toggle_noise()
+		get_viewport().set_input_as_handled()
+		return
+
+	# 1c. R shows or hides the centre-ray probe dot (not while typing).
+	if event.is_action_pressed("toggle_center_ray"):
+		if TextFocus.any(_focus_viewports()):
+			return
+		Settings.show_center_ray = not Settings.show_center_ray
 		get_viewport().set_input_as_handled()
 		return
 

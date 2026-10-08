@@ -1,6 +1,7 @@
 extends Node
 ## Player preferences that belong to the player rather than to a saved view:
-## the mouse sensitivity and the console's zoom. Autoloaded as `Settings` and kept in
+## the mouse sensitivity, the console's zoom and whether the centre-ray probe
+## dot is shown. Autoloaded as `Settings` and kept in
 ## user://settings.cfg, so it survives restarts and is not overwritten by
 ## loading a view.
 
@@ -35,6 +36,15 @@ var console_zoom := 1.0:
 		changed.emit()
 		_queue_save()
 
+## Paint the centre-ray probe's dot (R toggles it while flying).
+var show_center_ray := false:
+	set(v):
+		if v == show_center_ray:
+			return
+		show_center_ray = v
+		changed.emit()
+		_queue_save()
+
 var _save_queued := false
 
 
@@ -52,6 +62,9 @@ func load_settings() -> void:
 	var zoom: Variant = cfg.get_value("console", "zoom", 1.0)
 	if zoom is float or zoom is int:
 		console_zoom = float(zoom)
+	var probe: Variant = cfg.get_value("view", "show_center_ray", false)
+	if probe is bool:
+		show_center_ray = probe
 	_save_queued = false   # what was just read is already on disk
 
 
@@ -60,6 +73,7 @@ func save_settings() -> Error:
 	var cfg := ConfigFile.new()
 	cfg.set_value("mouse", "sensitivity", mouse_sensitivity)
 	cfg.set_value("console", "zoom", console_zoom)
+	cfg.set_value("view", "show_center_ray", show_center_ray)
 	return cfg.save(config_path)
 
 

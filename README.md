@@ -103,14 +103,19 @@ still frame always renders at full quality. The console's Movement pane shows
 | **Escape** | free the mouse (click the view to recapture). Nothing else: no pause, and the console stays as it is. While the noise editor has the keyboard, Escape closes it |
 | **W / A / S / D** | move forward / left / back / right |
 | **Space / Backspace** | move up / down (world-relative to the camera's own up) |
-| **Shift** (hold) | sprint — multiply the travel speed by 4 while held |
+| **Shift** (hold) | sprint — ×4 at once, then doubling every second held, up to ×1000. Let go of Shift and it eases back down (halving every half second); let go of every move key and you stop dead |
+| **R** | show / hide the centre-ray probe: a white dot painted on the surface straight ahead, where the speed is measured to (remembered between runs) |
 | mouse move | mouse-look while captured (yaw about world +Z, pitch about the camera's right; no roll) |
 | mouse wheel | adjust the speed factor (×1.25 per tick up, ÷1.25 down; clamped 0.01–100) |
 | click | with the mouse free, click the view to recapture the mouse (and close the noise editor); the console stays open so its readouts stay in sight. A click on the console itself stays in the console |
 
-Movement speed scales with the distance to the nearest surface — roughly one
-second covers the gap to whatever you are looking at — so flight stays usable
-from far away and slows down automatically as you approach the fractal.
+Movement speed follows the distance along the ray through the middle of the
+screen to the surface it hits — roughly one second covers the gap to whatever
+you are looking at — so flight stays usable from far away and slows down
+automatically as you approach the fractal. It is capped at 10× the distance to
+the nearest surface in any direction, so looking down a long corridor with a
+wall at your elbow cannot carry you sideways through the wall, and a ray that
+hits nothing takes that cap. The load shedder's speed cap still applies on top.
 
 ### Orbit camera
 
