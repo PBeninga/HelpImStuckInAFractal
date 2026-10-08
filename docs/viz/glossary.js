@@ -1,12 +1,12 @@
 // The viz glossary: maths, geometry and graphics terms that pane prose leans on, explained for an
-// engineer who is not a mathematician. viz.js highlights each term's first mention in every
-// tooltip blurb, subtitle, block note, card body and table cell, and hovering the highlight shows
+// engineer who is not a mathematician. viz.js colours each term's first mention in every
+// tooltip blurb, subtitle, block note, card body and table cell, and hovering the coloured term shows
 // the entry with its links. Panes need no markup for that; `[[id]]` or `[[id|shown text]]` in
 // prose marks a mention by hand.
 //
 //   id: { term, body, links: [{ url, label }], match?: [...] }
 //
-// `match` lists what to highlight: a string matches case-insensitively as a whole word (never
+// `match` lists what to mark: a string matches case-insensitively as a whole word (never
 // inside an identifier like fold_limit or a path like mandelbox.gdshader), a RegExp matches as
 // written. Without `match` the term itself is matched. Text in `backticks` is never matched.
 // Keep a body short, concrete, and tied to this project where it can be. Run

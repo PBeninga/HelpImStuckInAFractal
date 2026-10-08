@@ -10,7 +10,7 @@
   --tip-bg: #ffffff;   --link: #2a78d6;
   --pane-bg: #ffffff;
   --fig-bg: #f3f2ee;
-  --gl-bg: rgba(237, 161, 0, 0.24); --gl-line: #c98500;
+  --gl-ink: #a86200; --gl-line: #c98500;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -22,7 +22,7 @@
     --tip-bg: #232322;   --link: #3987e5;
     --pane-bg: #141413;
     --fig-bg: #20201e;
-    --gl-bg: rgba(201, 133, 0, 0.30); --gl-line: #eda100;
+    --gl-ink: #f2b84b; --gl-line: #eda100;
   }
 }
 * { box-sizing: border-box; }
@@ -147,9 +147,10 @@ header button.on { color: var(--ink); border-color: var(--c1); background: var(-
 #tooltip .t-links a { display: block; color: var(--link); font-size: 12px; }
 #tooltip code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
 /* ── glossary marks (docs/viz/glossary.js): a maths term in the prose, explained on hover ── */
-.gl-bg { fill: var(--gl-bg); cursor: help; }
-.gl { cursor: help; }
-#tooltip .gl, mark.gl-hint { color: inherit; background: var(--gl-bg); border-bottom: 1px dotted var(--gl-line); border-radius: 2px; cursor: help; }
+.gl { fill: var(--gl-ink); pointer-events: auto; cursor: help; }
+.gl:hover { text-decoration: underline; }
+#tooltip .gl, mark.gl-hint { color: var(--gl-ink); background: none; cursor: help; }
+#tooltip .gl:hover { text-decoration: underline; }
 #gloss {
   position: fixed; display: none; z-index: 12; max-width: 400px;
   background: var(--tip-bg); border: 1px solid var(--gl-line);
