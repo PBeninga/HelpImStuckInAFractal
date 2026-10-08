@@ -6,10 +6,9 @@ extends RefCounted
 ## params.shape to the Mandelbox core below, KifsEstimator or
 ## KleinianEstimator. The Mandelbox core mirrors mandelbox.gdshader's mb_step
 ## in 64-bit scalars (zx, zy, zz, zw): the fold (box, cylinder or octahedral,
-## optionally mixed toward the Menger fold), the sphere fold, optional 4D
-## iteration rotation, scale (drifting with the iteration) and add, carrying
-## the running derivative dz. Must give the same numbers as the shader's
-## `de(p, iters)`.
+## or the box-to-abs hybrid fold), the sphere fold, optional 4D iteration
+## rotation, scale (drifting with the iteration) and add, carrying the running
+## derivative dz. Must give the same numbers as the shader's `de(p, iters)`.
 ##
 ## The orbit runs in scalar `float` locals (GDScript floats are 64-bit) rather
 ## than Vector math, because Vector components are 32-bit in a standard build
@@ -32,9 +31,9 @@ static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
 		iters: int = ITERATIONS) -> float:
 	match params.shape:
 		FractalParams.Shape.KIFS:
-			return KifsEstimator.estimate_at(px, py, pz, params)
+			return KifsEstimator.estimate_at(px, py, pz, params, iters)
 		FractalParams.Shape.KLEINIAN:
-			return KleinianEstimator.estimate_at(px, py, pz, params)
+			return KleinianEstimator.estimate_at(px, py, pz, params, iters)
 	return mandelbox_at(px, py, pz, params, iters)
 
 
@@ -100,24 +99,32 @@ static func mandelbox_at(px: float, py: float, pz: float, params: FractalParams,
 
 
 
-## The fold step: the chosen fold, then (on a hybrid iteration) a mix of its
-## result toward the Menger fold of the same input. Every fold is a reflection
-## through a convex set's boundary or a sort, so each is 1-Lipschitz and so is
-## the mix: the running derivative needs no factor.
+## The fold step: the chosen fold, or on a hybrid iteration the morph from the
+## box fold toward the abs fold (see hybrid_fold). Every fold reflects through
+## a convex set's boundary, so each is 1-Lipschitz and the running derivative
+## needs no factor.
 static func _fold(z: Array, fold: float, fold_shape: int, hybrid: bool, mix: float) -> void:
-	var m := [0.0, 0.0, 0.0, 0.0]
 	if hybrid:
-		m = [z[0], z[1], z[2], z[3]]
-		menger_fold(m)
-	if fold_shape == MandelboxShape.FoldShape.CYLINDER:
+		hybrid_fold(z, fold, mix)
+	elif fold_shape == MandelboxShape.FoldShape.CYLINDER:
 		_cylinder_fold(z, fold)
 	elif fold_shape == MandelboxShape.FoldShape.OCTAHEDRAL:
 		_octahedral_fold(z, fold)
 	else:
 		_box_fold(z, fold)
-	if hybrid:
-		for k in 4:
-			z[k] = z[k] + (m[k] - z[k]) * mix
+
+
+## Reflect each component through the interval [lo, hi], which slides from the
+## box fold's [-L, L] at mix 0 to [0, infinity) at mix 1: the abs fold, KIFS's
+## fold into the positive corner. Blending the two folds' results instead would
+## cancel far from the centre (the box fold sends x to about -x, the abs fold to
+## |x|), and nothing would ever escape; a moving interval is a true fold all
+## the way.
+static func hybrid_fold(z: Array, fold: float, mix: float) -> void:
+	var lo := -fold * (1.0 - mix)
+	var hi := (fold + mix) / maxf(1.0 - mix, 1e-6)
+	for k in 4:
+		z[k] = clampf(z[k], lo, hi) * 2.0 - z[k]
 
 
 ## KIFS's coordinate fold: fold into the positive orthant, then sort x >= y >= z.

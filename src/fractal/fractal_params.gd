@@ -456,7 +456,9 @@ func julia_enabled() -> bool:
 
 ## Half the side of the origin-centred cube the rays march in (and the orbit
 ## camera aims into): the Mandelbox's 2, or 20 for its Julia sets, which reach
-## further; for the KIFS a margin over its offset, which its attractor lies
+## further, and more with a hybrid fold, whose interval [lo, hi] lets the shape
+## grow to about hi (measured: 3.2 at mix 0.5, 5.6 at 0.75, 13 at 0.9; capped
+## at 20); for the KIFS a margin over its offset, which its attractor lies
 ## within; for the Kleinian, which fills space, a cube too large to matter
 ## (view_distance() ends its rays instead).
 func bound_half() -> float:
@@ -467,7 +469,11 @@ func bound_half() -> float:
 			return maxf(2.0, 1.5 * o)
 		Shape.KLEINIAN:
 			return KLEINIAN_BOUND
-	return 20.0 if julia_all else 2.0
+	var half := 20.0 if julia_all else 2.0
+	if hybrid_mix > 0.0:
+		var hi := (fold_limit + hybrid_mix) / maxf(1.0 - hybrid_mix, 1e-6)
+		half = maxf(half, minf(1.0 + hi, 20.0))
+	return half
 
 
 ## How far from the eye a ray may go before it stops, or 0 for no limit: the

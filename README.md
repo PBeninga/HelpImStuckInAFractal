@@ -6,7 +6,7 @@ view, the four shape sliders, the thirteen colour modes, the precision control,
 Julia mode and an orbit camera. On top of the site it adds two more fractals
 ported from Fractacular — a kaleidoscopic IFS (the Menger sponge, the
 Sierpinski tetrahedron and their kin) and a pseudo-Kleinian limit set — and
-cylinder, octahedral and Menger-hybrid folds for the Mandelbox, a distance-scaled
+cylinder, octahedral and abs-fold hybrid folds for the Mandelbox, a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
 while you move, and a **console** window — a Shape inspector of every
 fractal knob with Fractacular's binding model, a Colour tab with
@@ -220,9 +220,11 @@ Rows and headings of the fractals not chosen are hidden.
 - **Box** (Mandelbox) — Scale, Fold limit, Min radius, Fixed radius, Fold order
   (Box→Sphere or Sphere→Box), **Fold shape** (Box, Cylinder — the xy radius
   folded — or Octahedral — reflected through |x|+|y|+|z| ≤ Fold limit),
-  **Hybrid mix** and **Hybrid every** (on every 1st, 2nd or 3rd iteration, blend
-  the fold toward KIFS's Menger fold: 0 is off, 1 swaps it outright; bind the
-  mix to morph) and **Scale drift** (iteration i scales by Scale + drift × i).
+  **Hybrid mix** and **Hybrid every** (on every 1st, 2nd or 3rd iteration, morph
+  the fold from the box fold toward the abs fold, KIFS's fold into the positive
+  corner: 0 is off, 1 swaps it outright, and the shape grows through the middle
+  of the range; bind the mix to sweep) and **Scale drift** (iteration i scales by
+  Scale + drift × i).
 - **Julia** — a master **Julia (all)** toggle and four per-component toggles,
   each revealing its **Constant** (the rows collapse until Julia is on). While
   Julia is on, a white ring marks the point in the view; drag it (with the mouse
