@@ -139,6 +139,62 @@ func run() -> void:
 	main._free_requested = false
 	main._update_mouse()
 
+	# Fullscreen: the View tab's button docks the console into the right-hand
+	# strip of the main window and narrows the view to the rest. (Headless
+	# cannot really go fullscreen; the layout is what is checked.)
+	_tap_ctrl(main)
+	console.show_tab(2)
+	await frames(1)
+	var vpane: ViewPane = console.view_pane()
+	check(await ui.scroll_to(vpane, vpane.fullscreen_button), "the Fullscreen button scrolls into view")
+	await ui.click(vpane.fullscreen_button)
+	await frames(1)
+	check(main.is_docked() and console.is_docked(), "the Fullscreen button docks the console")
+	check_eq(vpane.fullscreen_button.text, "Exit fullscreen", "and relabels itself")
+	check(console.visible and console.is_embedded() and console.borderless, "docked, it is a borderless window inside the main one")
+	var canvas := root.get_visible_rect()
+	var strip := Rect2(Vector2(console.position), Vector2(console.size))
+	check_approx(strip.end.x, canvas.end.x, "the strip reaches the right edge", 1.0)
+	check_approx(strip.size.y, canvas.size.y, "and fills the height", 1.0)
+	check_approx(strip.size.x, WindowGeometry.dock_width(canvas.size.x), "its width is dock_width() of the window", 1.0)
+	check_approx(main.view.size.x, canvas.size.x - strip.size.x, "the view fills the rest", 1.0)
+	check_approx(main.view.position.x, 0.0, "on the left")
+	console.show_tab(0)
+	await frames(1)
+	await ui.click(console.inspector().row(&"box_scale").get_child(0) as Control)
+	check(console.visible and not main.is_mouse_captured(), "a click on the docked console is the console's")
+	await ui.click_at(Vector2(main.view.size.x * 0.5, canvas.size.y * 0.5))
+	check(main.is_mouse_captured() and console.visible, "a click on the view beside it recaptures")
+	_tap_ctrl(main)   # free the mouse; the console stays open
+	_tap_ctrl(main)   # close it
+	check(not console.visible, "a Ctrl tap still hides the docked console")
+	check_approx(main.view.size.x, canvas.size.x, "and the view takes the whole width back", 1.0)
+	_tap_ctrl(main)
+	check(console.visible and console.is_docked(), "and opens it docked again")
+	check_approx(main.view.size.x, canvas.size.x - strip.size.x, "beside the narrowed view", 1.0)
+	console.show_tab(2)
+	await frames(1)
+	await ui.click(vpane.fullscreen_button)
+	await frames(1)
+	check(not main.is_docked() and not console.is_docked(), "Exit fullscreen undocks the console")
+	check_eq(vpane.fullscreen_button.text, "Fullscreen", "and the button says so")
+	check(console.force_native and not console.borderless, "it asks to be a native window again")
+	check_approx(main.view.size.x, canvas.size.x, "and the view fills the window", 1.0)
+	check(not console.visible, "it waits for the window to settle")
+	await create_timer(main.WINDOW_SETTLE_DELAY + 0.2).timeout
+	check(console.visible, "then reopens beside the main window")
+
+	# Reset window forgets where the windows were left.
+	settings.set_window_rect(&"console", Rect2i(10, 10, 900, 600))
+	console.remembered_rect = Rect2i(10, 10, 900, 600)
+	vpane.reset_window_requested.emit()
+	await frames(1)   # deferred, like the button's own press
+	check_eq(settings.window_rect(&"console"), Rect2i(), "Reset window forgets the remembered places")
+	check_eq(console.remembered_rect, Rect2i(), "and the console's")
+	console.hide_console()
+	main._free_requested = false
+	main._update_mouse()
+
 	# the console's View tab owns Save / Load / Camera / Noise / Renderer
 	var vp: ViewPane = main.view_pane()
 	check(vp == console.view_pane(), "the View tab is the console's")

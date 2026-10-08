@@ -11,6 +11,12 @@ extends Node
 ## pane and the View tab's Renderer options) puts the camera back where the
 ## current file has it. R shows or hides the centre-ray probe dot (a Settings
 ## preference).
+##
+## Fullscreen (the View tab's button, or the OS's own green button) docks the
+## console into the main window's right-hand strip and narrows the view to the
+## rest, so the two fill one fullscreen window; leaving fullscreen makes the
+## console a separate window again. Reset window puts the main window back at
+## its default size and the console beside it.
 
 const MENU_SCENE := "res://src/ui/main_menu.tscn"
 ## The main window's size in points (logical units); see UiScale.
@@ -18,6 +24,9 @@ const WINDOW_SIZE := Vector2i(1280, 800)
 ## For now the console opens beside the main window at startup (the mouse stays
 ## captured and the main window keeps focus); false starts it hidden.
 const OPEN_CONSOLE_AT_START := true
+## Seconds to let the OS finish leaving fullscreen (macOS animates it) before a
+## native console reopens beside the main window, or Reset window measures it.
+const WINDOW_SETTLE_DELAY := 0.8
 
 var params: FractalParams
 var camera: CameraState
@@ -53,13 +62,18 @@ var _text_viewports: Array = []
 ## loaded or saved), or the starting view while no file is current.
 var _home_transform: Transform3D
 var _home_speed := 1.0
+## The console is docked beside the view in one fullscreen window.
+var _docked := false
+## Whether the main window was fullscreen when last looked at; a change docks
+## or undocks the console.
+var _was_fullscreen := false
 
 
 func _ready() -> void:
 	# Normally done by the title menu already; repeated so main.tscn run on its
 	# own is scaled too (both calls are no-ops the second time).
 	UiScale.apply(get_window())
-	UiScale.fit_main_window(get_window(), WINDOW_SIZE)
+	WindowGeometry.place_main_window(get_window(), Settings.window_rect(&"main"))
 	UiScale.follow_size(get_window(), WINDOW_SIZE)
 	params = FractalParams.new()
 	camera = CameraState.make_default()
@@ -106,6 +120,11 @@ func _ready() -> void:
 	camera.changed.connect(func(): governor.mark_changed())
 	_resolve_once()
 	_apply_mode()
+	# After follow_size's handler, so a resize has refitted the scale first.
+	get_window().size_changed.connect(_on_window_resized)
+	_was_fullscreen = _is_fullscreen()
+	if _was_fullscreen:
+		set_docked(true)
 	if OPEN_CONSOLE_AT_START:
 		# Deferred so the main window has its final size and place to sit beside.
 		_open_console_at_start.call_deferred()
@@ -155,6 +174,10 @@ func _build_console() -> void:
 	_console.set_zoom(Settings.console_zoom)
 	_console.zoom_changed.connect(func(z: float): Settings.console_zoom = z)
 	_console.reset_camera_requested.connect(reset_camera)
+	# Its place is the player's too: put it back where it was last left.
+	_console.remembered_rect = Settings.window_rect(&"console")
+	Settings.track_window(&"console", _console)
+	_console.visibility_changed.connect(_layout_view)
 
 
 func _build_axis_controller() -> void:
@@ -198,6 +221,10 @@ func _build_view_pane() -> void:
 	_view_pane.load_requested.connect(_files.prompt_load)
 	_view_pane.noise_requested.connect(_open_noise)
 	_view_pane.sensitivity_changed.connect(func(v: float): Settings.mouse_sensitivity = v)
+	# Deferred: docking hides and re-makes the console, which must not happen
+	# inside the console's own click.
+	_view_pane.fullscreen_requested.connect(toggle_fullscreen, CONNECT_DEFERRED)
+	_view_pane.reset_window_requested.connect(reset_window, CONNECT_DEFERRED)
 
 
 ## Show the console beside the main window, then hand focus back to the main
@@ -211,6 +238,103 @@ func _open_console_at_start() -> void:
 func _open_noise() -> void:
 	_noise.open()
 	_update_mouse()
+
+
+# ------------------------------------------------------------- windows
+
+func is_docked() -> bool:
+	return _docked
+
+
+## The View tab's Fullscreen button: enter fullscreen with the console docked on
+## the right, or leave it with the console a separate window again.
+func toggle_fullscreen() -> void:
+	var on := not _docked
+	get_window().mode = Window.MODE_FULLSCREEN if on else Window.MODE_WINDOWED
+	_was_fullscreen = on
+	set_docked(on)
+
+
+## Dock the console into the main window's right-hand strip (and show it), or
+## undock it. Undocking reopens a console that was open as a native window
+## once the main window has settled, so it lands beside the windowed main
+## window rather than the fullscreen one.
+func set_docked(on: bool) -> void:
+	if on == _docked:
+		if on:
+			_console.dock(_dock_rect())
+			_layout_view()
+		return
+	_docked = on
+	if on:
+		_console.dock(_dock_rect())
+		_console.open()
+	else:
+		var was_open := _console.visible
+		_console.undock()
+		if was_open:
+			_after_window_settles(_reopen_console)
+	_layout_view()
+	_view_pane.show_fullscreen(on)
+
+
+## The View tab's Reset window: forget where the windows were left, put the
+## main window back at its default size and place, and the console beside it.
+## Leaves fullscreen first, then waits for the window to settle.
+func reset_window() -> void:
+	if _docked:
+		toggle_fullscreen()
+		_after_window_settles(reset_window)
+		return
+	Settings.forget_window_rects()
+	WindowGeometry.reset_main_window(get_window())
+	_console.reset_place()
+
+
+func _is_fullscreen() -> bool:
+	var mode := get_window().mode
+	return mode == Window.MODE_FULLSCREEN or mode == Window.MODE_EXCLUSIVE_FULLSCREEN
+
+
+## The main window changed size: entering or leaving fullscreen (by the button
+## or the OS) docks or undocks the console; docked, the strip follows the size.
+func _on_window_resized() -> void:
+	var fullscreen := _is_fullscreen()
+	if fullscreen != _was_fullscreen:
+		_was_fullscreen = fullscreen
+		set_docked(fullscreen)
+	elif _docked:
+		set_docked(true)
+
+
+## The docked console's strip of the main window's canvas: the right-hand
+## WindowGeometry.dock_width() points, full height.
+func _dock_rect() -> Rect2i:
+	var canvas := get_viewport().get_visible_rect()
+	var per_unit := UiScale.points_per_unit(get_window())
+	var width := roundi(WindowGeometry.dock_width(canvas.size.x * per_unit) / per_unit)
+	return Rect2i(Vector2i(roundi(canvas.end.x) - width, roundi(canvas.position.y)),
+		Vector2i(width, roundi(canvas.size.y)))
+
+
+## Docked with the console showing, the view (and the Julia marker over it)
+## stops at the console's left edge; otherwise it fills the window.
+func _layout_view() -> void:
+	var right := 0.0
+	if _docked and _console.visible:
+		right = -float(_dock_rect().size.x)
+	for c in [view, _marker]:
+		if c != null:
+			c.offset_right = right
+
+
+func _reopen_console() -> void:
+	if not _docked and not _console.visible:
+		_console.open()
+
+
+func _after_window_settles(then: Callable) -> void:
+	get_tree().create_timer(WINDOW_SETTLE_DELAY).timeout.connect(then)
 
 
 func back_to_menu() -> void:
