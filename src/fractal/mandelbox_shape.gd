@@ -16,6 +16,8 @@ const BOOL := AttributeSpec.Type.BOOL
 const ENUM := AttributeSpec.Type.ENUM
 
 enum FoldOrder { BOX_THEN_SPHERE, SPHERE_THEN_BOX }
+## What the fold step reflects through (the shader's fold_shape).
+enum FoldShape { BOX, CYLINDER, OCTAHEDRAL }
 ## What picks the position along the palette (the shader's palette_source).
 enum PaletteSource { STEPS, RADIUS, NORMAL }
 
