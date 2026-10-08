@@ -23,6 +23,7 @@ var ui: UiDriver
 var main: Node
 var settings: Node
 var original_sens := 0.0
+var original_zoom := 1.0
 
 
 func run() -> void:
@@ -30,7 +31,11 @@ func run() -> void:
 	await ui.setup()
 	settings = root.get_node("Settings")
 	original_sens = settings.mouse_sensitivity
+	original_zoom = settings.console_zoom
 	settings.config_path = SETTINGS
+	# The autoload has already read the player's file; a zoomed console would
+	# put every click the driver aims at it in the wrong place.
+	settings.console_zoom = 1.0
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE))
 
 	await _play_from_title()
@@ -55,6 +60,7 @@ func run() -> void:
 	paused = false
 	await ui.frames(2)
 	settings.mouse_sensitivity = original_sens
+	settings.console_zoom = original_zoom
 	await ui.frames(1)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS))
