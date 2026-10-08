@@ -179,6 +179,25 @@ func run() -> void:
 	check_approx(console.zoom, 1.0, "none of those changed the zoom")
 
 	# clean up the runtime InputMap actions this test created
+	# --- each shape's groups show only while it is drawn, headings included ---
+	check(inspector.heading("Box").visible, "the Box heading shows on the Mandelbox")
+	check(not inspector.heading("KIFS").visible, "the KIFS heading hides on the Mandelbox")
+	check(not inspector.heading("Kleinian").visible, "and so does the Kleinian's")
+	check(inspector.heading("Fractal").visible and inspector.heading("Render").visible, "the shared headings show")
+	table.set_default(&"shape", FractalParams.Shape.KIFS)
+	await frames(1)
+	check(not inspector.heading("Box").visible and not inspector.heading("Julia").visible,
+		"choosing the KIFS hides the Mandelbox's headings")
+	check(inspector.heading("KIFS").visible and inspector.heading("KIFS rotation").visible, "and shows the KIFS's")
+	check(inspector.row(&"kifs_scale").visible and not inspector.row(&"box_scale").visible, "rows follow too")
+	check(not inspector.row(&"kifs_poly_k").visible, "Polyfold k waits for the Polyfold")
+	table.set_default(&"kifs_fold", KifsEstimator.FoldSet.POLYFOLD)
+	check(inspector.row(&"kifs_poly_k").visible, "and shows with it")
+	table.set_default(&"shape", FractalParams.Shape.KLEINIAN)
+	check(inspector.heading("Kleinian").visible and not inspector.heading("KIFS").visible, "the Kleinian's turn")
+	table.set_default(&"shape", FractalParams.Shape.MANDELBOX)
+	table.set_default(&"kifs_fold", KifsEstimator.FoldSet.COORDINATE)
+
 	for id in [&"a", &"ax1", &"ax2", &"ax3"]:
 		if InputMap.has_action(StringName("axis_%s_pos" % id)):
 			InputMap.erase_action(StringName("axis_%s_pos" % id))
