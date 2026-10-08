@@ -165,3 +165,26 @@ func run() -> void:
 	var mid := FractalParams.nf_weight(1.05)
 	check(mid > 0.0 and mid < 1.0, "inside the band it blends (%s)" % mid)
 	check(FractalParams.nf_weight(0.5) < FractalParams.nf_weight(1.5), "rising with the distance")
+
+	# ulp32: the gap between neighbouring 32-bit floats near x
+	check_eq(FractalParams.ulp32(1.0), pow(2.0, -23.0), "ulp32(1) is 2^-23")
+	check_eq(FractalParams.ulp32(1.96), pow(2.0, -23.0), "and the same through [1, 2)")
+	check_eq(FractalParams.ulp32(2.0), pow(2.0, -22.0), "doubling at exactly 2")
+	check_eq(FractalParams.ulp32(4.0), pow(2.0, -21.0), "and at exactly 4")
+	check_eq(FractalParams.ulp32(8.18), pow(2.0, -20.0), "2^-20 at the default eye's x")
+	check_eq(FractalParams.ulp32(0.3), pow(2.0, -25.0), "2^-25 at 0.3")
+	check(FractalParams.ulp32(0.0) > 0.0 and is_finite(FractalParams.ulp32(0.0)), "zero stays finite and positive")
+
+	# zoom_floor: how close the 32-bit positions let the camera come
+	var zf := FractalParams.new()
+	var near_box := Vector3(1.96, 0.914, 0.787)   # the default view's surface point
+	check(absf(zf.zoom_floor(near_box) - 1e-4) <= 0.2e-4,
+		"near the box at the default precision the floor is about 1e-4 (%s)" % zf.zoom_floor(near_box))
+	check_eq(zf.zoom_floor(-near_box), zf.zoom_floor(near_box), "it uses the largest |coordinate|")
+	var zf10 := FractalParams.new()
+	zf10.detail = 10.0
+	check_approx(zf10.zoom_floor(near_box) / zf.zoom_floor(near_box), 10.0,
+		"it scales with Detail: a finer hit threshold needs more room above the float grid", 1e-9)
+	check(zf.zoom_floor(Vector3(8.18, 3.81, 3.28)) > zf.zoom_floor(near_box),
+		"larger coordinates have a coarser grid, so a further floor")
+	check(is_finite(zf.zoom_floor(Vector3.ZERO)) and zf.zoom_floor(Vector3.ZERO) >= 0.0, "the origin stays finite")

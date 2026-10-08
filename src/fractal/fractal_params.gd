@@ -270,6 +270,42 @@ static func nf_weight(near: float) -> float:
 	return smoothstep(NF_FADE_NEAR, NF_FADE_FAR, near)
 
 
+## The zoom floor sits where the hit threshold is this many times finer than
+## the 32-bit grid. Measured: hits start failing at a distance of 1e-4 with
+## ulp32 ~1.2e-7 and eps 2.5e-5, which is ulp32 / (48 × eps).
+const ZOOM_FLOOR_DIVISOR := 50.0
+
+
+## The gap between neighbouring 32-bit floats near x: 2^(floor(log2 |x|) − 23)
+## (a 32-bit float keeps 23 bits after its leading one). Below the smallest
+## normal 32-bit float the gap is the fixed 2^-149.
+static func ulp32(x: float) -> float:
+	x = absf(x)
+	if x < pow(2.0, -126.0):
+		return pow(2.0, -149.0)
+	var e := floori(log(x) / log(2.0))
+	# log() can round either way at an exact power of two.
+	if pow(2.0, e + 1) <= x:
+		e += 1
+	elif pow(2.0, e) > x:
+		e -= 1
+	return pow(2.0, e - 23)
+
+
+## How close the fly camera may come to the surface with its eye at `eye`. The
+## shader works out ray positions in 32-bit floats, which near `eye` can only
+## land on a grid ulp32(largest |coordinate|) apart; once the hit threshold
+## (eps × distance, eps = precision / detail) is much finer than that grid,
+## rays reach the surface only by luck and the picture breaks into speckle and
+## pits. The floor is ulp32 / (ZOOM_FLOOR_DIVISOR × eps): about 1e-4 near the
+## box at the default precision. A higher Detail (a finer threshold) and a
+## larger eye coordinate (Julia mode's bigger box) both push it further out.
+## Uses the unshed detail, like coarse_iters.
+func zoom_floor(eye: Vector3) -> float:
+	var m := maxf(absf(eye.x), maxf(absf(eye.y), absf(eye.z)))
+	return ulp32(m) / (ZOOM_FLOOR_DIVISOR * maxf(precision / detail, 1e-30))
+
+
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the
 ## load shedder passes a smaller budget).
 func coarse_steps(budget := 0) -> int:
