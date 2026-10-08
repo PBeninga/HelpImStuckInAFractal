@@ -3,6 +3,10 @@ extends "res://tests/test_case.gd"
 ## the shape catalogue ids. (A shader that fails to compile yields an empty
 ## uniform list.) This is the project's version of Fractacular's
 ## technique_schema check: the shader's shape uniforms must equal the catalogue.
+## Every uniform the shader gives a default (the colour, lighting and palette
+## ones) defaults to its catalogue default, so a frame drawn before the first
+## push already looks right; the dummy renderer cannot report defaults, so this
+## reads them from the source.
 
 const RENDERER_UNIFORMS := ["eye", "cam_right", "cam_up", "cam_forward",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
@@ -36,3 +40,15 @@ func run() -> void:
 	var want := catalogue.duplicate()
 	want.sort()
 	check_eq(shape_uniforms, want, "the shader's shape uniforms equal MandelboxShape.catalogue_ids()")
+
+	var table := AttributeTable.new(MandelboxShape.specs())
+	var re := RegEx.create_from_string("uniform (?:float|int) (\\w+) = (-?[0-9.]+);")
+	var with_default := 0
+	for m in re.search_all(sh.code):
+		var id := StringName(m.get_string(1))
+		check(table.has(id), "the defaulted uniform '%s' is a catalogue id" % id)
+		if table.has(id):
+			check_approx(m.get_string(2).to_float(), float(table.get_default(id)),
+				"uniform '%s' defaults to the catalogue's %s" % [id, table.get_default(id)], 1e-9)
+		with_default += 1
+	check_eq(with_default, FractalParams.LOOK_KEYS.size(), "every look uniform declares its default")

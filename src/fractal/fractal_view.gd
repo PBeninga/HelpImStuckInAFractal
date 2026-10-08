@@ -313,6 +313,8 @@ func _push_params() -> void:
 	_material.set_shader_parameter("iter_rot_zw", _params.iter_rot_zw)
 	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _shed["detail"]))
 	_material.set_shader_parameter("color_mode", _params.color_mode)
+	for key in FractalParams.LOOK_KEYS:
+		_material.set_shader_parameter(key, _params.get(key))
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
 	_material.set_shader_parameter("box_half", 20.0 if _params.julia_enabled() else 2.0)
 	_material.set_shader_parameter("detail_range", _params.detail_range)

@@ -84,6 +84,15 @@ func run() -> void:
 	check_approx(mat.get_shader_parameter("precision"), base_prec, "and the original precision", 1e-12)
 	check_eq(int(mat.get_shader_parameter("coarse_steps")), base_coarse, "and the original budget")
 
+	# the colour, lighting and palette values reach their uniforms
+	for key in FractalParams.LOOK_KEYS:
+		check_approx(float(mat.get_shader_parameter(key)), float(params.get(key)),
+			"the view pushes '%s'" % key, 1e-9)
+	params.apply_resolved({&"light_specular": 2.5, &"palette_d_b": 0.1, &"palette_source": 2})
+	check_approx(float(mat.get_shader_parameter("light_specular")), 2.5, "a resolved Specular reaches the shader")
+	check_approx(float(mat.get_shader_parameter("palette_d_b")), 0.1, "so does a palette component")
+	check_eq(int(mat.get_shader_parameter("palette_source")), 2, "and the palette input")
+
 	view.queue_free()
 	await frames(1)
 
