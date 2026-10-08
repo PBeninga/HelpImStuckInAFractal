@@ -93,6 +93,8 @@ func run() -> void:
 	var main: Node = load("res://src/main.tscn").instantiate()
 	root.add_child(main)
 	await frames(2)
+	# The console opens at startup; headless it is embedded and would take R.
+	main.console().hide_console()
 	var mfly: FlyCamera = main.get_node("FlyCamera")
 	check(mfly._ray == main.view.center_ray(), "Main's fly camera shares the view's centre ray")
 	check(not main.view.show_probe, "the dot starts hidden")

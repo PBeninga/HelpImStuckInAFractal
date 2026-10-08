@@ -35,8 +35,10 @@ func run() -> void:
 		"with no file, Reset camera restores the starting view")
 	check_approx(main.camera.speed_factor, 1.0, "and the starting speed factor")
 
-	# console hidden by default, fly camera active, mouse captured
-	check(not console.visible, "the console starts hidden")
+	# the console opens beside the game at startup (for now), the fly camera is
+	# active and the mouse captured; the rest of the journey starts it closed
+	check(console.visible, "the console starts open")
+	console.hide_console()
 	check(fly.enabled, "fly camera is enabled in FLY mode")
 	check(main.is_mouse_captured(), "the mouse starts captured in fly mode")
 

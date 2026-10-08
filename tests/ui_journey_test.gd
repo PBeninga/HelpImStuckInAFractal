@@ -132,7 +132,9 @@ func _play_from_title() -> void:
 	await _rescale()
 	check(current_scene == main, "the explorer is the current scene")
 	check(main.is_mouse_captured(), "flying starts with the mouse captured")
-	check(not main.console().visible, "and the console closed")
+	check(main.console().visible, "and the console open beside it (for now)")
+	# The journey opens it with a Ctrl tap, so close it first.
+	main.console().hide_console()
 
 
 func _ctrl_opens_console() -> void:
