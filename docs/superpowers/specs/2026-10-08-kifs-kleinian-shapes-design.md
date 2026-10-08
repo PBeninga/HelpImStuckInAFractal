@@ -49,9 +49,12 @@ Kleinian | precision | colour… palette (unchanged).
 
 - **Cylinder**: radial fold of the xy pair, r' = clamp(r, -L, L)·2 − r applied
   along p.xy/r; z and w get the 1D box fold.
-- **Octahedral**: d = |x|+|y|+|z|; if d > L reflect xyz across that face,
-  p.xyz −= (2/3)(d − L)·s where s is the sign vector (sign 0 → +1); w gets the
-  1D box fold.
+- **Octahedral**: reflect xyz through the octahedron |x|+|y|+|z| ≤ L:
+  p' = 2·proj(p) − p, the nearest point found by soft-thresholding every
+  |component| (on a face this is the plane reflection p −= (2/3)(d − L)·sign(p)).
+  The box fold is the same rule for the cube, and a reflection through a convex
+  set is continuous and 1-Lipschitz, where a per-face reflection chosen by sign
+  would jump at the coordinate planes. w gets the 1D box fold.
 - **Hybrid**: on iterations i with i mod hybrid_every == hybrid_every − 1 the
   fold result is mix(fold(p), menger(p), hybrid_mix), menger(p) = abs(p) then
   sort x ≥ y ≥ z. A convex mix of two 1-Lipschitz maps is 1-Lipschitz, so the
@@ -66,11 +69,16 @@ branches), and the existing 30+ CPU fixtures still pass unchanged.
 
 `kifs_scale` (3, 1.05..4, hard 1.01..6), `kifs_fold` (Coordinate / Diagonal /
 Polyfold, default Coordinate), `kifs_poly_k` (FLOAT 5, 2..12 — rounded to an
-int in the shader; FLOAT so it is bindable), `kifs_twist` (0, ±45°),
+int as floor(k + 0.5) on both sides; FLOAT so it is bindable), `kifs_twist` (0, ±45°),
 `kifs_offset_0..3` (1, 1, 1, 0; ±3), `kifs_rot1_xy..zw`, `kifs_rot2_xy..zw`
-(degrees, ±180, wrap). Iteration from Fractacular's `kifs.gdshader`: rot1, abs,
+(degrees, ±180, wrap). Iteration from Fractacular's `kifs.gdshader`: rot1, the
 fold set, rot2, twist·i in xy, p = s·p − (s−1)·offset, the Menger z-correction
 for the coordinate fold, bailout at |p| > 1000 (squared 1e6).
+Two fixes to Fractacular's folds: its diagonal fold ran after abs(p), where
+x + y < 0 never holds, so the Sierpinski fold never fired — here it runs on
+the point itself; and its polyfold rotated into a wedge (discontinuous at the
+wedge edges) — here it mirrors into a half-wedge and the Menger fold follows
+(the polyfold alone leaves dust too sparse to hit at scale 3).
 Distance: coordinate fold — the 4D box distance to [-1,1]⁴ times s⁻ⁿ (crisp
 Menger edges); diagonal and polyfold — |p|·s⁻ⁿ. The coarse/fine iteration
 counts (16/32) are the Mandelbox's.
@@ -81,8 +89,10 @@ counts (16/32) are the Mandelbox's.
 `kleinian_radius` (1, 0.1..2: inversion k = radius²), `kleinian_shift_0..3`
 (0; ±1), `kleinian_thickness` (0.01, 0..0.2), `kleinian_view_distance`
 (10, 1..100, log). Iteration (Knighty's pseudo-Kleinian, 4D): box fold
-clamp(p, −b, b)·2 − p, m = max(k/|p|², 1), p = p·m + shift, dr ·= m.
-Distance: r = |p.xy|, max(r − thickness, |r·p.z|/|p|) / dr.
+clamp(p, −b, b)·2 − p, m = max(k/|p|², 1), p = p·m + shift, dr ·= m, stopping
+early once a step leaves p unchanged. Distance: Knighty's thingy,
+|0.5·(|r·p.z| − T) / sqrt(|p|² + |T|)| / dr with r = |p.xy| and T the
+thickness (the 0.5 because the thingy's own field is steeper than 1).
 
 ## Shader
 
@@ -119,8 +129,12 @@ shader at N = 32. Fly speed, the orbit camera and near_dist need no change.
   each Mandelbox option; kifs_estimator_test and kleinian_estimator_test with
   captured fixtures and invariants (Menger hole has positive distance; symmetry
   where the defaults are symmetric).
-- A Lipschitz test for every shape and option: on seeded random pairs a, b in
-  the bound, |DE(a) − DE(b)| ≤ |a − b|·(1 + 1e-3) + 1e-9.
+- march_safety_test for every shape and option: rays marched with full steps
+  never jump a surface the same rays marched with quarter steps find (a step
+  spanning the quarter-step hit by more than ten hit thresholds). A plain
+  Lipschitz bound was tried first and rejected: even the site's Mandelbox
+  estimate exceeds 1 by a few percent, and the escape-time estimators jump by
+  ~1e-4 far from any surface, both harmless to the march.
 - Catalogue, fractal_params, shader (uniform set = catalogue ids), inspector
   (hidden groups), workspace (a file without `shape` loads as Mandelbox) tests
   updated.

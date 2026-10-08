@@ -13,7 +13,8 @@ extends RefCounted
 ##
 ## Loading never fails on unfamiliar content: an unknown shape id or axis id is
 ## skipped with a warning, and a key the file lacks leaves the current value
-## alone. A version-1 file (the old flat "fractal" section) is migrated to the
+## alone — except the fractal (`shape`), which a file from before there was a
+## choice lacks, and which then loads as the Mandelbox it was saved from. A version-1 file (the old flat "fractal" section) is migrated to the
 ## new ids without a warning. Saving always writes version 2.
 
 const VERSION := 2
@@ -58,6 +59,10 @@ static func restore(data: Dictionary, table: AttributeTable, axes: Axes, params:
 
 	var shape: Variant = data.get("shape", {})
 	if shape is Dictionary:
+		# Views saved before there was a choice of fractal are all Mandelboxes.
+		var defaults: Variant = (shape as Dictionary).get("defaults", {})
+		if defaults is Dictionary and not (defaults as Dictionary).has("shape") and table.has(&"shape"):
+			table.set_default(&"shape", FractalParams.Shape.MANDELBOX)
 		for w in table.apply_dict(shape):
 			warnings.append(w)
 	else:
