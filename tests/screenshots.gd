@@ -76,6 +76,22 @@ func _run() -> void:
 			img.save_png(ProjectSettings.globalize_path(SHOT_DIR + "/mode_%d.png" % id))
 			_pass("mode_%d" % id)
 
+	# lighting_raked: the default Ice Fractal view with the light swung 60° and
+	# tipped 30°, broad glints and a little more ambient. It must differ from
+	# the default view: the Lighting group really reaches the picture.
+	params.color_mode = 1
+	params.apply_resolved({&"light_yaw": 60.0, &"light_pitch": 30.0,
+		&"light_shininess": 12.0, &"light_ambient": 0.2})
+	await _render(view)
+	var raked := view._viewport.get_texture().get_image()
+	if raked == null or def == null:
+		_fail("lighting_raked", "no_image")
+	else:
+		raked.save_png(ProjectSettings.globalize_path(SHOT_DIR + "/lighting_raked.png"))
+		_check_differs("lighting_raked", raked, def)
+	params.apply_resolved({&"light_yaw": 0.0, &"light_pitch": 0.0,
+		&"light_shininess": 160.0, &"light_ambient": 0.1})
+
 	# noise ridges demo: a saved view with a wired noise field. Rendered through the
 	# same view, which rebuilds the mandelbox shader with the compiled NOISE region.
 	params.color_mode = 1   # back to Ice Fractal before capturing the default again

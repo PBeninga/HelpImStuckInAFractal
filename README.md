@@ -6,8 +6,9 @@ view, the four shape sliders, the thirteen colour modes, the precision control,
 Julia mode and an orbit camera. On top of the site it adds a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
 while you move, and a **console** window — a Shape inspector of every
-Mandelbox knob with Fractacular's binding model, and a Movement pane of virtual
-axes driven by key pairs. It is built on the **GL Compatibility** renderer
+Mandelbox knob with Fractacular's binding model, a Colour tab with
+Fractacular's cosine-palette window and a tunable light, and a Movement pane of
+virtual axes driven by key pairs. It is built on the **GL Compatibility** renderer
 (WebGL 2) so it is web-exportable.
 
 GDScript only — no C#, even though the Godot build on disk is the Mono build.
@@ -27,8 +28,9 @@ binary.
 
 ## Controls
 
-Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** inspector, with a row for
-every Mandelbox knob, stacked above the **Movement** pane of virtual axes.
+Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** and
+**Colour** tabs, with a row for every Mandelbox, colour and lighting knob,
+stacked above the **Movement** pane of virtual axes.
 Everything the console does not own is driven directly by the mouse and
 keyboard. Press **Escape** to pause: the pause menu offers Save view / Load
 view, the Camera mode, Fast Controls, Console and Noise editor buttons, and
@@ -126,14 +128,14 @@ captured in this mode.
 ### Console (Ctrl)
 
 A Ctrl tap (or the pause menu's **Console…** button) opens the console, a
-separate OS window: the **Shape** pane on top, taking the full width
-and most of the height, and the **Movement** pane below it at its natural
-height (drag the bar between them to share the height differently).
+separate OS window: the **Shape** and **Colour** tabs on top, taking the full
+width and most of the height, and the **Movement** pane below them at its
+natural height (drag the bar between them to share the height differently).
 **⌘=** / **⌘−** (Ctrl elsewhere) zoom everything in the console, text and
 controls, a step at a time from 50% to 200%, and **⌘0** resets; the window keeps
 its size and the panes reflow. The zoom is remembered between runs.
 
-**Shape pane.** One row per Mandelbox knob, grouped **Box** / **Julia** /
+**Shape tab.** One row per Mandelbox knob, grouped **Box** / **Julia** /
 **Iteration rotation** / **Render**:
 
 - **Box** — Scale, Fold limit, Min radius, Fixed radius, Fold order (Box→Sphere
@@ -145,7 +147,34 @@ its size and the panes reflow. The zoom is remembered between runs.
   free) to move Constants x/y/z, which survives the next resolve.
 - **Iteration rotation** — the six 4D plane angles applied inside every
   iteration (they change the fractal itself, not just the view).
-- **Render** — the thirteen Colour modes and the ray-march Precision (log slider).
+- **Render** — the ray-march Precision (log slider).
+
+**Colour tab.** Fractacular's Colour window at the top of one scrolling list,
+then rows grouped **Colour** / **Lighting** / **Palette**:
+
+- **Colour window** — the cosine palette `color(t) = A + B · cos(2π (C·t + D))`:
+  twelve sliders (A, B, C and D over red, green and blue), the three channel
+  curves they make and the gradient strip they come out as, and **Reset** (back
+  to the rainbow). The strip is the shader's own formula, and follows a bound
+  component live. A hint shows while the Colour mode is not Palette.
+- **Colour** — the site's thirteen colour modes plus **Palette**, which paints
+  with the window's palette. In Palette mode four more rows appear: **Palette
+  input** (Steps, the march's step count; Radius, the hit point's distance from
+  the centre; or Normal, the surface's facing), **Palette frequency** and
+  **Palette offset** (position = fract(input × frequency + offset); bind the
+  offset to Time for a colour cycle) and **Palette occlusion** (how much the
+  step count darkens crevices).
+- **Lighting** — **Ambient**, **Diffuse**, **Specular** and **Shininess** (the
+  light term `diffuse·|N·L| + specular·|N·L|^shininess + ambient`), **Light
+  yaw** / **Light pitch** (swing the camera headlight about the view's up and
+  right axes), and **Exposure** / **Saturation** on the final colour. The
+  defaults are the site's constants, so every site mode looks exactly as before
+  until one is moved; they apply to every mode but Grayscale.
+- **Palette** (Palette mode only) — the same twelve numbers as rows, so each
+  channel's A, B, C or D can have its own Source, gain and waveform: a Sine on
+  B.r pulses the red, a Linear Time drive on D.b cycles the blue.
+
+All of it is saved with the view (the shape section), like any other row.
 
 Each bindable row carries Fractacular's binding widgets: a **Source** (None,
 Time, or a virtual axis), a **Gain**, a **Waveform** (Linear / Sine / Triangle)
@@ -296,9 +325,10 @@ tests/screenshots.sh  # windowed render check (writes PNGs to screenshots/)
 each `tests/*_test.gd` headlessly; it exits non-zero if any test fails. Because
 the headless renderer produces no pixels, the actual render is verified by
 `tests/screenshots.sh`, which launches Godot windowed **without stealing focus**
-(via `open -g`), renders the default view, each colour mode, and a
+(via `open -g`), renders the default view, each colour mode, a
 `console_bound_axis` frame (Axis A bound to the scale, required to differ from
-the default), and writes the results plus a `PASS`/`FAIL` log to
+the default) and a `lighting_raked` frame (the light swung and broadened, also
+required to differ), and writes the results plus a `PASS`/`FAIL` log to
 `tests/out/screenshots.txt`.
 
 The UI suites drive the real widgets the way a player does, still headless.
