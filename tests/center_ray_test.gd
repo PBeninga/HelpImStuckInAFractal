@@ -1,0 +1,112 @@
+extends "res://tests/test_case.gd"
+## The centre ray: a march that lands on the surface the distance estimator
+## sees, a miss outside the cube, a cache that follows the camera and the
+## shape; the view's probe dot uniforms; and Main's R toggle, kept in Settings.
+
+
+func run() -> void:
+	var params := FractalParams.new()
+	var cam := CameraState.make_default()   # looking at the origin, from outside the cube
+
+	# --- a hit lands on the surface: tiny DE there, and nothing closer on the way ---
+	var r := CenterRay.march(cam.eye(), cam.forward(), params)
+	check(r[1], "the default view's centre ray hits the fractal")
+	var t: float = r[0]
+	var hit_point := cam.eye() + cam.forward() * t
+	var near := DistanceEstimator.estimate(cam.eye(), params)
+	check(DistanceEstimator.estimate(hit_point, params) < params.hit_epsilon(t, near),
+		"the hit point is within the hit threshold of the surface")
+	check(t >= near - 1e-9, "the hit is no nearer than the nearest surface (t %s, near %s)" % [t, near])
+
+	# --- looking away from the cube misses ---
+	var away := CenterRay.march(cam.eye(), -cam.forward(), params)
+	check(not away[1] and is_inf(away[0]), "a ray that never meets the cube is a miss at INF")
+
+	# --- the cached ray follows the camera and the shape ---
+	var ray := CenterRay.new(params, cam)
+	check_approx(ray.distance(), t, "the cached ray matches march()", 1e-9)
+	check(ray.point().is_equal_approx(hit_point), "point() is the hit point")
+	var turned := cam.transform
+	turned.basis = turned.basis.rotated(Vector3(0, 0, 1), PI)   # face away from the fractal
+	cam.transform = turned
+	check(not ray.hit() and is_inf(ray.distance()), "turning away re-marches: now a miss")
+	cam.transform = CameraState.make_default().transform
+	check_approx(ray.distance(), t, "turning back hits again", 1e-9)
+	params.box_scale = -1.5
+	var reshaped := CenterRay.march(cam.eye(), cam.forward(), params)
+	check_approx(ray.distance(), reshaped[0], "a shape change re-marches", 1e-9)
+	params.box_scale = FractalParams.new().box_scale
+
+	# --- the fly speed follows the ray, capped by NEAR_CAP x the nearest surface ---
+	var fly := FlyCamera.new()
+	root.add_child(fly)
+	fly.setup(params, cam, ray)
+	var want := minf(ray.distance(), near * FlyCamera.NEAR_CAP)
+	check_approx(fly.base_speed(), clampf(want, 1e-6, 20.0) * cam.speed_factor,
+		"base speed is min(ray, NEAR_CAP x near) x factor", 1e-9)
+	cam.transform = turned   # a miss: the cap alone
+	var near_turned := DistanceEstimator.estimate(cam.eye(), params)
+	check_approx(fly.base_speed(), clampf(near_turned * FlyCamera.NEAR_CAP, 1e-6, 20.0) * cam.speed_factor,
+		"a miss takes the NEAR_CAP x near speed", 1e-9)
+	cam.transform = CameraState.make_default().transform
+	fly.queue_free()
+
+	# --- the view paints the dot only while shown and hitting ---
+	var view: FractalView = load("res://src/fractal/fractal_view.tscn").instantiate()
+	root.add_child(view)
+	await frames(1)
+	view.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	view.size = Vector2(1280, 800)
+	view.setup(params, cam)
+	await frames(1)
+	var mat: ShaderMaterial = view._material
+	check(view.center_ray() != null, "the view owns a centre ray after setup")
+	check(not bool(mat.get_shader_parameter("probe_on")), "the dot starts hidden")
+	view.show_probe = true
+	check(bool(mat.get_shader_parameter("probe_on")), "showing the probe turns the dot on")
+	var vt := view.center_ray().distance()
+	check(Vector3(mat.get_shader_parameter("probe_point")).is_equal_approx(cam.eye() + cam.forward() * vt),
+		"the dot sits at the centre ray's hit")
+	check_approx(float(mat.get_shader_parameter("probe_radius")), vt * FractalView.PROBE_ANGULAR_RADIUS,
+		"its radius scales with the distance", 1e-9)
+	var step := cam.transform
+	step.origin += cam.forward() * vt * 0.5   # halfway to the surface
+	cam.transform = step
+	check_approx(float(mat.get_shader_parameter("probe_radius")),
+		view.center_ray().distance() * FractalView.PROBE_ANGULAR_RADIUS,
+		"a camera move refreshes the dot (no stale cache)", 1e-9)
+	check(view.center_ray().distance() < vt, "and the hit is nearer after moving in")
+	cam.transform = turned
+	check(not bool(mat.get_shader_parameter("probe_on")), "a miss hides the dot")
+	cam.transform = CameraState.make_default().transform
+	view.show_probe = false
+	check(not bool(mat.get_shader_parameter("probe_on")), "hiding the probe turns it off")
+	view.queue_free()
+	await frames(1)
+
+	# --- Main: R toggles the dot, kept in Settings ---
+	var settings: Node = root.get_node("Settings")
+	var original_path: String = settings.config_path
+	var original_probe: bool = settings.show_center_ray
+	settings.config_path = "user://center_ray_test_settings.cfg"
+	settings.show_center_ray = false
+	var main: Node = load("res://src/main.tscn").instantiate()
+	root.add_child(main)
+	await frames(2)
+	var mfly: FlyCamera = main.get_node("FlyCamera")
+	check(mfly._ray == main.view.center_ray(), "Main's fly camera shares the view's centre ray")
+	check(not main.view.show_probe, "the dot starts hidden")
+	await press_action("toggle_center_ray")
+	check(settings.show_center_ray, "R turns the probe on in Settings")
+	check(main.view.show_probe, "and the view shows the dot")
+	await press_action("toggle_center_ray")
+	check(not settings.show_center_ray and not main.view.show_probe, "R again hides it")
+	for action in [&"axis_a_pos", &"axis_a_neg"]:
+		if InputMap.has_action(action):
+			InputMap.erase_action(action)
+	main.queue_free()
+	await frames(1)
+	settings.show_center_ray = original_probe
+	await frames(1)
+	settings.config_path = original_path
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://center_ray_test_settings.cfg"))
