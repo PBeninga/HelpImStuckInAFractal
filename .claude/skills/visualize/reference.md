@@ -49,6 +49,23 @@ Anything with `file` (repo-relative path) and optional `line` becomes a GitHub l
 pane's `commit`. Extra links: `links: [{ file, line, label? }, { url, label }]`. `label` defaults
 to `basename:line`. Blurbs may use `` `backticks` `` for code and `\n` for a new paragraph.
 
+## Glossary (maths terms explained on hover)
+
+`docs/viz/glossary.js` registers terms with `VIZ.glossary({ id: { term, body, links, match? } })`.
+The engine marks each term's FIRST mention in every tooltip blurb, the pane subtitle, block notes,
+card bodies, and table cells (once per table, not once per row). Marks are highlighted, and hovering
+one shows a popup with the body and its links. That works on the canvas and inside a tooltip, pinned
+or not. Panes need no markup. `match` entries are strings (case-insensitive whole words, never part
+of an identifier like `fold_limit` or a path) or RegExps. Without `match`, the term itself is
+matched. Text in `` `backticks` `` is never matched. `[[id]]` or `[[id|shown text]]` in any prose
+marks a mention by hand. Titles, node and message labels, and figure text are never marked.
+`check.mjs` validates every entry and every `[[id]]`.
+
+When a pane's prose leans on maths, geometry or graphics above basic calculus (a fold, a gradient,
+a basis, sphere tracing...), add an entry instead of a parenthetical: a short, concrete body tied
+to this project, plus one or two links (Wikipedia, then a friendlier explainer). Check that the
+match doesn't catch an ordinary word: `orbit` alone would mark the orbit camera.
+
 ## graph
 
 ```js

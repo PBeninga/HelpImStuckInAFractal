@@ -14,6 +14,7 @@ free text: `/visualize the orbit camera's gestures`, `/visualize how a save is w
 |---|---|
 | `docs/viz/index.html` | the page: two control rows (panes, then the open pane's tabs), one SVG canvas, one `<script src="panes/<id>.js">` line per pane |
 | `docs/viz/viz.js`, `viz.css` | the engine. Panes never edit it (see "Engine changes" below) |
+| `docs/viz/glossary.js` | maths terms the prose leans on, highlighted wherever they appear and explained on hover (reference.md, "Glossary") |
 | `docs/viz/panes/<id>.js` | one pane per system: pure data passed to `VIZ.pane({...})` |
 | `tools/viz/check.mjs` | node checker: every pane loads, every `file:line` exists at the pinned commit |
 | `viz.sh` | `./viz.sh [pane-id[/tab]]` opens the MAIN checkout's page in the default browser |
@@ -117,3 +118,9 @@ Adam reads this as the engineer who wrote the code. Lead with the code names, un
 formulas (`min_r2 = inner_radius²`, `de(p, 32)`), give the numbers the real code would compute,
 and link every claim to its `file:line`. Plain sentences still come first in a blurb: what the
 thing does and WHY, then the names.
+
+Adam is an engineer, not a mathematician (2026-10-08). Anything above basic calculus (topology,
+4D geometry, linear algebra, gradients, numerical methods, rendering maths) gets an entry in
+`docs/viz/glossary.js` so it is highlighted and explained on hover. When a new pane brings in a term
+the glossary lacks, add the entry in the same commit. Open a few tabs and check the new marks land
+on the right words.

@@ -14,7 +14,8 @@
  *   figure  a custom drawing, optionally LIVE: draw(api) gets el/tip/button/slider/image/onFrame
  *
  * Every hoverable thing shows a tooltip with a blurb and file:line links to GitHub, pinned to the
- * pane's `commit`. The full data contract is .claude/skills/visualize/reference.md; the checker is
+ * pane's `commit`. Maths terms in the prose (glossary.js, VIZ.glossary) are highlighted wherever
+ * they appear and explained in a second popup on hover. The full data contract is .claude/skills/visualize/reference.md; the checker is
  * tools/viz/check.mjs. Do not put pane content in this file.
  */
 "use strict";
@@ -24,7 +25,9 @@ const VIZ = window.VIZ = {
   config: { title: "Systems", repo: "" },
   panes: [],
   errors: [],
+  gloss: {},
   pane(def) { this.panes.push(def); },
+  glossary(entries) { Object.assign(this.gloss, entries); },
 };
 
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -57,6 +60,114 @@ function wrapWords(s, maxChars) {
   }
   return lines;
 }
+// ---------------------------------------------------------------- glossary
+// Terms registered with VIZ.glossary (docs/viz/glossary.js) are marked wherever pane prose
+// mentions them: tooltip blurbs, the subtitle, block notes, card bodies and table cells. Each entry
+// of a term's `match` (a string, matched case-insensitively as a whole word, or a RegExp) marks the
+// term's FIRST mention in each piece of text; `[[id]]` or `[[id|shown text]]` marks one by hand.
+// Text inside `backticks` is code and is never matched. Hovering a mark shows the entry.
+let GLOSS = null;
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// A whole word, not a piece of an identifier or a path (fold_limit, mandelbox.gdshader).
+const phraseRe = s => new RegExp(`(?<![\\w./])${escRe(s)}(?![\\w]|[./]\\w)`, "gi");
+function glossTerms() {
+  if (GLOSS) return GLOSS;
+  GLOSS = [];
+  for (const [id, g] of Object.entries(VIZ.gloss)) {
+    if (!g.term || !g.body) { err(`glossary ${id}`, "needs a term and a body"); continue; }
+    const res = (g.match || [g.term]).map(m => typeof m === "string" ? phraseRe(m)
+      : new RegExp(m.source, m.flags.includes("g") ? m.flags : `${m.flags}g`));
+    GLOSS.push({ id, res });
+  }
+  return GLOSS;
+}
+// Prose → runs: { t } plain, { t, code: true } a `backtick` span (kept whole), { t, g: id } a mark.
+// `used` holds the terms already marked in this piece of text.
+function glossSegs(s, used = new Set()) {
+  const out = [];
+  const auto = t => {   // the earliest match first; on a tie, the longer phrase
+    let at = 0;
+    for (;;) {
+      let best = null;
+      for (const g of glossTerms()) {
+        if (used.has(g.id)) continue;
+        for (const re of g.res) {
+          re.lastIndex = at;
+          const m = re.exec(t);
+          if (m && m[0] && (!best || m.index < best.i || (m.index === best.i && m[0].length > best.n)))
+            best = { i: m.index, n: m[0].length, id: g.id };
+        }
+      }
+      if (!best) break;
+      if (best.i > at) out.push({ t: t.slice(at, best.i) });
+      out.push({ t: t.slice(best.i, best.i + best.n), g: best.id });
+      used.add(best.id);
+      at = best.i + best.n;
+    }
+    if (at < t.length) out.push({ t: t.slice(at) });
+  };
+  for (const part of String(s ?? "").split(/(`[^`\n]+`)/)) {
+    if (/^`[^`\n]+`$/.test(part)) { out.push({ t: part, code: true }); continue; }
+    let at = 0;
+    for (const m of part.matchAll(/\[\[([\w-]+)(?:\|([^\]]+))?\]\]/g)) {
+      auto(part.slice(at, m.index));
+      const g = VIZ.gloss[m[1]];
+      if (!g) err("glossary", `unknown term [[${m[1]}]]`);
+      out.push(g ? { t: m[2] || g.term, g: m[1] } : { t: m[2] || m[1] });
+      used.add(m[1]);
+      at = m.index + m[0].length;
+    }
+    auto(part.slice(at));
+  }
+  return out;
+}
+// wrapWords for prose that may carry marks: lines of runs { t, g? }, wrapped on the visible text.
+function glossLines(s, maxChars, used = new Set()) {
+  const lines = [];
+  let line = [], len = 0, word = [], wlen = 0, mark = 0;
+  const endWord = () => {
+    if (!wlen) return;
+    if (len && len + 1 + wlen > maxChars) { lines.push(line); line = []; len = 0; }
+    if (len) {   // the space between two words of one mark belongs to the mark
+      const a = line[line.length - 1], k = a.k && a.k === word[0].k ? a.k : 0;
+      line.push({ t: " ", k, g: k ? a.g : undefined });
+      len++;
+    }
+    line.push(...word); len += wlen; word = []; wlen = 0;
+  };
+  for (const sg of glossSegs(s, used)) {
+    const k = sg.g ? ++mark : 0;
+    for (const ch of sg.t) {
+      if (ch === " ") endWord();
+      else if (ch === "\n") { endWord(); lines.push(line); line = []; len = 0; }
+      else {
+        const last = word[word.length - 1];
+        if (last && last.k === k) last.t += ch;
+        else word.push({ t: ch, k, g: sg.g });
+        wlen++;
+      }
+    }
+  }
+  endWord();
+  lines.push(line);
+  return lines.map(runs => runs.reduce((acc, r) => {
+    const p = acc[acc.length - 1];
+    if (p && p.k === r.k) p.t += r.t; else acc.push(Object.assign({}, r));
+    return acc;
+  }, []));
+}
+// One line of glossLines as SVG text. A mark is a tspan, highlighted once its tab is laid out.
+function glossText(parent, x, y, runs, cls, extra) {
+  const t = el("text", Object.assign({ x, y, class: cls }, extra || {}), parent);
+  for (const r of runs) {
+    if (!r.g) { t.appendChild(document.createTextNode(r.t)); continue; }
+    const ts = el("tspan", { class: "gl", "data-gloss": r.g }, t);
+    ts.textContent = r.t;
+    if (building) building.marks.push(ts);
+  }
+  return t;
+}
+
 const hue = h => `var(--c${h})`;
 const safeKey = s => String(s).replace(/[^A-Za-z0-9_-]/g, "_");
 function err(where, msg) { VIZ.errors.push(`[${where}] ${msg}`); }
@@ -340,7 +451,7 @@ RENDER.cards = function (b, g, pane, block) {
   for (const c of b.cards) {
     const col = colY.indexOf(Math.min(...colY));
     const bx = col * (BOX_W + GAP), by = colY[col];
-    const lines = wrapWords(c.body, Math.floor((BOX_W - 2 * PAD) / CHAR_W));
+    const lines = glossLines(c.body, Math.floor((BOX_W - 2 * PAD) / CHAR_W));
     const links = linksOf(c);
     const h = 50 + lines.length * LINE_H + links.length * LINK_H;
     const cg = el("g", { class: "card" }, g);
@@ -349,7 +460,7 @@ RENDER.cards = function (b, g, pane, block) {
     text(cg, bx + PAD, by + 26, c.title, "c-title");
     if (c.tag) text(cg, bx + BOX_W - PAD, by + 26, c.tag.toUpperCase(), "c-tag",
       { "text-anchor": "end", style: `fill:${tint || "var(--muted)"}` });
-    lines.forEach((ln, i) => text(cg, bx + PAD, by + 47 + i * LINE_H, ln, "c-body"));
+    lines.forEach((ln, i) => glossText(cg, bx + PAD, by + 47 + i * LINE_H, ln, "c-body"));
     links.forEach((lk, i) => {
       const a = el("a", { href: linkUrl(lk, pane.commit), target: "_blank", rel: "noopener" }, cg);
       text(a, bx + PAD, by + 47 + lines.length * LINE_H + 6 + i * LINK_H, `↗ ${linkLabel(lk)}`);
@@ -367,20 +478,24 @@ RENDER.table = function (b, g, pane, block) {
   for (const c of b.columns) { text(tg, x + PADX, 16, c.label.toUpperCase(), "th"); x += c.w; }
   el("line", { x1: 0, y1: 26, x2: W, y2: 26 }, tg);
   let y = 28;
+  const used = new Set();   // a glossary term is marked once per table, not in every row it recurs in
   b.rows.forEach((row, ri) => {
     const cells = Array.isArray(row) ? row : row.cells;
-    const wrapped = cells.map((cell, ci) => wrapWords(String(cell), Math.max(4, Math.floor((b.columns[ci].w - 2 * PADX) / CHAR_W))));
+    const wrapped = cells.map((cell, ci) => glossLines(String(cell), Math.max(4, Math.floor((b.columns[ci].w - 2 * PADX) / CHAR_W)), used));
     const h = Math.max(...wrapped.map(l => l.length)) * LINE_H + 10;
-    el("rect", { x: 0, y, width: W, height: h, class: `row-bg${ri % 2 ? " zebra" : ""}` }, tg);
+    // A row with a tip is one hoverable group, its hit rect UNDER the text so the cells' glossary
+    // marks stay reachable.
+    const rg = el("g", {}, tg);
+    el("rect", { x: 0, y, width: W, height: h, class: `row-bg${ri % 2 ? " zebra" : ""}` }, rg);
+    if (!Array.isArray(row) && row.tip) {
+      el("rect", { x: 0, y, width: W, height: h, class: "row-hit" }, rg);
+      addTip(rg, Object.assign({ title: row.tip.title || String(cells[0]), sub: row.tip.sub || b.title || "" }, row.tip, { hl: [] }), block, pane);
+    }
     let cx = 0;
     wrapped.forEach((lines, ci) => {
-      lines.forEach((ln, li) => text(tg, cx + PADX, y + 17 + li * LINE_H, ln, `td${b.columns[ci].mono ? " mono" : ""}`));
+      lines.forEach((ln, li) => glossText(rg, cx + PADX, y + 17 + li * LINE_H, ln, `td${b.columns[ci].mono ? " mono" : ""}`));
       cx += b.columns[ci].w;
     });
-    if (!Array.isArray(row) && row.tip) {
-      const hit = el("rect", { x: 0, y, width: W, height: h, class: "row-hit" }, tg);
-      addTip(hit, Object.assign({ title: row.tip.title || String(cells[0]), sub: row.tip.sub || b.title || "" }, row.tip, { hl: [] }), block, pane);
-    }
     y += h;
   });
   el("line", { x1: 0, y1: y, x2: W, y2: y }, tg);
@@ -523,13 +638,14 @@ function legend(g, pane, x0, y0, maxW) {
 function buildTab(t) {
   const pane = t.pane;
   building = t;
+  t.marks = [];
   const frame = el("rect", { class: "pane-frame", rx: 24 }, t.g);
   const inner = el("g", { transform: `translate(${PANE_PAD} ${PANE_PAD})` }, t.g);
   let y = 0;
   if (t.idx === 0) {
     text(inner, 0, 30, pane.title, "pane-title");
-    const subLines = wrapWords(pane.subtitle || "", 190);
-    subLines.forEach((ln, i) => text(inner, 0, 58 + i * 19, ln, "pane-sub"));
+    const subLines = glossLines(pane.subtitle || "", 190);
+    subLines.forEach((ln, i) => glossText(inner, 0, 58 + i * 19, ln, "pane-sub"));
     y = 58 + subLines.length * 19 + 20;
   }
   if (t.rows.some(row => row.some(b => b.type === "graph" || b.type === "seq")))
@@ -547,8 +663,8 @@ function buildTab(t) {
       let hy = 0;
       if (b.title) { text(bg, 0, 18, b.title, "block-title"); hy = 30; }
       if (b.note) {
-        const lines = wrapWords(b.note, Math.max(60, Math.floor(w / 6.7)));
-        lines.forEach((ln, i) => text(bg, 0, hy + 12 + i * 17, ln, "block-sub"));
+        const lines = glossLines(b.note, Math.max(60, Math.floor(w / 6.7)));
+        lines.forEach((ln, i) => glossText(bg, 0, hy + 12 + i * 17, ln, "block-sub"));
         hy += lines.length * 17 + 8;
       }
       content.setAttribute("transform", `translate(0 ${hy + (hy ? 14 : 0)})`);
@@ -560,6 +676,13 @@ function buildTab(t) {
     tabW = Math.max(tabW, x - COL_GAP);
     y += rowH + ROW_GAP;
   }
+  // Highlight the glossary marks: measure them all, then insert (one layout, not one per mark).
+  const boxes = t.marks.map(ts => ts.getBBox());
+  t.marks.forEach((ts, i) => {
+    const b = boxes[i], txt = ts.parentNode;
+    txt.parentNode.insertBefore(el("rect", { x: b.x - 2, y: b.y, width: b.width + 4, height: b.height, rx: 3,
+      class: "gl-bg", "data-gloss": ts.getAttribute("data-gloss") }), txt);
+  });
   const hb = inner.getBBox();   // the header alone can be wider than the blocks
   const w = Math.max(tabW, hb.x + hb.width) + 2 * PANE_PAD, h = y - ROW_GAP + 2 * PANE_PAD;
   frame.setAttribute("x", 0); frame.setAttribute("y", 0);
@@ -696,7 +819,8 @@ function wirePanZoom() {
 // ---------------------------------------------------------------- tooltips + highlight
 let dragMoved = false, hideTimer = null, overTip = false, pinnedKey = null, hoverKey = null;
 function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-const richText = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+const richText = s => glossSegs(s).map(r => r.code ? `<code>${esc(r.t.slice(1, -1))}</code>`
+  : r.g ? `<span class="gl" data-gloss="${r.g}">${esc(r.t)}</span>` : esc(r.t)).join("");
 function tipHtml(t) {
   // A live figure's tooltip reads its state when SHOWN: live() returns the fields to lay over.
   if (typeof t.live === "function") t = Object.assign({}, t, t.live());
@@ -734,16 +858,22 @@ function hideTip() {
   pinnedKey = hoverKey = null;
   tip.style.display = "none";
   clearHighlight();
+  hideGloss();
 }
 function scheduleHide() {
   clearTimeout(hideTimer);
-  hideTimer = setTimeout(() => { if (!overTip) { tip.style.display = "none"; clearHighlight(); } }, 160);
+  hideTimer = setTimeout(() => { if (!overTip && !overGloss) { tip.style.display = "none"; clearHighlight(); } }, 160);
 }
 function wireTips() {
   tip.addEventListener("mouseenter", () => { overTip = true; clearTimeout(hideTimer); });
   tip.addEventListener("mouseleave", () => { overTip = false; if (!pinnedKey) scheduleHide(); });
   const target = e => e.target.closest("[data-tip]");
   svg.addEventListener("mouseover", e => {
+    // A glossary mark shows its own popup (wireGloss), never the tip of the row it sits in.
+    if (e.target.closest("[data-gloss]")) {
+      if (!pinnedKey && hoverKey !== null) { hoverKey = null; scheduleHide(); }
+      return;
+    }
     if (pinnedKey) return;
     const t = target(e);
     if (!t || t.dataset.tip === hoverKey) return;
@@ -763,6 +893,49 @@ function wireTips() {
     if (t) { pinnedKey = hoverKey = t.dataset.tip; show(tips[+pinnedKey], e); }
     else if (pinnedKey) hideTip();
   });
+}
+
+// ---- the glossary popup: hovering a mark, in the canvas or inside a tooltip, explains the term
+let gloss, glossTimer = null, overGloss = false;
+function glossHtml(id) {
+  const g = VIZ.gloss[id];
+  const links = (g.links || []).map(lk =>
+    `<a href="${esc(lk.url)}" target="_blank" rel="noopener">${esc(lk.label || lk.url)} ↗</a>`).join("");
+  return `<div class="g-term">${esc(g.term)}</div>` +
+    `<div class="g-body">${esc(g.body).replace(/`([^`]+)`/g, "<code>$1</code>")}</div>` +
+    (links ? `<div class="g-links">${links}</div>` : "");
+}
+function showGloss(mark) {
+  clearTimeout(glossTimer);
+  gloss.innerHTML = glossHtml(mark.getAttribute("data-gloss"));
+  gloss.style.display = "block";
+  const a = mark.getBoundingClientRect(), r = gloss.getBoundingClientRect();
+  let x = a.left, y = a.bottom + 6;
+  if (x + r.width > window.innerWidth - 8) x = window.innerWidth - 8 - r.width;
+  if (y + r.height > window.innerHeight - 8) y = a.top - r.height - 6;
+  gloss.style.left = `${Math.max(4, x)}px`;
+  gloss.style.top = `${Math.max(4, y)}px`;
+}
+function hideGloss() { clearTimeout(glossTimer); overGloss = false; if (gloss) gloss.style.display = "none"; }
+function hideGlossSoon() {
+  clearTimeout(glossTimer);
+  glossTimer = setTimeout(() => { if (!overGloss) gloss.style.display = "none"; }, 220);
+}
+function wireGloss() {
+  const mark = e => e.target instanceof Element && e.target.closest("[data-gloss]");
+  for (const host of [svg, tip]) {
+    host.addEventListener("mouseover", e => { const m = mark(e); if (m) showGloss(m); });
+    host.addEventListener("mouseout", e => { if (mark(e)) hideGlossSoon(); });
+  }
+  gloss.addEventListener("mouseenter", () => { overGloss = true; clearTimeout(glossTimer); clearTimeout(hideTimer); });
+  gloss.addEventListener("mouseleave", e => {
+    overGloss = false;
+    hideGlossSoon();
+    const into = e.relatedTarget instanceof Element && e.relatedTarget.closest("#tooltip");
+    if (!pinnedKey && !into && tip.style.display !== "none") scheduleHide();
+  });
+  svg.addEventListener("wheel", () => hideGloss(), { passive: true });
+  svg.addEventListener("mousedown", () => hideGloss());
 }
 
 // ---------------------------------------------------------------- boot
@@ -786,6 +959,10 @@ VIZ.render = function () {
   paneNav = document.getElementById("panes");
   tabNav = document.getElementById("tabs");
   pinLink = document.getElementById("pin");
+  gloss = document.createElement("div");
+  gloss.id = "gloss";
+  document.body.appendChild(gloss);
+  glossTerms();
   const defs = el("defs", {}, svg);
   const marker = el("marker", { id: "viz-arrow", viewBox: "0 0 10 8", refX: 9, refY: 4,
     markerWidth: 8, markerHeight: 6.5, orient: "auto-start-reverse" }, defs);
@@ -811,6 +988,7 @@ VIZ.render = function () {
   }
   wirePanZoom();
   wireTips();
+  wireGloss();
   openFromHash();
   requestAnimationFrame(frameLoop);
 
