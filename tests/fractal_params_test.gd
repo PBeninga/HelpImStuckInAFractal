@@ -139,3 +139,52 @@ func run() -> void:
 			check(lum > 0.6, "mode %d (white background) has a light fog (%s)" % [id, c])
 		else:
 			check(lum < 0.4, "mode %d has a dark fog (%s)" % [id, c])
+
+	# coarse_iters: the march's coarse pass takes enough iterations that its
+	# smoother surface sits within its own hit threshold of the real one
+	var ci := FractalParams.new()
+	check_eq(ci.coarse_iters(6.5655845), 16, "the default view (near ~6.57) keeps the site's 16")
+	check_eq(ci.coarse_iters(1000.0), 16, "far away never drops below 16")
+	check_eq(ci.coarse_iters(1e-3), 24, "1e-3 from the surface takes 24")
+	check_eq(ci.coarse_iters(1e-6), 32, "1e-6 takes all 32")
+	check_eq(ci.coarse_iters(0.0), 32, "a camera on the surface stays at 32")
+	var ci_fine := FractalParams.new()
+	ci_fine.detail = 10.0
+	check(ci_fine.coarse_iters(1e-2) > ci.coarse_iters(1e-2),
+		"Detail 10 raises the count at a given distance (%d over %d)" % [ci_fine.coarse_iters(1e-2), ci.coarse_iters(1e-2)])
+	ci.box_scale = 1.0
+	check_eq(ci.coarse_iters(6.5), 32, "|box_scale| = 1 has no shrinking detail: 32")
+	ci.box_scale = -0.8
+	check_eq(ci.coarse_iters(6.5), 32, "nor does a scale inside 1: 32")
+
+	# nf_weight: the Ice Fractal shading crossfades to the true normal up close
+	check_eq(FractalParams.nf_weight(6.5655845), 1.0, "the default view lights with the Ice Fractal probe alone (exactly 1)")
+	check_eq(FractalParams.nf_weight(FractalParams.NF_FADE_FAR), 1.0, "the band's far end is 1")
+	check_eq(FractalParams.nf_weight(FractalParams.NF_FADE_NEAR), 0.0, "its near end is 0")
+	check_eq(FractalParams.nf_weight(1e-4), 0.0, "closer still is the true normal alone")
+	var mid := FractalParams.nf_weight(1.05)
+	check(mid > 0.0 and mid < 1.0, "inside the band it blends (%s)" % mid)
+	check(FractalParams.nf_weight(0.5) < FractalParams.nf_weight(1.5), "rising with the distance")
+
+	# ulp32: the gap between neighbouring 32-bit floats near x
+	check_eq(FractalParams.ulp32(1.0), pow(2.0, -23.0), "ulp32(1) is 2^-23")
+	check_eq(FractalParams.ulp32(1.96), pow(2.0, -23.0), "and the same through [1, 2)")
+	check_eq(FractalParams.ulp32(2.0), pow(2.0, -22.0), "doubling at exactly 2")
+	check_eq(FractalParams.ulp32(4.0), pow(2.0, -21.0), "and at exactly 4")
+	check_eq(FractalParams.ulp32(8.18), pow(2.0, -20.0), "2^-20 at the default eye's x")
+	check_eq(FractalParams.ulp32(0.3), pow(2.0, -25.0), "2^-25 at 0.3")
+	check(FractalParams.ulp32(0.0) > 0.0 and is_finite(FractalParams.ulp32(0.0)), "zero stays finite and positive")
+
+	# zoom_floor: how close the 32-bit positions let the camera come
+	var zf := FractalParams.new()
+	var near_box := Vector3(1.96, 0.914, 0.787)   # the default view's surface point
+	check(absf(zf.zoom_floor(near_box) - 1e-4) <= 0.2e-4,
+		"near the box at the default precision the floor is about 1e-4 (%s)" % zf.zoom_floor(near_box))
+	check_eq(zf.zoom_floor(-near_box), zf.zoom_floor(near_box), "it uses the largest |coordinate|")
+	var zf10 := FractalParams.new()
+	zf10.detail = 10.0
+	check_approx(zf10.zoom_floor(near_box) / zf.zoom_floor(near_box), 10.0,
+		"it scales with Detail: a finer hit threshold needs more room above the float grid", 1e-9)
+	check(zf.zoom_floor(Vector3(8.18, 3.81, 3.28)) > zf.zoom_floor(near_box),
+		"larger coordinates have a coarser grid, so a further floor")
+	check(is_finite(zf.zoom_floor(Vector3.ZERO)) and zf.zoom_floor(Vector3.ZERO) >= 0.0, "the origin stays finite")

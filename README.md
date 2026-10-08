@@ -88,6 +88,40 @@ A ray stops once the distance estimate falls below
 `precision / detail × t × max(1, t / (range × d₀))^falloff`, where `t` is the
 distance along the ray and `d₀` the camera's distance to the nearest surface.
 
+### Deep zoom
+
+Three things adjust themselves as you fly close to the fractal. None has a
+setting, and none changes a saved view; at the default view all three are off,
+so the picture there is exactly the site's.
+
+- **Coarse pass iterations.** Each ray marches in two phases: a cheap coarse
+  pass, then 32 fine steps at full precision. The coarse pass normally runs 16
+  Mandelbox iterations, which describe a slightly smoother surface than the
+  real one (each iteration adds detail about 2× finer, so 16 of them leave the
+  surface rough by about 2 / 2.09¹⁶ ≈ 1e-5). Once you are within about 0.3 of
+  the surface the hit threshold gets finer than that gap, and the coarse pass
+  would spend its whole budget creeping toward a surface it can never reach:
+  the picture darkens and dark pits open. So the coarse count rises with your
+  distance `d₀` to the nearest surface, to
+  `ceil(log(2 / (2 × eps × d₀)) / log|scale|)` kept between 16 and 32
+  (`eps = precision / detail`): 24 at `d₀ = 0.001`, 32 by about `3e-6`.
+- **Lighting.** The Ice Fractal colour modes (1 to 9, outside Julia mode) light
+  the surface with their own normal, which samples the formula 0.01 units from
+  the hit point. Up close 0.01 spans far more than a pixel and that shading
+  turns to noise, so between `d₀ = 2` and `d₀ = 0.1` it fades smoothly
+  (a `smoothstep`, an S-shaped blend with no kink at either end) into the true
+  surface normal, the one the Julia and metal modes already use.
+- **Zoom limit.** The shader works out positions in 32-bit floats, which near
+  a coordinate `x` can only land on a grid `ulp32(x) = 2^(floor(log2 x) − 23)`
+  apart (about `1.2e-7` near the box). Once the hit threshold is much finer
+  than that grid, rays reach the surface only by luck. The fly camera therefore
+  will not go closer than `ulp32(largest |eye coordinate|) / (50 × eps)`,
+  about `1e-4` near the box at the default precision; a higher Detail (a
+  finer threshold) or Julia mode's larger coordinates stop it further out.
+  While a move is being refused the console's Movement pane shows
+  `zoom limit` beside the speed readout. Moving away is always allowed, so a
+  saved view already past the limit can still leave.
+
 ### Load shedding
 
 With Fast Controls on, the render scale is the first thing to give while you
@@ -133,6 +167,9 @@ automatically as you approach the fractal. It is capped at 10× the distance to
 the nearest surface in any direction, so looking down a long corridor with a
 wall at your elbow cannot carry you sideways through the wall, and a ray that
 hits nothing takes that cap. The load shedder's speed cap still applies on top.
+It will not fly closer to the surface than the 32-bit zoom limit (see
+[Deep zoom](#deep-zoom)); the Movement pane shows `zoom limit` while it is
+holding you there.
 
 ### Orbit camera
 
@@ -362,6 +399,11 @@ clicks and drags sliders, types values and edits axes; `ui_noise_test.gd` adds
 a node from the right-click menu, wires it, edits it live and saves and loads
 the graph; `ui_journey_test.gd` plays one session from the title menu to Back
 to Menu.
+
+`deep_zoom_test.gd` replays the shader's two-phase march on the CPU from a
+camera 1e-3 and 1e-5 short of the default view's surface: with the old fixed
+16-iteration coarse pass the ray spends its whole budget or misses, with the
+distance-following count it hits in under half.
 
 The reference capture from the site lives at
 **`docs/reference/icefractal-default.jpg`**. Put `screenshots/default_view.png`

@@ -167,6 +167,11 @@ func show_shed_level(level: int) -> void:
 	_movement.show_shed_level(level)
 
 
+## Whether the fly camera is held at the zoom floor, shown in the Movement pane.
+func show_zoom_limit(on: bool) -> void:
+	_movement.show_zoom_limit(on)
+
+
 ## Feed one frame of resolved values to both tabs' readouts and the palette's
 ## curves and strip.
 func set_resolved(values: Dictionary) -> void:

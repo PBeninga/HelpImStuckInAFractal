@@ -57,8 +57,11 @@ const F = {
   tWs: "tests/workspace_test.gd",
   tShader: "tests/shader_test.gd",
   tCam: "tests/camera_state_test.gd",
+  tDeep: "tests/deep_zoom_test.gd",
+  movement: "src/ui/console/movement_pane.gd",
+  zoomSpec: "docs/superpowers/specs/2026-10-08-deep-zoom-march-design.md",
 };
-// Link helpers: R("sh", 48) is { file, line }; RL adds a label for a tooltip's link list.
+// Link helpers: R("sh", 62) is { file, line }; RL adds a label for a tooltip's link list.
 const R = (f, line) => ({ file: F[f], line });
 const RL = (f, line, label) => ({ file: F[f], line, label });
 const SH = line => R("sh", line);
@@ -71,7 +74,7 @@ const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const TAN_HALF_FOV = 0.36397023426620234;          // fractal_view.gd:11
 const DEFAULT_EYE = [8.175847, 3.812460, 3.283393]; // camera_state.gd:9
 const C_DEFAULT = [-0.23, 1.512, 1.892, 0];         // mandelbox_shape.gd:116 (c_0..c_3)
-const PLANES = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];   // distance_estimator.gd:18
+const PLANES = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];   // distance_estimator.gd:19
 const PLANE_NAMES = ["xy", "xz", "xw", "yz", "yw", "zw"];
 const AX4 = ["x", "y", "z", "w"];
 
@@ -93,12 +96,12 @@ const FOG_COLORS = { 0: [0.22, 0.22, 0.22], 1: [0.14, 0.22, 0.36], 2: [0.10, 0.1
 const LOOK_DEFAULTS = { palette_source: 0, palette_frequency: 1, palette_offset: 0, palette_occlusion: 0.5,
   light_ambient: 0.1, light_diffuse: 0.5, light_specular: 1, light_shininess: 160, light_yaw: 0, light_pitch: 0, exposure: 1, saturation: 1,
   pal: [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [1, 1, 1], [0, 0.33, 0.67]] };
-// params(o): FractalParams' defaults (fractal_params.gd:51-215) overridden by o, then what
-// FractalView._push_params (fractal_view.gd:290-327) and the shader derive from them:
+// params(o): FractalParams' defaults (fractal_params.gd:51-216) overridden by o, then what
+// FractalView._push_params (fractal_view.gd:331-368) and the shader derive from them:
 //   precU   = precision / (detail · shed detail)        the `precision` uniform (line 314)
 //   budget  = max(32, round(max_steps · shed steps))    split ¾ coarse, the rest fine (320-322)
 //   boxHalf = 20 when julia_all, else 2                 (line 317)
-//   mr2/fr2 = max(radius², 1e-12)                        mb_sphere_fold (mandelbox.gdshader:124-125)
+//   mr2/fr2 = max(radius², 1e-12)                        mb_sphere_fold (mandelbox.gdshader:151-152)
 //   jOn[i]  = julia_all || julia_i                       mb_constant (153-159)
 //   rotating = Σ|angle| > 1e-6                           mb_rotating (137-140)
 // julia (4 bools), c (4 floats) and rot (six degrees, xy xz xw yz yw zw) are arrays for julia_0..3,
@@ -111,8 +114,8 @@ function params(o) {
   const L = SHED_LEVELS[clamp(p.shed, 0, 4)];
   p.precU = p.precision / (p.detail * L.detail);
   p.budget = Math.max(32, Math.round(p.max_steps * L.steps));
-  p.coarse = Math.floor(p.budget * 3 / 4);          // coarse_steps(budget): fractal_params.gd:231-232
-  p.fine = p.budget - p.coarse;                     // fine_steps(budget): fractal_params.gd:235-237
+  p.coarse = Math.floor(p.budget * 3 / 4);          // coarse_steps(budget): fractal_params.gd:311-312
+  p.fine = p.budget - p.coarse;                     // fine_steps(budget): fractal_params.gd:315-317
   p.fog = L.fog;
   p.fogColor = FOG_COLORS[p.color_mode] || [0.2, 0.2, 0.2];
   p.boxHalf = p.julia_all ? 20 : 2;
@@ -129,8 +132,8 @@ const withP = (P, o) => params(Object.assign({}, P, o));
 const LOOK_P = Object.assign({}, LOOK_DEFAULTS);     // shade()'s default look: the site's
 
 // hitEps: the hit threshold at ray distance t for a camera `near` from the nearest surface,
-// mandelbox.gdshader:99-106 (hit_eps, with precision / detail folded into the `precision` uniform)
-// = fractal_params.gd:220-226 (hit_epsilon) at shed level 0. Falloff 0 is the plain cone precision · t.
+// mandelbox.gdshader:113-120 (hit_eps, with precision / detail folded into the `precision` uniform)
+// = fractal_params.gd:221-227 (hit_epsilon) at shed level 0. Falloff 0 is the plain cone precision · t.
 const NEAR_FLOOR = 1e-6;                            // fractal_params.gd:177
 function hitEps(P, t, near) {
   let e = P.precU * t;
@@ -140,18 +143,34 @@ function hitEps(P, t, near) {
   }
   return e;
 }
-// fog_amount: mandelbox.gdshader:109-113, 0 clear .. 1 fully fogged at fog · near_dist.
+// fog_amount: mandelbox.gdshader:123-127, 0 clear .. 1 fully fogged at fog · near_dist.
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 function fogAmount(P, t, near) {
   if (P.fog <= 0) return 0;
   const tf = P.fog * near;
   return smoothstep(0.35 * tf, tf, t);
 }
-// nearDist: what FractalView._push_near pushes as `near_dist` (fractal_view.gd:346).
+// nearDist: what FractalView._push_near pushes as `near_dist` (fractal_view.gd:388).
 function nearDist(eye, P) { return Math.max(de(eye[0], eye[1], eye[2], 32, P), NEAR_FLOOR); }
+// coarseIters: fractal_params.gd:246-251 (coarse_iters), the march's coarse-pass iteration count
+// for a camera `near` from the surface: the fewest n whose smoother surface (rough by about
+// 2 / |box_scale|^n) sits inside the coarse threshold 2 · eps · near, eps = precision / detail
+// (unshed), kept in [16, 32]. 16 at the default view; |box_scale| ≤ 1 gives 32.
+function coarseIters(P, near) {
+  const s = Math.abs(P.box_scale);
+  if (s <= 1) return 32;
+  const gap = Math.max(2 * P.precision / P.detail * Math.max(near, 0), 1e-300);
+  return clamp(Math.ceil(Math.log(2 / gap) / Math.log(s)), 16, 32);
+}
+// nfWeight: fractal_params.gd:269-270 (nf_weight) = smoothstep(0.1, 2, near): how much of the Ice
+// Fractal normal the probe-lit modes use, 1 from near = 2 out, 0 inside 0.1.
+function nfWeight(near) { const x = clamp((near - 0.1) / (2 - 0.1), 0, 1); return x * x * (3 - 2 * x); }
+// zoomFloor: fractal_params.gd:282-306 (ulp32, zoom_floor): the closest the fly camera may come.
+function ulp32(x) { x = Math.abs(x); return x < Math.pow(2, -126) ? Math.pow(2, -149) : Math.pow(2, Math.floor(Math.log2(x)) - 23); }
+function zoomFloor(eye, P) { return ulp32(Math.max(...eye.map(Math.abs))) / (50 * Math.max(P.precision / P.detail, 1e-30)); }
 
 // One Mandelbox iteration on the 4D orbit point v (a Float64Array of x, y, z, w), returning the new
-// dz: mb_step, mandelbox.gdshader:174-180 = the loop body of distance_estimator.gd:59-73.
+// dz: mb_step, mandelbox.gdshader:201-207 = the loop body of distance_estimator.gd:62-76.
 //   mb_box_fold   (85-87)    every component outside ±fold_limit reflected back inside
 //   mb_sphere_fold (91-104)  ×fr2/mr2 inside min_radius, ×fr2/r2 between the radii, dz the same
 //   mb_iter_rotate (127-135) the six planes in order, each mb_rot_plane (115-124)
@@ -179,10 +198,10 @@ function mbStep(v, dz, c, P) {
   v[0] = s * v[0] + c[0]; v[1] = s * v[1] + c[1]; v[2] = s * v[2] + c[2]; v[3] = s * v[3] + c[3];
   return dz * Math.abs(s) + 1;
 }
-// mb_constant: mandelbox.gdshader:184-190, per component the Julia constant or the point's own.
+// mb_constant: mandelbox.gdshader:211-217, per component the Julia constant or the point's own.
 function mbConstant(z0, P) { return [0, 1, 2, 3].map(a => (P.jOn[a] ? P.c[a] : z0[a])); }
 
-// de(p, iters): mandelbox.gdshader:193-204, equal to distance_estimator.gd:25-75 (estimate_at).
+// de(p, iters): mandelbox.gdshader:220-231, equal to distance_estimator.gd:27-78 (estimate_at).
 const _v = new Float64Array(4), _c = new Float64Array(4);
 function de(px, py, pz, iters, P) {
   _v[0] = px; _v[1] = py; _v[2] = pz; _v[3] = P.w;
@@ -223,7 +242,7 @@ function orbitStages(px, py, pz, P, iters) {
   return out;
 }
 
-// field(q): mandelbox.gdshader:208-217, the Ice Fractal field F(q) = |z16| − 8: the same mb_step from
+// field(q): mandelbox.gdshader:235-244, the Ice Fractal field F(q) = |z16| − 8: the same mb_step from
 // z = 0 with c = (q, w), dz carried but unused.
 const _fv = new Float64Array(4), _fc = new Float64Array(4);
 function field(qx, qy, qz, P) {
@@ -239,7 +258,7 @@ const norm = v => { const l = Math.hypot(v[0], v[1], v[2]); return l > 0 ? [v[0]
 const add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
-// calcNormal: mandelbox.gdshader:220-226, central differences of de(·, 32).
+// calcNormal: mandelbox.gdshader:247-253, central differences of de(·, 32).
 function calcNormal(v, delta, P) {
   const [x, y, z] = v;
   return norm([de(x + delta, y, z, 32, P) - de(x - delta, y, z, 32, P),
@@ -247,7 +266,7 @@ function calcNormal(v, delta, P) {
     de(x, y, z + delta, 32, P) - de(x, y, z - delta, 32, P)]);
 }
 
-// calcNF: mandelbox.gdshader:230-237. Base sample at the HALF-scale h = v/2, offsets at v + 0.01.
+// calcNF: mandelbox.gdshader:257-264. Base sample at the HALF-scale h = v/2, offsets at v + 0.01.
 function calcNF(v, h, P) {
   const lw = field(h[0], h[1], h[2], P);
   return norm([(field(v[0] + 0.01, v[1], v[2], P) - lw) / 0.01,
@@ -255,7 +274,7 @@ function calcNF(v, h, P) {
     (field(v[0], v[1], v[2] + 0.01, P) - lw) / 0.01]);
 }
 
-// hue: mandelbox.gdshader:240-250 (GLSL mod(x, 2) = x − 2·floor(x/2)).
+// hue: mandelbox.gdshader:267-277 (GLSL mod(x, 2) = x − 2·floor(x/2)).
 function hue(q) {
   q = clamp(q, 0, 0.999999);
   const h6 = q * 6, x = 1 - Math.abs(h6 - 2 * Math.floor(h6 / 2) - 1);
@@ -267,7 +286,7 @@ function hue(q) {
   return [1, 0, x];
 }
 
-// boxIntersect: mandelbox.gdshader:272-285. Returns [t_enter, t_exit]; a miss has t_exit < max(t_enter, 0).
+// boxIntersect: mandelbox.gdshader:299-312. Returns [t_enter, t_exit]; a miss has t_exit < max(t_enter, 0).
 function boxIntersect(ro, rd, half) {
   let tEnter = -Infinity, tExit = Infinity;
   for (let a = 0; a < 3; a++) {
@@ -279,13 +298,13 @@ function boxIntersect(ro, rd, half) {
   return [tEnter, tExit];
 }
 
-// march: the two phases of fragment(), mandelbox.gdshader:299-340. With `rec`, every de() call is
+// march: the two phases of fragment(), mandelbox.gdshader:326-369. With `rec`, every de() call is
 // recorded ({ phase, i, total, d, th, p, stop }) for the ray stepper. `near` is near_dist for this eye.
 // Under a load-shed fog the march ends at fog · near_dist (255-257): nothing past it is marched.
 function march(eye, dir, P, rec) {
   const tb = boxIntersect(eye, dir, P.boxHalf), near = nearDist(eye, P);
   const out = { tEnter: tb[0], tExit: tb[1], tEnd: tb[1], miss: false, left: false, fogged: false, n1: P.coarse, n2: P.fine,
-    total: 0, start: 0, ce: 1, near, lodStart: P.detail_range * near, steps: rec || null };
+    total: 0, start: 0, ce: 1, near, lodStart: P.detail_range * near, nc: coarseIters(P, near), steps: rec || null };
   if (tb[1] < Math.max(tb[0], 0)) { out.miss = true; return out; }
   let tExit = tb[1];
   if (P.fog > 0) tExit = Math.min(tExit, P.fog * near);
@@ -293,8 +312,8 @@ function march(eye, dir, P, rec) {
   let total = Math.max(tb[0], 0);
   out.start = total;
   let left = total > tExit;
-  for (let i = 0; i < P.coarse && !left; i++) {                          // phase 1: de(p, 16), coarse_steps
-    const p = add(eye, dir, total), d = de(p[0], p[1], p[2], 16, P), th = hitEps(P, total, near) * 2;
+  for (let i = 0; i < P.coarse && !left; i++) {                          // phase 1: de(p, coarse_iters), coarse_steps
+    const p = add(eye, dir, total), d = de(p[0], p[1], p[2], out.nc, P), th = hitEps(P, total, near) * 2;
     if (rec) rec.push({ phase: 1, i, total, d, th, p, stop: d < th });
     if (d < th) { out.n1 = i; break; }
     total += d;
@@ -312,19 +331,19 @@ function march(eye, dir, P, rec) {
   out.left = left;
   out.fogged = left && P.fog > 0 && tExit < tb[1];
   out.total = total;
-  // ce stays on the original 128-step scale; a ray that ran out of phase 2 is 1 (mandelbox.gdshader:340).
+  // ce stays on the original 128-step scale; a ray that ran out of phase 2 is 1 (mandelbox.gdshader:369).
   out.ce = out.n2 === P.fine ? 1 : Math.min((out.n1 + out.n2) / 128, 1);
   return out;
 }
 
-// palette: mandelbox.gdshader:254-260 (= Palette.color_at), A + B·cos(2π(C·t + D)), clamped.
+// palette: mandelbox.gdshader:281-287 (= Palette.color_at), A + B·cos(2π(C·t + D)), clamped.
 function palette(t, P) {
   const [A, B, C, D] = P.pal;
   return [0, 1, 2].map(k => clamp(A[k] + B[k] * Math.cos(6.283185307179586 * (C[k] * t + D[k])), 0, 1));
 }
-// lightTerm: mandelbox.gdshader:363, diffuse·nl + specular·nl^shininess + ambient (the site's 0.5, 1, 160, 0.1).
+// lightTerm: mandelbox.gdshader:405, diffuse·nl + specular·nl^shininess + ambient (the site's 0.5, 1, 160, 0.1).
 const lightTerm = (nl, P) => P.light_diffuse * nl + P.light_specular * Math.pow(nl, P.light_shininess) + P.light_ambient;
-// shade: the colour branches of fragment(), mandelbox.gdshader:342-416, from ce, the raw nl =
+// shade: the colour branches of fragment(), mandelbox.gdshader:371-458, from ce, the raw nl =
 // |dot(n, ldir)|, the normal n, h = v/2, the camera basis (modes 14 and 15 use view space) and the look
 // knobs in P (lighting, the Palette mode, then exposure and saturation, each skipped at its default).
 function shade(mode, ce, lgtRaw, n, h, cam, P = LOOK_P) {
@@ -370,14 +389,14 @@ function shadeMode(mode, ce, lgt, n, h, cam, P) {
     default: return [inv, inv, inv];
   }
 }
-// rotate_about: mandelbox.gdshader:263-268, Rodrigues' rotation of v by deg about the unit axis k.
+// rotate_about: mandelbox.gdshader:290-295, Rodrigues' rotation of v by deg about the unit axis k.
 function rotateAbout(v, k, deg) {
   const r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r), kv = dot(k, v), kx = cross(k, v);
   return [0, 1, 2].map(i => v[i] * c + kx[i] * s + k[i] * kv * (1 - c));
 }
 const mixRGB = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
-// One pixel of fragment(), mandelbox.gdshader:287-421: the ray from UV (239-243), the background
+// One pixel of fragment(), mandelbox.gdshader:314-463: the ray from UV (239-243), the background
 // (245-248), the march, then normal choice (303), light (309-312), colour and the fog mix (353).
 function renderPixel(cam, P, ux, uy, aspect) {
   const nx = (ux - 0.5) * 2, ny = -(uy - 0.5) * 2;
@@ -405,15 +424,15 @@ function lookAt(eye, target, upHint) {
 }
 const DEFAULT_CAM = lookAt(DEFAULT_EYE, [0, 0, 0]);
 
-// flySpeed: fly_camera.gd:104-109, speed = clamp(D(eye), 1e-6, 20) · speed_factor · speed_limit,
+// flySpeed: fly_camera.gd:139-144, speed = clamp(D(eye), 1e-6, 20) · speed_factor · speed_limit,
 // ×SPRINT_MULTIPLIER (2, line 16) while Shift is held. speed_limit is the shed level's `speed`.
 function flySpeed(eye, P, speedFactor, limit = 1, sprint = false) {
   return clamp(de(eye[0], eye[1], eye[2], 32, P), 1e-6, 20) * speedFactor * limit * (sprint ? 2 : 1);
 }
-// The wheel: fly_camera.gd:112-114, ×1.25 per tick up, ÷1.25 down, clamped to [0.01, 100].
+// The wheel: fly_camera.gd:153-155, ×1.25 per tick up, ÷1.25 down, clamped to [0.01, 100].
 function scrollFactor(f, up) { return clamp(f * (up ? 1.25 : 1 / 1.25), 0.01, 100); }
 
-// apply_look: fly_camera.gd:69-81 (yaw about world +Z keeps pitch; pitch clamped to ±89°).
+// apply_look: fly_camera.gd:106-118 (yaw about world +Z keeps pitch; pitch clamped to ±89°).
 const MAX_FORWARD_Z = 0.9998476951563913;
 function rotZ(v, a) { const c = Math.cos(a), s = Math.sin(a); return [v[0] * c - v[1] * s, v[0] * s + v[1] * c, v[2]]; }
 function applyLook(cam, dx, dy, sens) {
@@ -642,41 +661,41 @@ const arch = {
   nodes: [
     { id: "console", label: "ConsoleWindow", sub: "Shape inspector | Movement pane", ctx: "shape", zone: "shape", x: 330, y: 790, ...R("console", 1),
       blurb: "The debug console, a separate native OS window (`force_native`) on the desktop, embedded on the web and headless. Its Shape pane edits the table's defaults and bindings row by row; its Movement pane edits the keymap. It never writes FractalParams. Opened by a Ctrl tap; its View tab now holds what the pause menu did.",
-      links: [RL("console", 62, "force_native"), RL("console", 58, "setup(table, keymap, clock, …)"), RL("main", 138, "Main builds it")] },
+      links: [RL("console", 62, "force_native"), RL("console", 58, "setup(table, keymap, clock, …)"), RL("main", 146, "Main builds it")] },
     { id: "table", label: "AttributeTable", sub: "MandelboxShape specs · defaults · bindings", ctx: "shape", zone: "shape", x: 30, y: 610, ...R("table", 1),
       blurb: "The canonical shape: one AttributeSpec per catalogue id (MandelboxShape: box, Julia, iteration rotation, render), a default each, and a Binding on every bindable knob. Saves store it; the console and the Julia marker write it.",
-      links: [RL("shape", 56, "MandelboxShape.specs()"), RL("main", 64, "built from the catalogue"), RL("table", 51, "set_default")] },
+      links: [RL("shape", 56, "MandelboxShape.specs()"), RL("main", 68, "built from the catalogue"), RL("table", 51, "set_default")] },
     { id: "clock", label: "Clock", sub: "t, seconds since opening", ctx: "shape", zone: "shape", x: 520, y: 700, ...R("clock", 1),
       blurb: "`t += delta` every `_process`, never saved (nothing pauses the tree any more). The source a `Time` binding reads.",
       links: [RL("clock", 11, "t += delta")] },
     { id: "keymap", label: "Keymap · Axes", sub: "key pairs → InputMap · axis values", ctx: "shape", zone: "shape", x: 30, y: 700, ...R("keymap", 1),
       blurb: "The virtual axes (unbounded floats) and the key pair that pushes each, loaded from saves/keymap.json (Q/E push Axis A by default). Each pair is registered as two InputMap actions, so held keys need no special code.",
-      links: [RL("keymap", 23, "axes()"), RL("keymap", 113, "load_file"), RL("main", 66, "loaded at startup")] },
+      links: [RL("keymap", 23, "axes()"), RL("keymap", 113, "load_file"), RL("main", 70, "loaded at startup")] },
     { id: "axisCtl", label: "AxisController", sub: "steps axes from held keys", ctx: "shape", zone: "shape", x: 30, y: 790, ...R("axisCtl", 1),
       blurb: "Every `_process`: for each axis, the strength of its two actions → `axes().step(id, direction, delta)`, unless a text field has focus in any window.",
-      links: [RL("axisCtl", 28, "step"), RL("main", 155, "given the focus viewports")] },
-    { id: "resolve", label: "Main._resolve_once", sub: "resolve → apply_resolved", ctx: "shape", zone: "shape", x: 420, y: 610, ...R("main", 244),
+      links: [RL("axisCtl", 28, "step"), RL("main", 163, "given the focus viewports")] },
+    { id: "resolve", label: "Main._resolve_once", sub: "resolve → apply_resolved", ctx: "shape", zone: "shape", x: 420, y: 610, ...R("main", 264),
       blurb: "Every frame (`_process`), and straight after a load: `BindingResolver.resolve(table, axes.values(), clock.t)` gives every catalogue id its value (default + gain × wave(source) for an active binding), and `params.apply_resolved(values)` writes them. About thirty scalars, so it runs unconditionally.",
-      links: [RL("main", 237, "_process"), RL("resolver", 13, "resolve"), RL("main", 275, "after a load")] },
+      links: [RL("main", 253, "_process"), RL("resolver", 13, "resolve"), RL("main", 295, "after a load")] },
 
-    { id: "dispatch", label: "Main._unhandled_input", sub: "the one input dispatcher", ctx: "input", zone: "input", x: 280, y: 150, ...R("main", 390),
+    { id: "dispatch", label: "Main._unhandled_input", sub: "the one input dispatcher", ctx: "input", zone: "input", x: 280, y: 150, ...R("main", 410),
       blurb: "The only mouse and shortcut dispatcher, in a fixed order: a Ctrl tap toggles the console, Escape frees the mouse, Cmd/Ctrl+P copies a screenshot, N toggles the noise editor, a Julia marker drag, a click while free in FLY recaptures, everything else to the active camera. The next tab walks the order." },
-    { id: "mode", label: "Main._apply_mode", sub: "camera + mouse capture", ctx: "input", zone: "input", x: 500, y: 150, ...R("main", 337),
+    { id: "mode", label: "Main._apply_mode", sub: "camera + mouse capture", ctx: "input", zone: "input", x: 500, y: 150, ...R("main", 357),
       blurb: "Runs on every FractalParams change: enables exactly one camera from `camera_mode`, calls the orbit's `enter()` only on a real switch (not on every resolved frame), then `_update_mouse`: captured in FLY unless Escape, a Ctrl tap or a file panel has freed it, or the noise editor is open. The console's visibility does not gate capture, and nothing pauses.",
-      links: [RL("main", 342, "enter() only on a real switch"), RL("main", 348, "_update_mouse")] },
+      links: [RL("main", 362, "enter() only on a real switch"), RL("main", 368, "_update_mouse")] },
     { id: "viewPane", label: "ViewPane", sub: "console View tab: Save/Load · Camera · Renderer", ctx: "input", zone: "input", x: 30, y: 60, ...R("viewPane", 1),
       blurb: "The console's View tab took everything the old pause menu held (which had taken it from the retired Q panel): Save view… / Load view… with the current file and the status line, the Camera mode, the mouse sensitivity, Noise editor…, the Renderer options (with Fast Controls and Reset camera) and Back to Menu. It hands each choice back through signals; Main owns the files, the noise window and the scene change.",
-      links: [RL("main", 183, "_build_view_pane"), RL("viewPane", 148, "the Camera row"), RL("viewPane", 101, "the Renderer options")] },
+      links: [RL("main", 191, "_build_view_pane"), RL("viewPane", 148, "the Camera row"), RL("viewPane", 101, "the Renderer options")] },
     { id: "renderer", label: "RendererOptions", sub: "View tab ▸ Renderer options", ctx: "input", zone: "input", x: 380, y: 60, ...R("renderer", 1),
       blurb: "Edits the open view's level of detail (`detail`, `detail_range`, `detail_falloff`), the step budget `max_steps`, `min_render_scale` and Fast Controls, all saved with the view, plus Reset camera. It lives in the console's View tab now (the title menu's Settings lost its Renderer tab), so every edit renders live behind the console.",
-      links: [RL("renderer", 62, "the writes"), RL("viewPane", 101, "in the View tab"), RL("main", 187, "Reset camera")] },
+      links: [RL("renderer", 62, "the writes"), RL("viewPane", 101, "in the View tab"), RL("main", 195, "Reset camera")] },
     { id: "wsf", label: "WorkspaceFiles", sub: "file panels · current file · ⌘S", ctx: "input", zone: "input", x: 30, y: 150, ...R("wsf", 1),
       blurb: "Owns the two file panels and the current file's path, nothing else: it never reads or writes a save. The View tab's Save / Load buttons open them; picking a file emits `save_to` / `load_from`; ⌘S saves over the current file. It keeps processing while the tree is paused, or Godot's own panel would ignore every key.",
       links: [RL("wsf", 11, "signals"), RL("wsf", 114, "quick_save")] },
 
-    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "input", zone: "files", x: 30, y: 340, ...R("main", 253),
+    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "input", zone: "files", x: 30, y: 340, ...R("main", 273),
       blurb: "Main does the saving and loading the file panels ask for, through Workspace, and only then marks the file current. After a load it resolves once (so the loaded table reaches FractalParams this frame), applies the noise section, and in ORBIT re-runs `enter()`.",
-      links: [RL("main", 264, "load_view_from"), RL("main", 275, "resolve after a load"), RL("main", 281, "re-centre after a load")] },
+      links: [RL("main", 284, "load_view_from"), RL("main", 295, "resolve after a load"), RL("main", 301, "re-centre after a load")] },
     { id: "ws", label: "Workspace", sub: "capture · restore · JSON v2", ctx: "input", zone: "files", x: 290, y: 340, ...R("ws", 1),
       blurb: "Saves and loads a view as version-2 JSON: the table (defaults + active bindings), the axis values, the non-shape `fractal` keys and the camera. Unknown ids warn and are skipped; a version-1 file is migrated to the new ids without a warning.",
       links: [RL("ws", 31, "capture"), RL("ws", 56, "restore"), RL("ws", 181, "_migrate_v1")] },
@@ -686,24 +705,24 @@ const arch = {
 
     { id: "params", label: "FractalParams", sub: "Resource · resolved shape + renderer options", ctx: "state", zone: "state", x: 800, y: 110, ...R("params", 1),
       blurb: "Every value the renderer, the cameras and the governor read. The shape fields are the RESOLVED knob values, named by catalogue id (= the uniform names) and written once per frame by `apply_resolved`, which emits `changed` at most once and only when something differed. The preference and renderer fields are still set directly, each setter emitting.",
-      links: [RL("params", 24, "RESOLVED_KEYS"), RL("params", 254, "apply_resolved"), RL("params", 206, "the renderer options"), RL("tParams", 62, "emits once test")] },
+      links: [RL("params", 24, "RESOLVED_KEYS"), RL("params", 334, "apply_resolved"), RL("params", 207, "the renderer options"), RL("tParams", 62, "emits once test")] },
     { id: "camState", label: "CameraState", sub: "Resource · Transform3D + speed_factor", ctx: "state", zone: "state", x: 800, y: 300, ...R("cam", 1),
       blurb: "The camera as a Transform3D in Godot's convention: forward = −basis.z, right = basis.x, up = basis.y. Plus the fly speed multiplier. Both setters emit `changed` only when the value actually differs, so stray input that re-assigns the same transform never wakes the governor.",
       links: [RL("cam", 13, "the equality guard"), RL("cam", 29, "forward()"), RL("cam", 42, "make_default")] },
 
     { id: "view", label: "FractalView", sub: "uniforms · project / unproject", ctx: "render", zone: "render", x: 1230, y: 80, ...R("view", 1),
       blurb: "Pushes the two Resources into the shader as uniforms (each shape field under its own name), sizes the SubViewport in physical pixels from `render_scale` and the window's HiDPI factor, applies the governor's load-shed level, and owns the ray maths (`project` / `unproject`) so the marker and the orbit camera agree with the shader exactly.",
-      links: [RL("view", 290, "_push_params"), RL("view", 343, "_push_near: near_dist = D(eye)"), RL("view", 198, "set_load_level"), RL("view", 224, "project"), RL("view", 239, "unproject")] },
+      links: [RL("view", 331, "_push_params"), RL("view", 385, "_push_near: near_dist = D(eye)"), RL("view", 223, "set_load_level"), RL("view", 249, "project"), RL("view", 264, "unproject")] },
     { id: "noise", label: "NoiseWindow", sub: "noise graph → spliced shader", ctx: "render", zone: "render", x: 1230, y: 205, ...R("noise", 1),
       blurb: "The noise editor (N). Its graph is compiled into the shader between the NOISE markers (displacement, step scale, tint); with nothing wired to the Output the view swaps back to the original shader resource, so the picture and cost are as if it did not exist.",
-      links: [RL("view", 86, "set_noise_graph"), RL("view", 123, "_rebuild_noise"), RL("sh", 89, "the NOISE stub")] },
+      links: [RL("view", 110, "set_noise_graph"), RL("view", 147, "_rebuild_noise"), RL("sh", 103, "the NOISE stub")] },
     { id: "sub", label: "SubViewport", sub: "window × render_scale × HiDPI", ctx: "render", zone: "render", x: 1500, y: 80, ...R("viewScn", 22),
       blurb: "The render target, sized in physical pixels: the window × `render_scale` × the window's content scale (UiScale), so a still frame is sharp on a Retina screen. Its update mode (ALWAYS / ONCE / DISABLED) is how the governor freezes rendering.",
-      links: [RL("view", 257, "_apply_size"), RL("view", 273, "_content_scale")] },
-    { id: "rect", label: "ColorRect + mandelbox.gdshader", sub: "fragment(): march + shade", ctx: "render", zone: "render", x: 1500, y: 230, ...SH(287),
+      links: [RL("view", 282, "_apply_size"), RL("view", 298, "_content_scale")] },
+    { id: "rect", label: "ColorRect + mandelbox.gdshader", sub: "fragment(): march + shade", ctx: "render", zone: "render", x: 1500, y: 230, ...SH(314),
       blurb: "A canvas_item shader on a ColorRect filling the SubViewport: one fragment per pixel builds its ray, marches the 4D Mandelbox slice in two phases and colours the hit, fading into fog when the governor has shed load. All of it float32 (WebGL 2).",
-      links: [RL("viewScn", 28, "the ColorRect in the scene"), RL("sh", 174, "mb_step"), RL("sh", 193, "de")] },
-    { id: "tex", label: "TextureRect (Display)", sub: "stretched to the window", ctx: "render", zone: "render", x: 1800, y: 80, ...R("view", 45),
+      links: [RL("viewScn", 28, "the ColorRect in the scene"), RL("sh", 201, "mb_step"), RL("sh", 220, "de")] },
+    { id: "tex", label: "TextureRect (Display)", sub: "stretched to the window", ctx: "render", zone: "render", x: 1800, y: 80, ...R("view", 57),
       blurb: "Shows the SubViewport's texture stretched to fill the window (`EXPAND_IGNORE_SIZE`, `STRETCH_SCALE`), so a quarter-scale render still covers the screen while you move.",
       links: [RL("viewScn", 16, "the Display node")] },
     { id: "gov", label: "ResolutionGovernor", sub: "render_scale · update mode · shed level", ctx: "render", zone: "render", x: 1230, y: 330, ...R("gov", 1),
@@ -714,8 +733,8 @@ const arch = {
       links: [RL("shed", 14, "LEVELS"), RL("shed", 62, "step"), RL("tShed", 24, "the test")] },
 
     { id: "fly", label: "FlyCamera", sub: "mouse-look · WASD · distance-scaled speed", ctx: "camera", zone: "cameras", x: 790, y: 540, ...R("fly", 1),
-      blurb: "Yaw about world +Z, pitch about its own right clamped 1° off ±Z, never roll. Moves every physics tick at `clamp(D(eye), 1e-6, 20) · speed_factor · speed_limit`, ×2 while Shift sprints, so a second of flight covers about the gap to the nearest surface. Silent while a text field has focus.",
-      links: [RL("fly", 69, "apply_look"), RL("fly", 104, "current_speed"), RL("fly", 90, "TextFocus")] },
+      blurb: "Yaw about world +Z, pitch about its own right clamped 1° off ±Z, never roll. Moves every physics tick at `clamp(D(eye), 1e-6, 20) · speed_factor · speed_limit`, ×2 while Shift sprints, so a second of flight covers about the gap to the nearest surface. Refuses a move that would end closer to the surface than `zoom_floor` (the 32-bit limit) unless it is no closer than now, and raises `at_zoom_limit` for the console. Silent while a text field has focus.",
+      links: [RL("fly", 106, "apply_look"), RL("fly", 139, "current_speed"), RL("fly", 127, "TextFocus"), RL("fly", 95, "move_allowed: the zoom guard")] },
     { id: "orbit", label: "OrbitCamera", sub: "drag to orbit · click to re-centre", ctx: "camera", zone: "cameras", x: 1120, y: 540, ...R("orbit", 1),
       blurb: "The site's orbit controller: keeps a `center`; left-drag orbits it, Shift pans, right/Alt dollies, the wheel moves toward the cursor, a click re-centres on a CPU-marched hit. The mouse is never captured.",
       links: [RL("orbit", 9, "the gesture constants"), RL("orbit", 155, "_march")] },
@@ -725,7 +744,7 @@ const arch = {
 
     { id: "de", label: "DistanceEstimator", sub: "estimate_at · 64-bit scalar 4D orbit", ctx: "math", zone: "math", x: 1020, y: 760, ...R("de", 1),
       blurb: "The CPU copy of the shader's `de(p, 32)`: the same mb_step (folds in fold_order, the six-plane rotation, per-component Julia, w) in scalar 64-bit floats, not Vector math (32-bit), because lost input precision near the surface broke the near-boundary fixtures. Used for fly speed, orbit clicks and near_dist.",
-      links: [RL("de", 9, "why scalars"), RL("tDE", 17, "the fixtures")] },
+      links: [RL("de", 10, "why scalars"), RL("tDE", 17, "the fixtures")] },
   ],
   edges: [
     { from: "console", to: "table", kind: "call", label: "defaults · bindings", ...R("table", 51), bow: 1,
@@ -733,32 +752,32 @@ const arch = {
       links: [{ file: "src/ui/console/attribute_row.gd", line: 334, label: "attribute_row: set_default" }] },
     { from: "console", to: "keymap", kind: "call", label: "rebind · speed", ...R("keymap", 1), bow: -0.4,
       blurb: "The Movement pane writes through the Keymap API (`bind`, `set_speed`, `add_axis`, `remove_axis`, Save / Load) and refreshes on `changed`.",
-      links: [{ file: "src/ui/console/movement_pane.gd", line: 258, label: "movement_pane: bind" }] },
+      links: [{ file: "src/ui/console/movement_pane.gd", line: 268, label: "movement_pane: bind" }] },
     { from: "axisCtl", to: "keymap", kind: "call", label: "step", ...R("axisCtl", 28),
       blurb: "`axes().step(id, direction, delta)`: direction is the positive action's strength minus the negative's; the axis moves at its speed (units per second)." },
-    { from: "table", to: "resolve", kind: "data", label: "defaults · bindings", ...R("main", 245) },
-    { from: "keymap", to: "resolve", kind: "data", label: "axes().values()", ...R("main", 245) },
-    { from: "clock", to: "resolve", kind: "data", label: "t", ...R("main", 245), bow: 0.5 },
-    { from: "resolve", to: "params", kind: "call", label: "apply_resolved", ...R("main", 246),
+    { from: "table", to: "resolve", kind: "data", label: "defaults · bindings", ...R("main", 265) },
+    { from: "keymap", to: "resolve", kind: "data", label: "axes().values()", ...R("main", 265) },
+    { from: "clock", to: "resolve", kind: "data", label: "t", ...R("main", 265), bow: 0.5 },
+    { from: "resolve", to: "params", kind: "call", label: "apply_resolved", ...R("main", 266),
       blurb: "Every resolved value in one batch: the setters are suppressed and `changed` fires once at the end, only if a value differed. A view with no active binding costs no signal per frame; one bound to Time changes every frame, which the governor rightly sees as animating.",
-      links: [RL("params", 254, "apply_resolved")] },
-    { from: "resolve", to: "console", kind: "call", label: "set_resolved", ...R("main", 248), bow: 0.6,
+      links: [RL("params", 334, "apply_resolved")] },
+    { from: "resolve", to: "console", kind: "call", label: "set_resolved", ...R("main", 268), bow: 0.6,
       blurb: "Only while the console is visible: bound rows show their live value under the slider." },
     { from: "marker", to: "table", kind: "call", label: "c_0..c_2", ...R("marker", 61), bow: -3,
       blurb: "The drag writes the table's defaults (the canonical shape), then mirrors them into FractalParams with `apply_resolved` so the picture follows this frame.",
       links: [RL("marker", 64, "the mirror"), RL("tMarker", 37, "the test")] },
-    { from: "dispatch", to: "console", kind: "call", label: "Ctrl tap", ...R("main", 393), bow: -10,
+    { from: "dispatch", to: "console", kind: "call", label: "Ctrl tap", ...R("main", 413), bow: -10,
       blurb: "`CtrlTap.feed` fires on a bare Ctrl press-and-release; `_on_console_toggle` frees the mouse and opens the console when captured, toggles it when free.",
-      links: [RL("main", 364, "_on_console_toggle"), RL("ctrlTap", 21, "CtrlTap.feed")] },
-    { from: "viewPane", to: "wsf", kind: "signal", label: "Save / Load view…", ...R("main", 189),
-      blurb: "`save_requested` → `prompt_save`, `load_requested` → `prompt_load`.", links: [RL("main", 190, "load")] },
+      links: [RL("main", 384, "_on_console_toggle"), RL("ctrlTap", 21, "CtrlTap.feed")] },
+    { from: "viewPane", to: "wsf", kind: "signal", label: "Save / Load view…", ...R("main", 197),
+      blurb: "`save_requested` → `prompt_save`, `load_requested` → `prompt_load`.", links: [RL("main", 198, "load")] },
     { from: "renderer", to: "params", kind: "call", label: "LOD · steps · min scale", ...R("renderer", 62), bow: -0.5,
-      blurb: "Each slider assigns one FractalParams field; the setters clamp to the documented ranges (fractal_params.gd:206-215)." },
-    { from: "wsf", to: "msave", kind: "signal", label: "save_to / load_from", ...R("main", 224),
+      blurb: "Each slider assigns one FractalParams field; the setters clamp to the documented ranges (fractal_params.gd:207-216)." },
+    { from: "wsf", to: "msave", kind: "signal", label: "save_to / load_from", ...R("main", 240),
       blurb: "A picked file (or ⌘S on a current file) emits `save_to(path)` or `load_from(path)`; Main does the work." },
-    { from: "msave", to: "ws", kind: "call", label: "save_file / load_file", ...R("main", 255), bow: 0,
+    { from: "msave", to: "ws", kind: "call", label: "save_file / load_file", ...R("main", 275), bow: 0,
       blurb: "`Workspace.save_file(path, table, axes, params, camera, noise)` and `load_file`; the result's warnings go to the View tab's status line.",
-      links: [RL("main", 266, "load_file")] },
+      links: [RL("main", 286, "load_file")] },
     { from: "ws", to: "saves", kind: "data", label: "JSON", ...R("ws", 108),
       blurb: "Written as indented JSON with `store_string`; read back with `JSON.new().parse()` so a bad file is a warning, not an engine error.",
       links: [RL("ws", 124, "the parse")] },
@@ -768,61 +787,62 @@ const arch = {
       blurb: "Only the non-shape keys (`fast_controls`, `camera_mode`, `mouse_sensitivity`, the renderer options) are written with `params.set`; the shape reaches FractalParams through the next resolve." },
     { from: "ws", to: "camState", kind: "call", ...R("ws", 241), bow: 0.6,
       blurb: "The camera is rebuilt with `looking_at(eye + forward, up)`, after rejecting a zero or degenerate orientation." },
-    { from: "dispatch", to: "fly", kind: "call", label: "handle_event", ...R("main", 449),
+    { from: "dispatch", to: "fly", kind: "call", label: "handle_event", ...R("main", 477),
       blurb: "The last step of the dispatcher: whatever is left goes to the active camera. In FLY: mouse-look while captured, the wheel scales the speed factor." },
-    { from: "dispatch", to: "orbit", kind: "call", ...R("main", 449),
+    { from: "dispatch", to: "orbit", kind: "call", ...R("main", 477),
       blurb: "In ORBIT: drags, the wheel and clicks." },
-    { from: "dispatch", to: "marker", kind: "call", label: "drag", ...R("main", 422), bow: 0.3,
+    { from: "dispatch", to: "marker", kind: "call", label: "drag", ...R("main", 450), bow: 0.3,
       blurb: "While Julia (all) is on and the mouse is free, a left press that lands on the ring starts a drag, and motion during it moves the point.",
-      links: [RL("main", 428, "update_drag")] },
-    { from: "mode", to: "fly", kind: "call", label: "enabled", ...R("main", 339), bow: 0.5,
+      links: [RL("main", 456, "update_drag")] },
+    { from: "mode", to: "fly", kind: "call", label: "enabled", ...R("main", 359), bow: 0.5,
       blurb: "`fly.enabled = is_fly`. A disabled camera ignores events and its `_physics_process` returns at once." },
-    { from: "mode", to: "orbit", kind: "call", label: "enter()", ...R("main", 343),
+    { from: "mode", to: "orbit", kind: "call", label: "enter()", ...R("main", 363),
       blurb: "Only on a real switch into ORBIT: `enter()` centres on the surface hit by the centre ray (or the origin).",
       links: [RL("orbit", 76, "enter")] },
-    { from: "fly", to: "camState", kind: "call", label: "transform", ...R("fly", 62),
+    { from: "fly", to: "camState", kind: "call", label: "transform", ...R("fly", 87),
       blurb: "Movement writes `transform.origin` every physics tick; mouse-look rebuilds the basis with `looking_at(eye + fwd, +Z)` (no roll). A zero mouse delta is ignored, so a resting captured mouse never re-renders.",
-      links: [RL("fly", 121, "_set_forward"), RL("fly", 70, "zero delta ignored")] },
+      links: [RL("fly", 162, "_set_forward"), RL("fly", 107, "zero delta ignored")] },
     { from: "orbit", to: "camState", kind: "call", label: "transform", ...R("orbit", 150),
       blurb: "Every gesture ends in `_look_from(eye)` (looking at `center`, +Z up), or moves the origin directly (pan, wheel)." },
-    { from: "fly", to: "de", kind: "data", label: "D(eye)", ...R("fly", 105),
-      blurb: "`current_speed()` asks the CPU estimator for the distance from the eye." },
+    { from: "fly", to: "de", kind: "data", label: "D(eye)", ...R("fly", 148),
+      blurb: "`base_speed()` asks the CPU estimator for the distance from the eye (the cap on the centre-ray speed), and while moving `move_allowed()` asks once more, at the candidate position, to hold the camera above `zoom_floor`.",
+      links: [RL("fly", 148, "base_speed: D(eye)"), RL("fly", 96, "move_allowed: D(candidate)")] },
     { from: "orbit", to: "de", kind: "data", label: "CPU march", ...R("orbit", 164),
       blurb: "`_march` steps a single high-precision phase (up to 200 steps) for clicks and `enter()`." },
-    { from: "view", to: "de", kind: "data", label: "near_dist", ...R("view", 346), bow: -0.4,
+    { from: "view", to: "de", kind: "data", label: "near_dist", ...R("view", 388), bow: -0.4,
       blurb: "`near_dist = max(D(eye), 1e-6)`, refreshed on every camera and params push: the unit the level-of-detail range and the fog are measured in." },
-    { from: "params", to: "view", kind: "signal", label: "uniforms", ...R("view", 74),
-      blurb: "`_on_params_changed` → `_push_params` + `request_frame`.", links: [RL("view", 280, "_on_params_changed")] },
+    { from: "params", to: "view", kind: "signal", label: "uniforms", ...R("view", 91),
+      blurb: "`_on_params_changed` → `_push_params` + `request_frame`.", links: [RL("view", 305, "_on_params_changed")] },
     { from: "params", to: "marker", kind: "signal", ...R("marker", 23), bow: 2,
       blurb: "Shows or hides the ring with Julia (all) and redraws it at the new point." },
-    { from: "params", to: "mode", kind: "signal", label: "_apply_mode", ...R("main", 100),
+    { from: "params", to: "mode", kind: "signal", label: "_apply_mode", ...R("main", 105),
       blurb: "Main re-applies the camera mode on every FractalParams change; `_last_mode` keeps it from re-centring the orbit on an animated frame or a slider move." },
     { from: "params", to: "gov", kind: "signal", label: "_dirty", ...R("gov", 46),
       blurb: "Any FractalParams change marks the governor dirty (this frame is 'changing') and re-reads `fast_controls` and `min_render_scale`." },
-    { from: "camState", to: "view", kind: "signal", label: "eye, basis", ...R("view", 76),
+    { from: "camState", to: "view", kind: "signal", label: "eye, basis", ...R("view", 93),
       blurb: "`_on_camera_changed` → `_push_camera` (eye, right, up, forward, near_dist) + `request_frame`." },
     { from: "camState", to: "marker", kind: "signal", ...R("marker", 24),
       blurb: "The ring is re-projected whenever the camera moves." },
-    { from: "camState", to: "gov", kind: "signal", label: "mark_changed", ...R("main", 101), bow: -0.3,
+    { from: "camState", to: "gov", kind: "signal", label: "mark_changed", ...R("main", 106), bow: -0.3,
       blurb: "Main connects CameraState.changed to `governor.mark_changed()`: any camera move is a 'changing' frame." },
     { from: "gov", to: "view", kind: "call", label: "scale · mode · load level", ...R("gov", 78),
       blurb: "Every `_process`, only where something differs: `set_load_level(applied_level())`, `set_render_scale(scale)`, then by mode `set_continuous(true)`, or `set_continuous(false)` + `request_frame()`, or `set_continuous(false)`.",
       links: [RL("gov", 80, "render scale"), RL("gov", 82, "match mode")] },
     { from: "gov", to: "shedder", kind: "call", label: "step", ...R("gov", 115),
       blurb: "Fed the smoothed frame time while moving, with `can_shed` = the scale is at its floor, so resolution is always the first lever." },
-    { from: "gov", to: "fly", kind: "signal", label: "speed_limit", ...R("main", 318), bow: -0.6,
+    { from: "gov", to: "fly", kind: "signal", label: "speed_limit", ...R("main", 338), bow: -0.6,
       blurb: "`shed_level_changed` → Main sets `fly.speed_limit` to the level's `speed` (0.4 only at the top rung) and shows the level in the Movement pane.",
       links: [RL("gov", 74, "the signal")] },
     { from: "noise", to: "view", kind: "call", label: "set_noise_graph", ...R("noise", 134),
       blurb: "The editor hands the view its graph; the view recompiles on structural edits and only pushes uniforms on live ones." },
-    { from: "view", to: "sub", kind: "call", label: "size · mode", ...R("view", 266),
+    { from: "view", to: "sub", kind: "call", label: "size · mode", ...R("view", 291),
       blurb: "`_apply_size` sets the viewport to the physical pixel size (and the `aspect` uniform); `request_frame` / `set_continuous` set its update mode.",
-      links: [RL("view", 212, "UPDATE_ONCE"), RL("view", 219, "ALWAYS / DISABLED")] },
-    { from: "view", to: "rect", kind: "data", label: "61 uniforms", ...R("view", 293),
+      links: [RL("view", 237, "UPDATE_ONCE"), RL("view", 244, "ALWAYS / DISABLED")] },
+    { from: "view", to: "rect", kind: "data", label: "61 uniforms", ...R("view", 334),
       blurb: "`set_shader_parameter` for every uniform; the last tab lists each with where it comes from." },
     { from: "sub", to: "rect", kind: "call", label: "renders", ...R("viewScn", 28),
       blurb: "The ColorRect is the SubViewport's only child: rendering the viewport runs the shader once per pixel." },
-    { from: "sub", to: "tex", kind: "data", label: "texture", ...R("view", 45),
+    { from: "sub", to: "tex", kind: "data", label: "texture", ...R("view", 57),
       blurb: "`_display.texture = _viewport.get_texture()`." },
   ],
 };
@@ -835,9 +855,9 @@ const seq = {
   note: "From an input event to pixels on screen, in order. Main dispatches input once; a camera writes CameraState. Then the frame's `_process` calls run in tree order: Main first, resolving the table, the axes and the clock into FractalParams with one `apply_resolved`; the governor next, deciding the render scale, the load-shed level and whether the SubViewport renders; the Clock and the AxisController last (their new values are resolved on the next frame). Every `changed` pushes uniforms and marks the governor dirty. When the motion stops, 0.15 s of quiet, one full-scale frame, then nothing renders.",
   laneWidth: 196, headWidth: 186,
   participants: [
-    { id: "ev", col: 0, ctx: "input", name: "input event", sub: "mouse / key", blurb: "An InputEvent no Control consumed. A key the focused console or noise window did not use is forwarded to Main by `_on_window_key`, so the shortcuts work from either window.", ...R("main", 379) },
-    { id: "main", col: 1, ctx: "input", name: "Main", sub: "_unhandled_input · _process", ...R("main", 390), blurb: "The single dispatcher, and the per-frame resolve." },
-    { id: "cam", col: 2, ctx: "camera", name: "active camera", sub: "FlyCamera or OrbitCamera", ...R("main", 385), blurb: "`_active_camera()`: FlyCamera in FLY, OrbitCamera in ORBIT." },
+    { id: "ev", col: 0, ctx: "input", name: "input event", sub: "mouse / key", blurb: "An InputEvent no Control consumed. A key the focused console or noise window did not use is forwarded to Main by `_on_window_key`, so the shortcuts work from either window.", ...R("main", 399) },
+    { id: "main", col: 1, ctx: "input", name: "Main", sub: "_unhandled_input · _process", ...R("main", 410), blurb: "The single dispatcher, and the per-frame resolve." },
+    { id: "cam", col: 2, ctx: "camera", name: "active camera", sub: "FlyCamera or OrbitCamera", ...R("main", 405), blurb: "`_active_camera()`: FlyCamera in FLY, OrbitCamera in ORBIT." },
     { id: "res", col: 3, ctx: "shape", name: "BindingResolver", sub: "table + axes + clock", ...R("resolver", 13), blurb: "A static function: every catalogue id's value from its default and binding (the console pane steps it)." },
     { id: "cs", col: 4, ctx: "state", name: "CameraState", sub: "Resource", ...R("cam", 1) },
     { id: "pa", col: 5, ctx: "state", name: "FractalParams", sub: "Resource", ...R("params", 1) },
@@ -848,48 +868,48 @@ const seq = {
   ],
   rows: [
     { sec: "INPUT — Main._unhandled_input, in order; each step returns once it consumes the event" },
-    { from: "ev", to: "main", kind: "call", label: "_unhandled_input(event)", ...R("main", 390),
+    { from: "ev", to: "main", kind: "call", label: "_unhandled_input(event)", ...R("main", 410),
       blurb: "Every unhandled event comes here first." },
-    { from: "main", to: "main", kind: "call", label: "1 · Ctrl tap toggles the console", tick: "bare Ctrl down then up, not while typing", ...R("main", 392),
+    { from: "main", to: "main", kind: "call", label: "1 · Ctrl tap toggles the console", tick: "bare Ctrl down then up, not while typing", ...R("main", 412),
       blurb: "`CtrlTap.feed`: a bare non-echo Ctrl press arms, any other key disarms, the Ctrl release fires (so Ctrl+S still quick-saves). Captured: free the mouse and open the console. Free: toggle it, and recapture if that closed it. Its `typing_guard` ignores the tap while a text field has focus in any window.",
-      links: [RL("ctrlTap", 21, "CtrlTap.feed"), RL("main", 98, "typing_guard"), RL("main", 364, "_on_console_toggle")] },
-    { from: "main", to: "main", kind: "call", label: "2 · Escape · ⌘P · N", tick: "free the mouse · screenshot · noise editor", ...R("main", 399),
+      links: [RL("ctrlTap", 21, "CtrlTap.feed"), RL("main", 103, "typing_guard"), RL("main", 384, "_on_console_toggle")] },
+    { from: "main", to: "main", kind: "call", label: "2 · Escape · ⌘P · N", tick: "free the mouse · screenshot · noise editor", ...R("main", 419),
       blurb: "Escape (the `cancel` action) only frees the mouse: nothing pauses and the console and the noise window stay as they are, so a click in the view recaptures; Cmd/Ctrl+P copies the fractal to the clipboard; N toggles the noise editor unless a text field has focus.",
-      links: [RL("main", 405, "copy_screenshot"), RL("main", 411, "N")] },
-    { from: "main", to: "main", kind: "call", label: "3 · Julia marker drag", tick: "Julia (all) on, mouse free", ...R("main", 419),
+      links: [RL("main", 425, "copy_screenshot"), RL("main", 431, "N")] },
+    { from: "main", to: "main", kind: "call", label: "3 · Julia marker drag", tick: "Julia (all) on, mouse free", ...R("main", 447),
       blurb: "A left press on the ring starts a drag (`begin_drag`), motion during it calls `update_drag` (which writes the table), a release ends it.",
       links: [RL("marker", 41, "begin_drag")] },
-    { from: "main", to: "main", kind: "call", label: "4 · click to capture", tick: "FLY, mouse free · the console stays open", ...R("main", 436),
+    { from: "main", to: "main", kind: "call", label: "4 · click to capture", tick: "FLY, mouse free · the console stays open", ...R("main", 464),
       blurb: "A left click on the view while the mouse is free in FLY recaptures it and closes the noise editor, leaving the console open so its readouts stay in sight. On the web, pointer lock only works from inside such a user gesture.",
       links: [RL("spec", 358, "spec: mouse capture")] },
-    { from: "main", to: "cam", kind: "call", label: "5 · handle_event(event)", ...R("main", 449),
+    { from: "main", to: "cam", kind: "call", label: "5 · handle_event(event)", ...R("main", 477),
       blurb: "Everything else goes to the active camera; a consumed event is marked handled." },
-    { from: "cam", to: "cs", kind: "call", label: "apply_look → transform", tick: "mouse motion while captured", ...R("fly", 69),
+    { from: "cam", to: "cs", kind: "call", label: "apply_look → transform", tick: "mouse motion while captured", ...R("fly", 106),
       blurb: "Yaw about world +Z, pitch about the camera's right clamped to ±89°, basis rebuilt with +Z as up (no roll). A zero delta (macOS sends them while a captured mouse rests) returns before touching the transform.",
-      links: [RL("fly", 121, "looking_at"), RL("fly", 70, "zero delta")] },
+      links: [RL("fly", 162, "looking_at"), RL("fly", 107, "zero delta")] },
     { from: "cam", to: "cs", kind: "call", label: "rotate / pan / dolly / zoom", tick: "drag · wheel · click", ...R("orbit", 150),
       blurb: "The orbit's gestures all end by writing the transform." },
-    { from: "cs", to: "view", kind: "signal", label: "changed → _push_camera", tick: "only when the value differs · + request_frame()", ...R("view", 285),
+    { from: "cs", to: "view", kind: "signal", label: "changed → _push_camera", tick: "only when the value differs · + request_frame()", ...R("view", 311),
       blurb: "Eye and basis become the `eye`, `cam_right`, `cam_up`, `cam_forward` uniforms, and `near_dist` is recomputed; `request_frame` asks for one render (unless already continuous). CameraState emits only on a real change.",
-      links: [RL("view", 330, "_push_camera"), RL("cam", 13, "the equality guard")] },
-    { from: "cs", to: "gov", kind: "signal", label: "changed → mark_changed()", ...R("main", 101),
+      links: [RL("view", 371, "_push_camera"), RL("cam", 13, "the equality guard")] },
+    { from: "cs", to: "gov", kind: "signal", label: "changed → mark_changed()", ...R("main", 106),
       blurb: "Sets `_dirty`; the governor reads and clears it once per frame." },
     { sec: "PHYSICS — FlyCamera._physics_process, every physics tick" },
-    { from: "cam", to: "cam", kind: "call", label: "move_direction() · current_speed()", tick: "clamp(D(eye), 1e-6, 20) · factor · limit · (4 if Shift)", ...R("fly", 57),
+    { from: "cam", to: "cam", kind: "call", label: "move_direction() · current_speed()", tick: "clamp(D(eye), 1e-6, 20) · factor · limit · (4 if Shift)", ...R("fly", 76),
       blurb: "The six actions in camera axes, normalised; nothing while Cmd/Ctrl is held or a text field has focus. Speed from the CPU estimator, capped by the shed level's `speed_limit`: tab 8.",
-      links: [RL("fly", 87, "move_direction"), RL("fly", 104, "current_speed")] },
-    { from: "cam", to: "cs", kind: "call", label: "origin += dir · speed · delta", ...R("fly", 61),
+      links: [RL("fly", 124, "move_direction"), RL("fly", 139, "current_speed")] },
+    { from: "cam", to: "cs", kind: "call", label: "origin += dir · speed · delta", ...R("fly", 82),
       blurb: "Each tick's move emits `changed` again, so a held key keeps the frame 'changing'." },
     { sec: "PROCESS — Main._process: resolve the shape" },
-    { from: "main", to: "res", kind: "call", label: "resolve(table, axes.values(), clock.t)", tick: "default + gain × wave(source) per active binding", ...R("main", 245),
+    { from: "main", to: "res", kind: "call", label: "resolve(table, axes.values(), clock.t)", tick: "default + gain × wave(source) per active binding", ...R("main", 265),
       blurb: "Every catalogue id gets a value: its default if unbound, otherwise default + gain × waveform(source), sanitized to the spec's range. A source is the clock (`time`) or an axis id; an unknown axis reads 0.",
-      links: [RL("resolver", 13, "resolve"), RL("main", 237, "_process")] },
-    { from: "main", to: "pa", kind: "call", label: "apply_resolved(values)", tick: "one changed, only on a difference", ...R("main", 246),
+      links: [RL("resolver", 13, "resolve"), RL("main", 253, "_process")] },
+    { from: "main", to: "pa", kind: "call", label: "apply_resolved(values)", tick: "one changed, only on a difference", ...R("main", 266),
       blurb: "Writes every resolved field with its setter's signal suppressed, then emits `changed` once if anything differed. With no active binding nothing differs, so a still view stays still.",
-      links: [RL("params", 254, "apply_resolved"), RL("main", 248, "+ console.set_resolved while visible")] },
-    { from: "pa", to: "view", kind: "signal", label: "changed → _push_params", tick: "+ request_frame()", ...R("view", 280),
+      links: [RL("params", 334, "apply_resolved"), RL("main", 268, "+ console.set_resolved while visible")] },
+    { from: "pa", to: "view", kind: "signal", label: "changed → _push_params", tick: "+ request_frame()", ...R("view", 305),
       blurb: "Each shape field under its own uniform name, plus the precision folded with detail and the shed level, the step budget, box_half, the fog.",
-      links: [RL("view", 290, "_push_params")] },
+      links: [RL("view", 331, "_push_params")] },
     { from: "pa", to: "gov", kind: "signal", label: "changed → _dirty", ...R("gov", 46),
       blurb: "Also re-reads `fast_controls` and `min_render_scale`." },
     { sec: "FRAME — ResolutionGovernor._process" },
@@ -898,22 +918,22 @@ const seq = {
       links: [RL("gov", 96, "step")] },
     { from: "gov", to: "view", kind: "call", label: "set_load_level(applied_level())", tick: "fog · detail · step budget", ...R("gov", 79),
       blurb: "The shedder's level while moving or settling, 0 otherwise; the view re-pushes its params only when the level differs.",
-      links: [RL("view", 198, "set_load_level"), RL("gov", 60, "applied_level")] },
+      links: [RL("view", 223, "set_load_level"), RL("gov", 60, "applied_level")] },
     { from: "gov", to: "view", kind: "call", label: "set_render_scale(scale)", tick: "min_render_scale (0.25) … 1", ...R("gov", 81),
       blurb: "Only when the scale differs; resizes the SubViewport before this frame renders.",
-      links: [RL("view", 191, "set_render_scale")] },
+      links: [RL("view", 216, "set_render_scale")] },
     { from: "gov", to: "view", kind: "call", label: "set_continuous(true)", tick: "CONTINUOUS", ...R("gov", 85),
       blurb: "UPDATE_ALWAYS while changing; `request_frame` then refuses to downgrade it to UPDATE_ONCE mid-motion.",
-      links: [RL("view", 210, "the guard")] },
-    { from: "view", to: "sv", kind: "call", label: "size = window × scale × HiDPI", tick: "physical pixels", ...R("view", 266),
+      links: [RL("view", 235, "the guard")] },
+    { from: "view", to: "sv", kind: "call", label: "size = window × scale × HiDPI", tick: "physical pixels", ...R("view", 291),
       blurb: "`round(size × render_scale × content_scale)`, at least 1; a new size requests a frame. The `aspect` uniform follows.",
-      links: [RL("view", 261, "rounding")] },
-    { from: "sv", to: "sv", kind: "call", label: "fragment() for every pixel", tick: "march · normal · colour · fog", ...SH(287),
+      links: [RL("view", 286, "rounding")] },
+    { from: "sv", to: "sv", kind: "call", label: "fragment() for every pixel", tick: "march · normal · colour · fog", ...SH(314),
       blurb: "Tabs 3 to 7 open this up: the estimator, the march, the colour modes and the two normals." },
     { sec: "LAST IN TREE ORDER — Clock, AxisController" },
     { from: "ax", to: "ax", kind: "call", label: "t += delta · axes.step(id, dir, delta)", tick: "resolved on the next frame", ...R("axisCtl", 28),
       blurb: "Main adds the Clock and the AxisController in `_ready`, after the scene's own children, so they process after Main has resolved: a key held this frame moves the shape on the next one. Skipped while a text field has focus.",
-      links: [RL("clock", 11, "t += delta"), RL("main", 80, "built after the scene's nodes")] },
+      links: [RL("clock", 11, "t += delta"), RL("main", 84, "built after the scene's nodes")] },
     { sec: "STOPPING — settle, one full frame, then nothing" },
     { from: "gov", to: "gov", kind: "call", label: "SETTLING", tick: "still, under 0.15 s of quiet", ...R("gov", 128),
       blurb: "The last moving frame stays on screen (at its scale and shed level) until `settle` seconds pass with no change, so a resting mouse's stray events never buy a full-resolution frame.",
@@ -922,7 +942,7 @@ const seq = {
       blurb: "Full scale and full quality; the moving scale is kept for when motion resumes." },
     { from: "gov", to: "view", kind: "call", label: "set_continuous(false)", tick: "+ request_frame()", ...R("gov", 87),
       blurb: "UPDATE_DISABLED, then one UPDATE_ONCE: exactly one full-resolution render of the final view." },
-    { from: "view", to: "sv", kind: "call", label: "one frame at full scale", ...R("view", 212) },
+    { from: "view", to: "sv", kind: "call", label: "one frame at full scale", ...R("view", 237) },
     { from: "gov", to: "gov", kind: "call", label: "IDLE: nothing renders", tick: "zero GPU cost while still", ...R("gov", 131),
       blurb: "Every later still frame stays IDLE with updates disabled; the TextureRect keeps showing the last image.",
       links: [RL("spec", 498, "spec: idle freeze")] },
@@ -958,15 +978,15 @@ const foldFig = {
     // ---- stage list across the top
     const stages = stageRow(api, 20, 16, 290, 12, [
       { n: "1", name: "Box fold", f: "z = clamp(z, −L, L)·2 − z", color: C.box,
-        tip: { ...SH(116), blurb: "Each of the four components past ±fold_limit is reflected back inside: x = 1.3 with L = 1 becomes 0.7. Inside the box nothing moves. The fold keeps the orbit near the origin and makes the shape's box-like walls.", links: [RL("de", 78, "GDScript: _box_fold"), RL("spec", 156, "spec, step 1")] } },
+        tip: { ...SH(143), blurb: "Each of the four components past ±fold_limit is reflected back inside: x = 1.3 with L = 1 becomes 0.7. Inside the box nothing moves. The fold keeps the orbit near the origin and makes the shape's box-like walls.", links: [RL("de", 81, "GDScript: _box_fold"), RL("spec", 156, "spec, step 1")] } },
       { n: "2", name: "Sphere fold", f: "f = fr2/mr2 · fr2/r2 · 1", color: C.sphere,
-        tip: { ...SH(122), blurb: "r2 = |z|² over all four components. Inside the min sphere (r2 < mr2 = min_radius²) z is scaled by the constant fr2/mr2; between the spheres it is inverted (f = fr2/r2, so |z|·f·|z| = fr2); outside, f = 1. dz is scaled by the same f. Both squares are floored at 1e-12 so a zero radius never divides by zero.", links: [RL("sh", 124, "mr2, fr2"), RL("sh", 130, "the inversion"), RL("de", 85, "GDScript: _sphere_fold")] } },
+        tip: { ...SH(149), blurb: "r2 = |z|² over all four components. Inside the min sphere (r2 < mr2 = min_radius²) z is scaled by the constant fr2/mr2; between the spheres it is inverted (f = fr2/r2, so |z|·f·|z| = fr2); outside, f = 1. dz is scaled by the same f. Both squares are floored at 1e-12 so a zero radius never divides by zero.", links: [RL("sh", 151, "mr2, fr2"), RL("sh", 157, "the inversion"), RL("de", 88, "GDScript: _sphere_fold")] } },
       { n: "3", name: "Iteration rotation", f: "six planes, xy xz xw yz yw zw", color: C.rot,
-        tip: { ...SH(158), blurb: "Only when some iter_rot_* angle is non-zero (`mb_rotating`, decided once per fragment): z is rotated in the xy, xz, xw, yz, yw and zw planes in that fixed order, each `a' = a cos − b sin, b' = a sin + b cos`. A rotation leaves |z| alone, so dz does not change. It compounds once per iteration, so a few degrees already twist the lattice.", links: [RL("sh", 146, "mb_rot_plane"), RL("sh", 168, "mb_rotating"), RL("de", 66, "GDScript: the six planes")] } },
+        tip: { ...SH(185), blurb: "Only when some iter_rot_* angle is non-zero (`mb_rotating`, decided once per fragment): z is rotated in the xy, xz, xw, yz, yw and zw planes in that fixed order, each `a' = a cos − b sin, b' = a sin + b cos`. A rotation leaves |z| alone, so dz does not change. It compounds once per iteration, so a few degrees already twist the lattice.", links: [RL("sh", 173, "mb_rot_plane"), RL("sh", 195, "mb_rotating"), RL("de", 69, "GDScript: the six planes")] } },
       { n: "4", name: "Scale and add", f: "z = s·z + c ;  dz = dz·|s| + 1", color: C.add,
-        tip: { ...SH(178), blurb: "z is stretched by box_scale (negative: it also flips through the origin) and the constant c is added back, per component: c_i where julia_i or Julia (all) is on, else the start point's own coordinate. dz = dz·|s| + 1 is Fractacular's derivative; the old −dz·s + 1 equals it for every negative scale.", links: [RL("sh", 179, "dz"), RL("sh", 184, "mb_constant"), RL("de", 69, "GDScript: scale and add")] } },
+        tip: { ...SH(205), blurb: "z is stretched by box_scale (negative: it also flips through the origin) and the constant c is added back, per component: c_i where julia_i or Julia (all) is on, else the start point's own coordinate. dz = dz·|s| + 1 is Fractacular's derivative; the old −dz·s + 1 equals it for every negative scale.", links: [RL("sh", 206, "dz"), RL("sh", 211, "mb_constant"), RL("de", 72, "GDScript: scale and add")] } },
       { n: "D", name: "The estimate", f: "D = |z| / |dz| after 32", color: "var(--ink)",
-        tip: { ...SH(203), blurb: "A point inside the set keeps |z| bounded while |dz| grows like |s|ⁿ, so D → 0. A point outside escapes and D settles near its distance to the surface. The march (tab 5) steps by exactly this number.", links: [RL("de", 74, "GDScript: return"), RL("tDE", 17, "the fixtures")] } },
+        tip: { ...SH(230), blurb: "A point inside the set keeps |z| bounded while |dz| grows like |s|ⁿ, so D → 0. A point outside escapes and D settles near its distance to the surface. The march (tab 5) steps by exactly this number.", links: [RL("de", 77, "GDScript: return"), RL("tDE", 17, "the fixtures")] } },
     ]);
 
     // ---- the plane: heat image, geometry, trail, cloud
@@ -1008,11 +1028,11 @@ const foldFig = {
     const MAXK = ITERS * 4;
     const segs = [], dots = [];
     for (let k = 1; k <= MAXK; k++) segs.push(api.el("line", { style: `stroke-width:1.8;${noPtr}` }, trailG));
-    const DOT_REFS = { start: SH(194), box: SH(116), sphere: SH(122), rot: SH(158), add: SH(178) };
+    const DOT_REFS = { start: SH(221), box: SH(143), sphere: SH(149), rot: SH(185), add: SH(205) };
     for (let k = 0; k <= MAXK; k++) {
       const c = api.el("circle", { r: k === 0 ? 6 : 3.4, style: "cursor:pointer" }, trailG);
       dots.push(c);
-      api.tip(c, { title: "a state of the orbit", ...SH(174), live() {
+      api.tip(c, { title: "a state of the orbit", ...SH(201), live() {
         const st = orbit[k];
         if (!st) return {};
         const lines = [`\`z\` = ${vec(st.z)}`, `|z| = ${sci(Math.hypot(...st.z))}`, `\`dz\` = ${sci(st.dz)}`];
@@ -1031,7 +1051,7 @@ const foldFig = {
       const dot = api.el("circle", { r: 3.2, style: `fill:${color};stroke:var(--surface);stroke-width:.8;cursor:pointer` }, cloudG);
       const idx = CL.length;
       CL.push({ p, ln, dot });
-      api.tip(dot, { title: `sample from (${fmt(p[0], 1)}, ${fmt(p[1], 1)})`, ...SH(193), live() {
+      api.tip(dot, { title: `sample from (${fmt(p[0], 1)}, ${fmt(p[1], 1)})`, ...SH(220), live() {
         const o = cloud[idx]; if (!o) return {};
         const st = o[S.k], prev = o[Math.max(0, S.k - 1)];
         return { sub: S.k === 0 ? "start" : `iteration ${st.it + 1}, ${STAGE_NAMES[st.kind]}`,
@@ -1219,7 +1239,7 @@ const foldFig = {
     function syncSliders() { for (const [key, h] of sliders) h.set(getV(key)); syncToggles(); }
     api.text(GX, BY + 214, "Legend: orange box = ±fold_limit · pink dashed / solid circles = the min and fixed spheres (their equators on this plane) · grey dotted square = the march's cube (box_half) · ink ring or line = the Julia constant where c_0 / c_1 are on · trail colours = the stage that moved z (violet: the rotation).", "muted", { style: small });
     api.text(GX, BY + 232, "The trail and the cloud are drawn in x-y; z and w are in the readout. Hover any dot for its numbers. Fixture point: with the knobs matching a fixture set (defaults, Sphere → Box, xy 30°, w 0.5, julia_0 + julia_2, scale 2…) de(p, 32) turns green with the test's value.", "muted", { style: small });
-    api.link(GX, BY + 252, RL("de", 9, "why the GDScript copy runs scalar 64-bit floats"));
+    api.link(GX, BY + 252, RL("de", 10, "why the GDScript copy runs scalar 64-bit floats"));
     refreshAll(true);
   },
 };
@@ -1261,7 +1281,7 @@ const dialsFig = {
     const HG = 40, HS = VS / HG, hitG = api.el("g", {});
     for (let j = 0; j < HG; j++) for (let i = 0; i < HG; i++) {
       const r = api.el("rect", { x: GX + i * HS, y: GY + j * HS, width: HS, height: HS, style: "fill:transparent;cursor:crosshair" }, hitG);
-      api.tip(r, { title: "de(p, 32) on this patch", ...SH(193), live() {
+      api.tip(r, { title: "de(p, 32) on this patch", ...SH(220), live() {
         let lo = Infinity, hi = 0, hits = 0;
         for (let y = j * 4; y < j * 4 + 4; y++) for (let x = i * 4; x < i * 4 + 4; x++) {
           const d = dvals[y * N + x]; lo = Math.min(lo, d); hi = Math.max(hi, d); if (d < th()) hits++;
@@ -1296,10 +1316,10 @@ const dialsFig = {
     };
     const shapeSliders = {};
     const SL = [
-      ["Scale (box_scale)", "box_scale", -5, 3, 0.01, ["Stretches every fold by |s| (negative also flips through the", "origin): the primary topology knob. |s| < 1 collapses to dust."], RL("view", 293, "uniform box_scale")],
-      ["Min radius", "min_radius", 0, 2, 0.01, ["The sphere fold's dead zone: inside it z is scaled by fr2/mr2.", "Pushed as is; the shader squares it (mr2 = max(r², 1e-12))."], RL("view", 295, "uniform min_radius")],
-      ["Fold limit", "fold_limit", 0, 3, 0.01, ["The box fold's half-size: components past ±L reflect back.", "Smaller folds carve the walls into thinner plates."], RL("view", 294, "uniform fold_limit")],
-      ["Fixed radius", "fixed_radius", 0, 4, 0.01, ["The inversion radius: inside it z is inverted through", "the sphere (f = fr2/r2). Below min radius: no inversion."], RL("view", 296, "uniform fixed_radius")],
+      ["Scale (box_scale)", "box_scale", -5, 3, 0.01, ["Stretches every fold by |s| (negative also flips through the", "origin): the primary topology knob. |s| < 1 collapses to dust."], RL("view", 334, "uniform box_scale")],
+      ["Min radius", "min_radius", 0, 2, 0.01, ["The sphere fold's dead zone: inside it z is scaled by fr2/mr2.", "Pushed as is; the shader squares it (mr2 = max(r², 1e-12))."], RL("view", 336, "uniform min_radius")],
+      ["Fold limit", "fold_limit", 0, 3, 0.01, ["The box fold's half-size: components past ±L reflect back.", "Smaller folds carve the walls into thinner plates."], RL("view", 335, "uniform fold_limit")],
+      ["Fixed radius", "fixed_radius", 0, 4, 0.01, ["The inversion radius: inside it z is inverted through", "the sphere (f = fr2/r2). Below min radius: no inversion."], RL("view", 337, "uniform fixed_radius")],
     ];
     for (const [label, key, min, max, step, txt, ref] of SL) {
       shapeSliders[key] = api.slider({ x: RX, y, w: SW, label, min, max, step, value: S.P[key], fmt: v => fmt(v, 2),
@@ -1312,16 +1332,16 @@ const dialsFig = {
     const rS = api.slider({ x: RX + 230, y, w: 200, label: "iter_rot_xy (°)", min: -180, max: 180, step: 0.5, value: S.P.rot[0], fmt: v => fmt(v, 1),
       onChange: v => { const r = S.P.rot.slice(); r[0] = v; S.P = withP(S.P, { rot: r }); recompute(); } });
     const ob = api.button({ x: RX + 460, y: y - 14, w: 120, label: "Sphere → Box", on: false, onClick: b => { S.P = withP(S.P, { fold_order: 1 - S.P.fold_order }); b.set(S.P.fold_order === 1); recompute(); } });
-    api.link(RX + 600, y, RL("view", 297, "fold_order, w"));
+    api.link(RX + 600, y, RL("view", 338, "fold_order, w"));
     y += 64;
     const precS = api.slider({ x: RX, y, w: SW, label: "Precision (log10)", min: -6, max: -3, step: 0.01, value: Math.log10(S.P.precision),
       fmt: v => sci(Math.pow(10, v), 2), onChange: v => { S.P = withP(S.P, { precision: +Math.pow(10, v).toPrecision(3) }); recolour(); } });
-    capt(["Not a shape knob: only the hit threshold moves (ink edge).", "A smaller value marches closer and takes more steps."], y - 6, RL("sh", 329, "the stop test"));
+    capt(["Not a shape knob: only the hit threshold moves (ink edge).", "A smaller value marches closer and takes more steps."], y - 6, RL("sh", 358, "the stop test"));
     y += 70;
     api.text(RX, y + 12, "Julia", "ink", { style: caps });
     const jb = api.button({ x: RX + 60, y, w: 100, label: "Julia (all)", on: false, onClick: b => { S.P = withP(S.P, { julia_all: !S.P.julia_all }); b.set(S.P.julia_all); recompute(); } });
     api.text(RX + 176, y + 12, "c = (c_0, c_1, c_2, c_3) on every component, and the march's cube grows to ±20", "", { style: small });
-    api.link(RX + 176, y + 28, RL("sh", 184, "mb_constant: per component"));
+    api.link(RX + 176, y + 28, RL("sh", 211, "mb_constant: per component"));
     y += 66;
     const jS = [0, 1, 2].map(a => api.slider({ x: RX + a * 200, y, w: 170, label: `c_${a} (${AX4[a]})`, min: -4, max: 4, step: 0.001, value: S.P.c[a], fmt: v => fmt(v, 3),
       onChange: v => { const c = S.P.c.slice(); c[a] = v; S.P = withP(S.P, { c }); if (S.P.julia_all) recompute(); } }));
@@ -1354,7 +1374,7 @@ const marchFig = {
   type: "figure",
   tab: "Marching one ray",
   title: "Marching one ray",
-  note: "The ray march from fragment(), ported. The plane is the vertical slice through the default eye and the world Z axis (u along the eye's heading, w = z), so the default centre ray lies in it. Drag the eye (ink) and the aim point (green). Step walks the march: clip to the cube, phase 1 with de(p, 16) for up to coarse_steps, phase 2 with de(p, 32) for up to fine_steps, then ce = (n1 + n2)/128. Each step draws its unbounding circle of radius d (the sphere-tracing picture: no surface is closer than d, so the ray hops d) and the hop. Near the surface the hops shrink geometrically: zoom in to see them. Both phases stop on hit_eps(total): the pixel cone precision / detail · total, coarsened by (total / start)^falloff past start = detail_range · near_dist, where near_dist = de(eye, 32) is the eye's distance to the nearest surface (the solid ring round the eye; the dashed ring is start). The defaults (falloff 0, 128 steps) are the plain cone and 96 + 32 steps. A ray that runs out of steps without meeting the threshold is NOT a miss; it is shaded with ce = 1 (the dust around the fractal). The misses are leaving the cube and, under a load-shed level, reaching the fog: the governor's LoadShedder ends every ray at fog · near_dist (the amber ring), lowers detail and cuts the step budget, and the hit colour fades into the fog colour from 0.35 of that distance on.",
+  note: "The ray march from fragment(), ported. The plane is the vertical slice through the default eye and the world Z axis (u along the eye's heading, w = z), so the default centre ray lies in it. Drag the eye (ink) and the aim point (green). Step walks the march: clip to the cube, phase 1 with de(p, coarse_iters) for up to coarse_steps (16 iterations from the default eye, more as the eye nears the surface), phase 2 with de(p, 32) for up to fine_steps, then ce = (n1 + n2)/128. Each step draws its unbounding circle of radius d (the sphere-tracing picture: no surface is closer than d, so the ray hops d) and the hop. Near the surface the hops shrink geometrically: zoom in to see them. Both phases stop on hit_eps(total): the pixel cone precision / detail · total, coarsened by (total / start)^falloff past start = detail_range · near_dist, where near_dist = de(eye, 32) is the eye's distance to the nearest surface (the solid ring round the eye; the dashed ring is start). The defaults (falloff 0, 128 steps) are the plain cone and 96 + 32 steps. A ray that runs out of steps without meeting the threshold is NOT a miss; it is shaded with ce = 1 (the dust around the fractal). The misses are leaving the cube and, under a load-shed level, reaching the fog: the governor's LoadShedder ends every ray at fog · near_dist (the amber ring), lowers detail and cuts the step budget, and the hit colour fades into the fog colour from 0.35 of that distance on.",
   w: 1560, h: 960,
   draw(api) {
     const GX = 20, GY = 96, VW = 900, VH = 540, PW = 180, PH = 108;
@@ -1369,13 +1389,13 @@ const marchFig = {
 
     const stages = stageRow(api, 20, 16, 360, 14, [
       { n: "0", name: "Box intersect", f: "total = max(0, t_enter)", color: "var(--muted)",
-        tip: { ...SH(299), blurb: "The ray is clipped to the cube of half-size box_half (2, or 20 in Julia mode). Missing it outputs the background; otherwise the march starts at the entry (or at the eye, inside the cube). `total` is measured from the eye, not from the entry, so precision behaves as on the site. Under fog the exit is pulled in to fog · near_dist.", links: [RL("sh", 272, "box_intersect"), RL("sh", 307, "total = max(tb.x, 0)"), RL("sh", 305, "the fog exit"), RL("spec", 239, "spec: bounds")] } },
-      { n: "1", name: "Phase 1 · de(p, 16)", f: "≤ coarse_steps · stop d < hit_eps(total)·2", color: C1,
-        tip: { ...SH(310), blurb: "Cheap 16-iteration estimates, up to coarse_steps (¾ of max_steps: 96 by default), with a threshold twice as loose. n1 = the step index of the stop, or coarse_steps if it never stopped. Crossing t_exit is a miss. The loop is bounded at 384 so `coarse_steps` can be a uniform.", links: [RL("sh", 315, "de(pos, 16)"), RL("sh", 316, "the stop test"), RL("sh", 99, "hit_eps"), RL("sh", 318, "left the cube"), RL("params", 231, "coarse_steps()")] } },
+        tip: { ...SH(326), blurb: "The ray is clipped to the cube of half-size box_half (2, or 20 in Julia mode). Missing it outputs the background; otherwise the march starts at the entry (or at the eye, inside the cube). `total` is measured from the eye, not from the entry, so precision behaves as on the site. Under fog the exit is pulled in to fog · near_dist.", links: [RL("sh", 299, "box_intersect"), RL("sh", 334, "total = max(tb.x, 0)"), RL("sh", 332, "the fog exit"), RL("spec", 239, "spec: bounds")] } },
+      { n: "1", name: "Phase 1 · de(p, coarse_iters)", f: "≤ coarse_steps · stop d < hit_eps(total)·2", color: C1,
+        tip: { ...SH(337), blurb: "Cheaper estimates, up to coarse_steps (¾ of max_steps: 96 by default), with a threshold twice as loose. Their iteration count, coarse_iters, follows near_dist: fewer iterations describe a smoother surface (rough by about 2 / |box_scale|^n), and once the eye is close the threshold 2 · eps · near gets finer than that gap, so a fixed 16 would creep toward a surface it can never reach and spend all 96 steps (darker shading, then dark pits). coarse_iters = ceil(log(2 / (2 · eps · near)) / log|box_scale|) kept in [16, 32] (eps = precision / detail): 16 from the default eye, so the site's picture is unchanged; 24 at near 1e−3; 32 by about 3e−6. n1 = the step index of the stop, or coarse_steps if it never stopped. Crossing t_exit is a miss. The loop is bounded at 384 so `coarse_steps` can be a uniform.", links: [RL("sh", 344, "de(pos, n_coarse)"), RL("sh", 339, "n_coarse = clamp(coarse_iters, 16, 32)"), RL("params", 246, "coarse_iters()"), RL("view", 390, "pushed with near_dist"), RL("tDeep", 38, "the deep-zoom regression"), RL("sh", 345, "the stop test"), RL("sh", 113, "hit_eps"), RL("sh", 347, "left the cube"), RL("params", 311, "coarse_steps()")] } },
       { n: "2", name: "Phase 2 · de(p, 32)", f: "≤ fine_steps · stop d < hit_eps(total)", color: C2,
-        tip: { ...SH(321), blurb: "Runs even when phase 1 stopped: it refines the hit with the full 32-iteration estimate and the tight threshold, continuing from the same point. n2 = the stop index or fine_steps (max_steps − coarse_steps: 32 by default).", links: [RL("sh", 328, "de(pos, 32)"), RL("sh", 329, "the stop test"), RL("params", 235, "fine_steps()"), RL("spec", 247, "spec: march")] } },
+        tip: { ...SH(350), blurb: "Runs even when phase 1 stopped: it refines the hit with the full 32-iteration estimate and the tight threshold, continuing from the same point. n2 = the stop index or fine_steps (max_steps − coarse_steps: 32 by default).", links: [RL("sh", 357, "de(pos, 32)"), RL("sh", 358, "the stop test"), RL("params", 315, "fine_steps()"), RL("spec", 247, "spec: march")] } },
       { n: "ce", name: "Step count → shade", f: "ce = min((n1 + n2) / 128, 1)", color: CHIT,
-        tip: { ...SH(340), blurb: "ce is the share of the original 128-step budget used, whatever max_steps is, so a ray that hits looks the same under any budget; a ray that ran out of phase 2 is ce = 1. Every colour mode is built on it (inv = 1 − ce): rays that needed many steps (grazing, in crevices, or never converging) are darker. Leaving the cube (or reaching the fog) is the only miss.", links: [RL("sh", 335, "left_cube → background"), RL("spec", 256, "spec: the dust")] } },
+        tip: { ...SH(369), blurb: "ce is the share of the original 128-step budget used, whatever max_steps is, so a ray that hits looks the same under any budget; a ray that ran out of phase 2 is ce = 1. Every colour mode is built on it (inv = 1 − ce): rays that needed many steps (grazing, in crevices, or never converging) are darker. Leaving the cube (or reaching the fog) is the only miss.", links: [RL("sh", 364, "left_cube → background"), RL("spec", 256, "spec: the dust")] } },
     ]);
 
     const col = { ramp: null };
@@ -1390,12 +1410,12 @@ const marchFig = {
     const poolG = api.el("g", { "clip-path": `url(#${clipId})` });
     api.el("rect", { x: GX, y: GY, width: VW, height: VH, style: "fill:none;stroke:var(--muted);stroke-width:1.2;pointer-events:none" });
     const viewText = api.text(GX, GY + VH + 18, "", "muted", { style: small });
-    const MAXS = 512, rings = [], hops = [], dots = [];     // MAX_STEPS_MAX (fractal_params.gd:204)
+    const MAXS = 512, rings = [], hops = [], dots = [];     // MAX_STEPS_MAX (fractal_params.gd:205)
     for (let k = 0; k < MAXS; k++) {
       rings.push(api.el("circle", { style: `fill:none;stroke-width:1.2;${noPtr}` }, poolG));
       hops.push(api.el("line", { style: `stroke-width:2;${noPtr}` }, poolG));
     }
-    const stepTip = k => ({ title: `step ${k + 1}`, ...SH(314), live() {
+    const stepTip = k => ({ title: `step ${k + 1}`, ...SH(343), live() {
       const st = steps[k]; if (!st) return {};
       return { sub: `phase ${st.phase}, i = ${st.i}`, title: `step ${k + 1}: phase ${st.phase}, i = ${st.i}`,
         blurb: `total = ${sci(st.total, 6)}\nd = de(p, ${st.phase === 1 ? 16 : 32}) = ${sci(st.d)}\nthreshold = hit_eps(total)${st.phase === 1 ? " · 2" : ""} = ${sci(st.th)}${S.P.detail_falloff > 0 && st.total > M.lodStart ? ` (past start ${sci(M.lodStart)}: × (total / start)^${fmt(S.P.detail_falloff, 2)} = ×${sci(Math.pow(st.total / M.lodStart, S.P.detail_falloff), 2)})` : ""}\n${st.stop ? "d < threshold: the phase stops here" : `d ≥ threshold: hop d to total = ${sci(st.total + st.d, 6)}`}\np = ${vec(st.p)}` };
@@ -1409,7 +1429,7 @@ const marchFig = {
     const eyeH = api.el("circle", { r: 8, style: "fill:var(--ink);stroke:var(--surface);stroke-width:2;cursor:move" });
     const aimH = api.el("circle", { r: 7, style: `fill:${CHIT};stroke:var(--surface);stroke-width:2;cursor:move` });
     api.tip(eyeH, { title: "the eye", ...R("cam", 9), blurb: "Drag to move it. Starts at DEFAULT_EYE, which lies in this plane." });
-    api.tip(aimH, { title: "the aim point", ...SH(290), blurb: "The ray points from the eye through here (dir = normalize(aim − eye)). Starts at the origin: the default view's centre ray." });
+    api.tip(aimH, { title: "the aim point", ...SH(317), blurb: "The ray points from the eye through here (dir = normalize(aim − eye)). Starts at the origin: the default view's centre ray." });
     draggable(api, eyeH, q => { S.eye = toWorld(q); remarch(); });
     draggable(api, aimH, q => { S.aim = toWorld(q); remarch(); });
 
@@ -1534,7 +1554,7 @@ const marchFig = {
         M.miss || M.left ? "ce: not used, the pixel is background" : M.n2 === S.P.fine ? `ce = 1 (phase 2 ran out)   inv = 0` : `ce = min((${M.n1} + ${M.n2}) / 128, 1) = ${fmt(M.ce, 4)}   inv = 1 − ce = ${fmt(1 - M.ce, 4)}`,
         `outcome: ${outcome}`,
         M.miss || M.left ? "" : `hit point v = ${vec(add(M.eye3, M.dir, M.total), 4)}, total ${sci(M.total, 6)}`,
-        `${n} de() calls on this ray (the shader's cost per pixel, before the normal)`,
+        `${n} de() calls (the shader's cost per pixel, before the normal) · coarse_iters ${M.nc}`,
         `near_dist ${sci(M.near)} · ${S.P.detail_falloff > 0 ? `full detail to start = ${fmt(S.P.detail_range, 1)} · near = ${sci(M.lodStart)}, then ^${fmt(S.P.detail_falloff, 2)}` : "falloff 0: the plain cone"}${S.P.shed ? ` · shed level ${S.P.shed}: precision ÷ ${fmt(S.P.detail * SHED_LEVELS[S.P.shed].detail, 2)}, fog ${S.P.fog} × near` : ""}`,
       ];
       lines.forEach((t, i) => { outL[i].textContent = t; });
@@ -1573,7 +1593,7 @@ const marchFig = {
       fmt: v => (v === 0 ? "0 (off)" : fmt(v, 2)), onChange: v => setP({ detail_falloff: v }) });
     api.slider({ x: GX, y: BY + 210, w: 520, label: "Governor: LoadShedder level (the shader's fog, detail and budget)", min: 0, max: 4, step: 1, value: 0,
       fmt: v => { const L = SHED_LEVELS[v]; return v === 0 ? "0 (full quality)" : `${v}: fog ${L.fog}× · detail ×${L.detail} · steps ×${L.steps}`; }, onChange: v => setP({ shed: v }) });
-    api.text(GX, BY + 244, "Try: Step through the default centre ray (n1 = 36, n2 = 3); zoom ×1000 with ‘follow’ to watch the last hops; raise precision to 1e−2 and the hit comes early; aim along a crevice and phase 1 can use all 96 steps (dust).", "muted", { style: small });
+    api.text(GX, BY + 244, "Try: Step through the default centre ray (n1 = 36, n2 = 3); zoom ×1000 with ‘follow’ to watch the last hops; raise precision to 1e−2 and the hit comes early; aim along a crevice and phase 1 can use all 96 steps (dust); drag the eye within 0.3 of the surface and phase 1's coarse_iters climbs past 16.", "muted", { style: small });
     api.text(GX, BY + 261, "Falloff does nothing from the default eye (start = 10 · near_dist ≈ 66 is past the cube): drag the eye near the surface, set falloff 2, and the dashed ring shows where the threshold starts to grow.", "muted", { style: small });
     let acc = 0;
     api.onFrame(dt => {
@@ -1633,7 +1653,7 @@ const shadeFig = {
     api.text(SX - 26, SY + SS / 2, "l = |dot(n, ldir)|", "muted", { "text-anchor": "middle", transform: `rotate(-90 ${SX - 26} ${SY + SS / 2})`, style: small });
     for (let j = 0; j < 12; j++) for (let i = 0; i < 12; i++) {
       const r = api.el("rect", { x: SX + i * 32, y: SY + j * 32, width: 32, height: 32, style: "fill:transparent;cursor:crosshair" });
-      api.tip(r, { title: "one swatch", ...SH(363), live() {
+      api.tip(r, { title: "one swatch", ...SH(405), live() {
         const ce = (i + 0.5) / 12, l = 1 - (j + 0.5) / 12, c = shade(S.mode, ce, l, ldir0, h0, DEFAULT_CAM, S.look);
         const lg = lightTerm(l, S.look);
         return { sub: MODES.find(m => m.id === S.mode).name, blurb: `ce = ${fmt(ce, 3)} (inv ${fmt(1 - ce, 3)})\nl = ${fmt(l, 3)} → lgt = ${fmt(lg, 3)}\nrgb = ${vec(c, 3)}${c.some(v => v > 1 || v < 0) ? " (clamped on screen)" : ""}` };
@@ -1653,8 +1673,8 @@ const shadeFig = {
     api.el("polyline", { points: siteCurve.join(" "), style: "fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3" });
     api.text(LX, LY + LH + 18, "l = |dot(n, ldir)|  0 → 1", "muted", { style: small });
     const cHit = api.el("rect", { x: LX, y: LY, width: LW, height: LH, style: "fill:transparent;cursor:pointer" });
-    api.tip(cHit, { title: "the light term", ...SH(363), blurb: "`nl = abs(dot(n, ldir))` with `ldir = normalize(2·eh − h)` (a light at the eye, in the site's half-scale coordinates), turned by light_yaw about cam_up and light_pitch about cam_right when either is non-zero; then `lgt = light_diffuse·nl + light_specular·pow(nl, light_shininess) + light_ambient`. At the site's 0.5, 1, 160, 0.1 the power is a highlight that only fires within a few degrees of facing the light, and the ambient keeps faces turned away from going black. `base = lgt·(−n·0.25 + 0.75) + (0, 0, 0.2)` tints by the normal and adds blue. The dashed curve is the site's.",
-      links: [RL("sh", 358, "ldir"), RL("sh", 359, "the light rotation"), RL("sh", 364, "base"), RL("spec", 283, "spec: lighting")] });
+    api.tip(cHit, { title: "the light term", ...SH(405), blurb: "`nl = abs(dot(n, ldir))` with `ldir = normalize(2·eh − h)` (a light at the eye, in the site's half-scale coordinates), turned by light_yaw about cam_up and light_pitch about cam_right when either is non-zero; then `lgt = light_diffuse·nl + light_specular·pow(nl, light_shininess) + light_ambient`. At the site's 0.5, 1, 160, 0.1 the power is a highlight that only fires within a few degrees of facing the light, and the ambient keeps faces turned away from going black. `base = lgt·(−n·0.25 + 0.75) + (0, 0, 0.2)` tints by the normal and adds blue. The dashed curve is the site's.",
+      links: [RL("sh", 400, "ldir"), RL("sh", 401, "the light rotation"), RL("sh", 406, "base"), RL("spec", 283, "spec: lighting")] });
     for (let k = 0; k < 4; k++) api.text(LX, LY + LH + 40 + k * 16, [
       "inputs held fixed in the swatch:",
       `h = default centre hit / 2 = ${vec(h0, 3)}`,
@@ -1673,7 +1693,7 @@ const shadeFig = {
     const rTitle = api.text(RX, RY - 12, "CPU render of the default view · press Render", "ink", { style: caps });
     for (let j = 0; j < 15; j++) for (let i = 0; i < 24; i++) {
       const r = api.el("rect", { x: RX + i * 24, y: RY + j * 24, width: 24, height: 24, style: "fill:transparent;cursor:crosshair" });
-      api.tip(r, { title: "a rendered pixel", ...SH(287), live() {
+      api.tip(r, { title: "a rendered pixel", ...SH(314), live() {
         const px_ = pix[(j * 4 + 2) * RW + i * 4 + 2];
         if (!px_) return { blurb: "Press Render first." };
         const m = px_.m;
@@ -1765,7 +1785,7 @@ const normalsFig = {
   type: "figure",
   tab: "The two normals",
   title: "The two normals: N and the Ice Fractal NF",
-  note: "Why modes 1 to 9 look the way they do outside Julia (all). N is the true normal: central differences of de(·, 32) with delta = hit_eps(total) · 40 (precision · total · 40 at the default falloff 0). NF is the gradient of a different field, F(q) = |z16| − 8 (the same mb_step, 16 iterations from z = 0 with c = (q, w), the derivative unused), and not even that: its base sample is taken at the HALF-scale point h = v/2 while the three offset samples are at the full-scale v + 0.01. To first order NF = normalize(∇F(v) + (F(v) − F(h))/0.01 · (1, 1, 1)): the gradient of a different field, tilted toward the (1, 1, 1) diagonal by the half-scale mismatch. On the default view the two normals differ by tens of degrees, and that difference is the Ice Fractal look. The renderer spec says to replicate it exactly, and the shader does. Rays fan from the default eye, in the same vertical slice as the march tab, across the cube face it sees; at each hit, N (blue) and NF (orange) are drawn projected onto the plane (a shorter arrow points more out of the plane).",
+  note: "Why modes 1 to 9 look the way they do outside Julia (all). N is the true normal: central differences of de(·, 32) with delta = hit_eps(total) · 40 (precision · total · 40 at the default falloff 0). NF is the gradient of a different field, F(q) = |z16| − 8 (the same mb_step, 16 iterations from z = 0 with c = (q, w), the derivative unused), and not even that: its base sample is taken at the HALF-scale point h = v/2 while the three offset samples are at the full-scale v + 0.01. To first order NF = normalize(∇F(v) + (F(v) − F(h))/0.01 · (1, 1, 1)): the gradient of a different field, tilted toward the (1, 1, 1) diagonal by the half-scale mismatch. On the default view the two normals differ by tens of degrees, and that difference is the Ice Fractal look. The renderer spec says to replicate it exactly, and the shader does, from the default view. Up close it cannot: NF's offsets are a fixed 0.01, which at near_dist 0.001 spans ten views' worth of geometry, so the shading turns to noise (and shrinking the offset does not help, since NF is not a gradient: its three differences converge to one number and the normal collapses to a fixed direction). So the shader crossfades NF into N by nf_weight = smoothstep(0.1, 2, near_dist), pushed with near_dist: 1 (NF alone, the site's maths bit for bit) from 2 out, 0 (N alone, the look the Julia and metal modes already have) inside 0.1, normalize(mix(N, NF, nf_weight)) between. The default eye is at 6.6, so this figure is all NF. Rays fan from the default eye, in the same vertical slice as the march tab, across the cube face it sees; at each hit, N (blue) and NF (orange) are drawn projected onto the plane (a shorter arrow points more out of the plane).",
   w: 1500, h: 820,
   draw(api) {
     const GX = 20, GY = 60, VS = 640, PN = 160, RNG = 2.2, CU = 1.4;
@@ -1791,7 +1811,7 @@ const normalsFig = {
     for (let k = 0; k < MAXR; k++) {
       const d = api.el("circle", { r: 4, style: "fill:var(--ink);stroke:var(--surface);stroke-width:1;cursor:pointer" }, hitG);
       hitDots.push(d);
-      api.tip(d, { title: "a surface sample", ...SH(352), live() {
+      api.tip(d, { title: "a surface sample", ...SH(384), live() {
         const s = samples[k]; if (!s) return {};
         const ang = Math.acos(clamp(dot(s.N, s.NF), -1, 1)) * 180 / Math.PI;
         const lg = l => 0.5 * l + Math.pow(l, 160) + 0.1;
@@ -1817,10 +1837,11 @@ const normalsFig = {
     const trows = [];
     for (let r = 0; r < 14; r++) trows.push([0, 80, 190, 280, 370].map(x => api.text(RX + x, TY + 22 + r * 19, "", "mono", { style: small })));
     const L = [
-      ["calc_normal: central differences of de(·, 32)", SH(220)],
-      ["calc_nf: lw = F(h), offsets at v + 0.01, ÷ 0.01", SH(230)],
-      ["delta = hit_eps(total) · 40", SH(348)],
+      ["calc_normal: central differences of de(·, 32)", SH(247)],
+      ["calc_nf: lw = F(h), offsets at v + 0.01, ÷ 0.01", SH(257)],
+      ["delta = hit_eps(total) · 40", SH(378)],
       ["the spec: replicate exactly, not a true gradient", R("spec", 268)],
+      ["nf_weight: NF fades into N inside near_dist 2 → 0.1", SH(385)],
     ];
     L.forEach(([t, ref], i) => api.link(RX, TY + 312 + i * 19, Object.assign({ label: t }, ref)));
 
@@ -1918,7 +1939,7 @@ const camFig = {
       const c = api.el("circle", { r: 4.5, style: `fill:${api.hue(3)};stroke:var(--surface);stroke-width:1.2;cursor:pointer` }, simG);
       const t = api.text(0, 0, `${s + 1}s`, "", { "text-anchor": "middle", style: `${small};${noPtr}` }, simG);
       secDots.push({ c, t });
-      api.tip(c, { title: `after ${s + 1} s of W`, ...R("fly", 61), live() {
+      api.tip(c, { title: `after ${s + 1} s of W`, ...R("fly", 82), live() {
         const d = secDots[s];
         return { sub: `speed_factor ${fmt(S.factor, 4)}`, blurb: `travelled ${sci(d.x, 5)} of ${fmt(T, 4)} (${fmt(100 * d.x / T, 3)}% of the gap)\nspeed there ${sci(d.v)} units/s\nD there ${sci(d.D)}` };
       } });
@@ -1929,10 +1950,10 @@ const camFig = {
       fmt: v => `${v > 0 ? "+" : ""}${v} → ×${sci(ticksToFactor(v), 3)}`, onChange: v => {
         S.ticks = v; S.factor = ticksToFactor(v); drawSpeed();
       } });
-    api.link(X0 + 430, Y0 + H + 132, RL("fly", 112, "scroll(): ×1.25, clamp 0.01 … 100"));
+    api.link(X0 + 430, Y0 + H + 132, RL("fly", 153, "scroll(): ×1.25, clamp 0.01 … 100"));
     api.button({ x: X0, y: Y0 + H + 160, w: 150, label: "Shift: sprint ×2", on: false, onClick: b => { S.sprint = !S.sprint; b.set(S.sprint); drawSpeed(); } });
     api.button({ x: X0 + 160, y: Y0 + H + 160, w: 230, label: "shed level 4: speed_limit 0.4", on: false, onClick: b => { S.limit = S.limit === 1 ? SHED_LEVELS[4].speed : 1; b.set(S.limit !== 1); drawSpeed(); } });
-    api.link(X0 + 400, Y0 + H + 176, RL("fly", 16, "SPRINT_MULTIPLIER"));
+    api.link(X0 + 400, Y0 + H + 176, RL("fly", 18, "SPRINT_MULTIPLIER"));
     function drawSpeed() {
       const pts = [];
       for (let k = 0; k <= 400; k++) {
@@ -1987,8 +2008,8 @@ const camFig = {
     api.slider({ x: CX - RR, y: SY_, w: 200, label: "mouse dx (px)", min: -1800, max: 1800, step: 10, value: 0, fmt: v => String(v), onChange: v => { S.dx = v; drawLook(); } });
     api.slider({ x: CX - RR + 230, y: SY_, w: 200, label: "mouse dy (px)", min: -1800, max: 1800, step: 10, value: 0, fmt: v => String(v), onChange: v => { S.dy = v; drawLook(); } });
     api.slider({ x: CX - RR, y: SY_ + 56, w: 200, label: "Mouse sensitivity (°/px)", min: 0.02, max: 0.5, step: 0.001, value: 0.1, fmt: v => fmt(v, 3), onChange: v => { S.sens = v; drawLook(); } });
-    api.link(CX - RR + 230, SY_ + 62, RL("fly", 69, "apply_look"));
-    api.link(CX - RR + 230, SY_ + 80, RL("fly", 9, "MAX_FORWARD_Z = sin 89°"));
+    api.link(CX - RR + 230, SY_ + 62, RL("fly", 106, "apply_look"));
+    api.link(CX - RR + 230, SY_ + 80, RL("fly", 12, "MAX_FORWARD_Z = sin 89°"));
     function drawLook() {
       while (pitchArrowG.firstChild) pitchArrowG.removeChild(pitchArrowG.firstChild);
       while (yawArrowG.firstChild) yawArrowG.removeChild(yawArrowG.firstChild);
@@ -2016,14 +2037,16 @@ const camTable = {
   columns: [{ label: "camera", w: 80 }, { label: "gesture", w: 210 }, { label: "constant", w: 290 }, { label: "what it does", w: 540 }],
   rows: [
     { cells: ["fly", "mouse move (captured)", "−dx·sens°, −dy·sens°; |forward.z| ≤ sin 89°", "Yaw about world +Z keeps the pitch; pitch clamps the ANGLE (not forward.z), so a huge delta saturates instead of wrapping. No roll."],
-      tip: { ...R("fly", 69), links: [RL("fly", 75, "the clamp"), RL("fly", 70, "a zero delta returns"), RL("tFly", 88, "saturation test")] } },
+      tip: { ...R("fly", 106), links: [RL("fly", 112, "the clamp"), RL("fly", 107, "a zero delta returns"), RL("tFly", 108, "saturation test")] } },
     { cells: ["fly", "W A S D · Space Backspace", "dir · clamp(D(eye), 1e−6, 20) · factor · limit · delta", "Camera-axis direction, normalised (a diagonal is not faster); nothing while Cmd or Ctrl is held or a text field in any window has focus."],
-      tip: { ...R("fly", 87), links: [RL("fly", 104, "current_speed"), RL("fly", 90, "TextFocus"), RL("tFly", 29, "normalised test")] } },
+      tip: { ...R("fly", 124), links: [RL("fly", 139, "current_speed"), RL("fly", 127, "TextFocus"), RL("tFly", 29, "normalised test")] } },
     { cells: ["fly", "hold Shift (sprint)", "× SPRINT_MULTIPLIER = 2", "Doubles the travel speed while held; Q and E are free for Axis A."],
-      tip: { ...R("fly", 107), links: [RL("fly", 16, "SPRINT_MULTIPLIER"), RL("proj", 53, "the sprint action"), RL("tFly", 57, "the test")] } },
+      tip: { ...R("fly", 77), links: [RL("fly", 18, "SPRINT_MULTIPLIER"), RL("proj", 53, "the sprint action"), RL("tFly", 61, "the test")] } },
     { cells: ["fly", "(load shed level 4)", "speed_limit = 0.4", "The governor's last resort: at the top shed rung Main caps the travel speed, so the march gets fewer new pixels per second."],
-      tip: { ...R("main", 318), links: [RL("shed", 19, "level 4"), RL("fly", 14, "speed_limit")] } },
-    { cells: ["fly", "wheel", "×1.25 / ÷1.25, clamp 0.01 … 100", "Scales speed_factor; the console's Movement pane shows `speed x f`."], tip: { ...R("fly", 112), links: [{ file: "src/ui/console/movement_pane.gd", line: 292, label: "the speed readout" }] } },
+      tip: { ...R("main", 338), links: [RL("shed", 19, "level 4"), RL("fly", 22, "speed_limit")] } },
+    { cells: ["fly", "(near the surface)", "refused below zoom_floor = ulp32(max |eye|) / (50 · eps)", "A move whose target is closer to the surface than the floor (about 1e−4 near the box) is refused unless it is no closer than now, so backing away always works. The Movement pane shows `zoom limit` while it holds you."],
+      tip: { ...R("fly", 83), links: [RL("fly", 95, "move_allowed"), RL("params", 304, "zoom_floor"), RL("params", 282, "ulp32"), RL("movement", 296, "the zoom limit readout"), RL("main", 258, "Main forwards at_zoom_limit"), RL("tFly", 155, "the test")] } },
+    { cells: ["fly", "wheel", "×1.25 / ÷1.25, clamp 0.01 … 100", "Scales speed_factor; the console's Movement pane shows `speed x f`."], tip: { ...R("fly", 153), links: [{ file: "src/ui/console/movement_pane.gd", line: 310, label: "the speed readout" }] } },
     { cells: ["orbit", "left-drag", "0.5°/px · sens / 0.1", "Rotates the eye about `center`: yaw about +Z, pitch about the camera's right. A step that would bring forward within 1° of ±Z keeps its yaw and drops its pitch."],
       tip: { ...R("orbit", 85), links: [RL("orbit", 9, "ROT_PER_PIXEL"), RL("orbit", 96, "the pitch guard"), RL("tOrbit", 18, "keeps distance")] } },
     { cells: ["orbit", "Shift + left-drag", "0.001 · dist per px", "Pans in the camera's right/up plane, moving the eye and `center` by the same vector."],
@@ -2035,13 +2058,13 @@ const camTable = {
     { cells: ["orbit", "click (motion < 4 px)", "hit within 2 × dist, else the origin", "CPU-marches the cursor ray (one phase, de(·, 32), ≤ 200 steps, stop at hit_epsilon(total, near): the shader's threshold) and re-centres on the hit without moving the camera."],
       tip: { ...R("orbit", 134), links: [RL("orbit", 13, "CLICK_SLOP"), RL("orbit", 155, "_march"), RL("orbit", 165, "the hit_epsilon stop"), RL("orbit", 138, "the 2× test")] } },
     { cells: ["orbit", "switch into ORBIT", "hit within 2 × |eye|, else the origin", "`enter()`: the same march along the centre ray. Only on a real mode change (and after a load), never on a slider move."],
-      tip: { ...R("orbit", 76), links: [RL("main", 342, "Main: only on a change"), RL("main", 281, "after a load")] } },
+      tip: { ...R("orbit", 76), links: [RL("main", 362, "Main: only on a change"), RL("main", 301, "after a load")] } },
     { cells: ["marker", "drag the Julia ring (Julia (all), mouse free)", "press within 2 × RING_RADIUS = 20 px", "Captures depth = (julia_point() − eye) · forward, then writes unproject(mouse, depth) into the table's c_0..c_2 defaults (and mirrors them into FractalParams): it slides in the plane facing the camera, and the next resolve keeps it."],
       tip: { ...R("marker", 41), links: [RL("marker", 45, "the 20 px test"), RL("marker", 56, "unproject"), RL("marker", 61, "into the table"), RL("tMarker", 37, "the test")] } },
     { cells: ["Main", "Reset camera (Movement pane, View tab ▸ Renderer)", "the current file's camera, else the starting view", "Puts the transform and speed factor back where the last load or save left them (remembered by `_remember_home`); in ORBIT it re-centres with `enter()`."],
-      tip: { ...R("main", 292), links: [RL("main", 301, "_remember_home"), RL("main", 149, "the Movement pane's button"), RL("main", 187, "the View tab's")] } },
+      tip: { ...R("main", 312), links: [RL("main", 321, "_remember_home"), RL("main", 157, "the Movement pane's button"), RL("main", 195, "the View tab's")] } },
     { cells: ["Main", "mouse capture","FLY, not freed, noise closed", "Captured, otherwise visible. Escape, a Ctrl tap or a file panel frees it (`_free_requested`); a click on the view while free in FLY recaptures (and is the user gesture pointer lock needs on the web). The console's visibility does not gate capture: it stays open while you fly."],
-      tip: { ...R("main", 348), links: [RL("main", 436, "click to capture"), RL("main", 364, "the Ctrl tap")] } },
+      tip: { ...R("main", 368), links: [RL("main", 464, "click to capture"), RL("main", 384, "the Ctrl tap")] } },
   ],
 };
 
@@ -2198,65 +2221,69 @@ const dialTable = {
   columns: [{ label: "row", w: 150 }, { label: "field · range · default", w: 300, mono: true }, { label: "uniform · transform", w: 340, mono: true }, { label: "what it changes", w: 450 }],
   rows: [
     { cells: ["Shape: Scale", "box_scale · −5 … 3 (hard ±6) · −2.09", "box_scale", "Each iteration's stretch (and flip, when negative): the shape's overall topology (tabs 3, 4)."],
-      tip: { title: "Scale", ...R("view", 293), links: [RL("shape", 60, "the spec"), RL("params", 51, "the field"), RL("sh", 178, "z = box_scale·z + c")] } },
+      tip: { title: "Scale", ...R("view", 334), links: [RL("shape", 60, "the spec"), RL("params", 51, "the field"), RL("sh", 205, "z = box_scale·z + c")] } },
     { cells: ["Shape: Fold limit", "fold_limit · 0 … 3 · 1.0", "fold_limit", "The box fold's half-size."],
-      tip: { title: "Fold limit", ...R("view", 294), links: [RL("shape", 67, "the spec"), RL("sh", 117, "the box fold")] } },
+      tip: { title: "Fold limit", ...R("view", 335), links: [RL("shape", 67, "the spec"), RL("sh", 144, "the box fold")] } },
     { cells: ["Shape: Min radius", "min_radius · 0 … 2 · 0.7", "min_radius (shader: mr2 = max(r², 1e-12))", "The sphere fold's constant-scale zone (f = fr2/mr2 inside it). Squared in the shader now, not on the CPU."],
-      tip: { title: "Min radius", ...R("view", 295), links: [RL("shape", 73, "the spec"), RL("sh", 124, "mr2")] } },
+      tip: { title: "Min radius", ...R("view", 336), links: [RL("shape", 73, "the spec"), RL("sh", 151, "mr2")] } },
     { cells: ["Shape: Fixed radius", "fixed_radius · 0 … 4 · 1.0", "fixed_radius (shader: fr2)", "The sphere fold's inversion radius."],
-      tip: { title: "Fixed radius", ...R("view", 296), links: [RL("shape", 79, "the spec"), RL("sh", 125, "fr2")] } },
+      tip: { title: "Fixed radius", ...R("view", 337), links: [RL("shape", 79, "the spec"), RL("sh", 152, "fr2")] } },
     { cells: ["Shape: Fold order", "fold_order · Box → Sphere | Sphere → Box · 0", "fold_order (int)", "Which fold runs first in each iteration; Sphere → Box is a different fractal with the same knobs. Not bindable."],
-      tip: { title: "Fold order", ...R("view", 297), links: [RL("shape", 85, "the spec"), RL("sh", 175, "the branch")] } },
+      tip: { title: "Fold order", ...R("view", 338), links: [RL("shape", 85, "the spec"), RL("sh", 202, "the branch")] } },
     { cells: ["Shape: W", "w · −4 … 4 · 0", "w", "The sample point's fourth coordinate: de starts from (p, w), the Ice Fractal field adds (q, w). 0 is the 3D box; moving it slides to another 3D slice of the 4D shape."],
-      tip: { title: "W", ...R("view", 298), links: [RL("shape", 94, "the spec"), RL("sh", 194, "z0 = vec4(p, w)"), RL("sh", 210, "field: c = (q, w)")] } },
+      tip: { title: "W", ...R("view", 339), links: [RL("shape", 94, "the spec"), RL("sh", 221, "z0 = vec4(p, w)"), RL("sh", 237, "field: c = (q, w)")] } },
     { cells: ["Shape: Julia (all)", "julia_all · false", "julia_all; box_half = 20 if on else 2", "The constant on every component; the march's cube grows to ±20; modes 1–9 switch from NF to N; the on-screen marker shows."],
-      tip: { title: "Julia (all)", ...R("view", 299), links: [RL("view", 319, "box_half"), RL("shape", 102, "the spec"), RL("sh", 352, "NF only outside Julia (all)")] } },
+      tip: { title: "Julia (all)", ...R("view", 340), links: [RL("view", 360, "box_half"), RL("shape", 102, "the spec"), RL("sh", 384, "NF only outside Julia (all)")] } },
     { cells: ["Shape: Julia x … w", "julia_0 … julia_3 · false", "julia_0 … julia_3", "Per component: the constant instead of the point's own coordinate. A mix is a hybrid of the Mandelbox and the Julia box."],
-      tip: { title: "Julia x … w", ...R("view", 300), links: [RL("shape", 108, "the specs"), RL("sh", 184, "mb_constant")] } },
+      tip: { title: "Julia x … w", ...R("view", 341), links: [RL("shape", 108, "the specs"), RL("sh", 211, "mb_constant")] } },
     { cells: ["Shape: Constant x … w", "c_0 … c_3 · (−0.23, 1.512, 1.892, 0) · ±4", "c_0 … c_3", "The Julia constant, shown while its toggle or Julia (all) is on. c_0..c_2 are also dragged by the on-screen ring."],
-      tip: { title: "Constant x … w", ...R("view", 304), links: [RL("shape", 116, "the defaults"), RL("marker", 61, "the drag writes them")] } },
+      tip: { title: "Constant x … w", ...R("view", 345), links: [RL("shape", 116, "the defaults"), RL("marker", 61, "the drag writes them")] } },
     { cells: ["Shape: Iter rotation", "iter_rot_xy … zw · ±180°, wraps · 0", "the six angles, in degrees", "A 4D rotation inside every iteration, in the six planes in a fixed order. Skipped entirely while all six are 0 (mb_rotating), so the default view costs nothing."],
-      tip: { title: "Iteration rotation", ...R("view", 308), links: [RL("shape", 130, "the specs"), RL("sh", 168, "mb_rotating"), RL("sh", 158, "mb_iter_rotate")] } },
+      tip: { title: "Iteration rotation", ...R("view", 349), links: [RL("shape", 130, "the specs"), RL("sh", 195, "mb_rotating"), RL("sh", 185, "mb_iter_rotate")] } },
     { cells: ["Colour: Colour", "color_mode · 14 ids (the site's 13 + Palette 20) · 1", "color_mode; fog_color = FOG_COLORS[id]", "The colour branch, which normal is computed, the background (white for 5, 6) and the fog tint. Not bindable."],
-      tip: { title: "Colour", ...R("view", 315), links: [RL("view", 326, "fog_color"), RL("shape", 157, "the spec"), RL("params", 16, "COLOR_MODE_IDS")] } },
+      tip: { title: "Colour", ...R("view", 356), links: [RL("view", 367, "fog_color"), RL("shape", 157, "the spec"), RL("params", 16, "COLOR_MODE_IDS")] } },
     { cells: ["Colour: Palette input · frequency · offset · occlusion", "palette_source · Steps | Radius | Normal · 0; palette_frequency · 0 … 8 · 1; palette_offset · 0 … 1, wraps · 0; palette_occlusion · 0 … 1 · 0.5", "the same four names (LOOK_KEYS, pushed as they are)", "Only the Palette mode reads them (and the console only shows them then): which value indexes the palette, how often it repeats, where it starts, and how much the step count darkens it."],
-      tip: { title: "Palette mode rows", ...R("view", 316), links: [RL("shape", 164, "the specs"), RL("sh", 402, "the Palette branch"), RL("params", 39, "LOOK_KEYS")] } },
+      tip: { title: "Palette mode rows", ...R("view", 357), links: [RL("shape", 164, "the specs"), RL("sh", 444, "the Palette branch"), RL("params", 39, "LOOK_KEYS")] } },
     { cells: ["Lighting: Ambient · Diffuse · Specular · Shininess", "light_ambient · 0 … 1 · 0.1; light_diffuse · 0 … 2 · 0.5; light_specular · 0 … 4 · 1; light_shininess · 1 … 512, log · 160", "the same four names", "lgt = diffuse·nl + specular·nl^shininess + ambient for every mode but Grayscale. The defaults are the site's constants, so the site's modes are bit-for-bit until one moves."],
-      tip: { title: "Lighting", ...R("view", 316), links: [RL("shape", 197, "the specs"), RL("sh", 363, "lgt")] } },
+      tip: { title: "Lighting", ...R("view", 357), links: [RL("shape", 197, "the specs"), RL("sh", 405, "lgt")] } },
     { cells: ["Lighting: Light yaw · Light pitch", "light_yaw · ±180°, wraps · 0; light_pitch · ±90° · 0", "light_yaw, light_pitch", "Turn the light (which sits at the eye) about cam_up, then cam_right, by Rodrigues' rotation; skipped while both are 0. Raking light shows the relief."],
-      tip: { title: "Light direction", ...R("view", 316), links: [RL("shape", 225, "the specs"), RL("sh", 359, "the rotation"), RL("sh", 263, "rotate_about")] } },
+      tip: { title: "Light direction", ...R("view", 357), links: [RL("shape", 225, "the specs"), RL("sh", 401, "the rotation"), RL("sh", 290, "rotate_about")] } },
     { cells: ["Lighting: Exposure · Saturation", "exposure · 0 … 4 · 1; saturation · 0 … 2 · 1", "exposure, saturation", "After the mode: col ×= exposure, then a mix toward the Rec. 601 luma by saturation. Each skipped at 1, so the defaults change nothing."],
-      tip: { title: "Exposure and saturation", ...R("view", 316), links: [RL("shape", 239, "the specs"), RL("sh", 412, "exposure"), RL("sh", 413, "saturation")] } },
+      tip: { title: "Exposure and saturation", ...R("view", 357), links: [RL("shape", 239, "the specs"), RL("sh", 454, "exposure"), RL("sh", 455, "saturation")] } },
     { cells: ["Colour window: the palette", "palette_a_r … palette_d_b · A, B 0.5; C 1; D (0, 0.33, 0.67)", "twelve floats → palette(t) = A + B·cos(2π(C·t + D))", "Inigo Quilez's cosine palette, one catalogue id per vector and channel so each can be bound. The Colour window's strip previews it with the same formula."],
-      tip: { title: "The palette", ...R("view", 316), links: [RL("shape", 255, "the twelve specs"), RL("sh", 254, "palette()"), { file: "src/color/palette.gd", line: 109, label: "Palette.color_at" }] } },
+      tip: { title: "The palette", ...R("view", 357), links: [RL("shape", 255, "the twelve specs"), RL("sh", 281, "palette()"), { file: "src/color/palette.gd", line: 109, label: "Palette.color_at" }] } },
     { cells: ["Shape: Precision", "precision · 1e-6 … 1e-3, log · 0.000025", "precision / (detail · shed detail)", "The pixel cone in hit_eps: both stop thresholds and the normal's delta (hit_eps(total) · 40). Not the shape."],
-      tip: { title: "Precision", ...R("view", 314), links: [RL("shape", 143, "the spec"), RL("sh", 348, "delta")] } },
+      tip: { title: "Precision", ...R("view", 355), links: [RL("shape", 143, "the spec"), RL("sh", 378, "delta")] } },
     { cells: ["Renderer: Detail", "detail · 0.1 … 10 · 1.0", "folded into precision (÷ detail)", "Scales the threshold everywhere: ×2 halves it. Divided on the CPU so the default is bit-for-bit the old cone."],
-      tip: { title: "Detail", ...R("view", 314), links: [RL("renderer", 35, "the slider"), RL("params", 206, "the field"), RL("sh", 96, "the hit_eps comment")] } },
+      tip: { title: "Detail", ...R("view", 355), links: [RL("renderer", 35, "the slider"), RL("params", 207, "the field"), RL("sh", 110, "the hit_eps comment")] } },
     { cells: ["Renderer: Full-detail range", "detail_range · 1 … 1000 · 10", "detail_range", "Where falloff starts: start = detail_range · near_dist, so it means the same at any zoom depth."],
-      tip: { title: "Full-detail range", ...R("view", 320), links: [RL("renderer", 37, "the slider"), RL("params", 208, "the field"), RL("sh", 101, "start")] } },
+      tip: { title: "Full-detail range", ...R("view", 361), links: [RL("renderer", 37, "the slider"), RL("params", 209, "the field"), RL("sh", 115, "start")] } },
     { cells: ["Renderer: Detail falloff", "detail_falloff · 0 … 3 · 0", "detail_falloff", "Past start the threshold grows by (t / start)^falloff: distant structure coarsens, rays stop sooner. 0 is off."],
-      tip: { title: "Detail falloff", ...R("view", 321), links: [RL("renderer", 39, "the slider"), RL("params", 210, "the field"), RL("sh", 103, "the falloff")] } },
+      tip: { title: "Detail falloff", ...R("view", 362), links: [RL("renderer", 39, "the slider"), RL("params", 211, "the field"), RL("sh", 117, "the falloff")] } },
     { cells: ["Renderer: Max march steps", "max_steps · 32 … 512 · 128", "budget = max(32, round(max_steps · shed steps)); coarse = ¾, fine = the rest", "The per-ray step budget. 128 is the original 96 + 32; the loops are bounded at 384 + 128."],
-      tip: { title: "Max march steps", ...R("view", 322), links: [RL("view", 323, "coarse_steps"), RL("view", 324, "fine_steps"), RL("renderer", 41, "the slider"), RL("params", 231, "coarse_steps()"), RL("sh", 312, "phase 1 loop")] } },
+      tip: { title: "Max march steps", ...R("view", 363), links: [RL("view", 364, "coarse_steps"), RL("view", 365, "fine_steps"), RL("renderer", 41, "the slider"), RL("params", 311, "coarse_steps()"), RL("sh", 341, "phase 1 loop")] } },
     { cells: ["Renderer: Min resolution", "min_render_scale · 0.1 … 1 · 0.25", "— (the governor reads it)", "The lowest render scale Fast Controls may drop to while you move (tab 9); at it, the load shedder may start."],
-      tip: { title: "Min resolution", ...R("gov", 51), links: [RL("renderer", 43, "the slider"), RL("params", 212, "the field"), RL("gov", 101, "a raised floor lifts the scale")] } },
+      tip: { title: "Min resolution", ...R("gov", 51), links: [RL("renderer", 43, "the slider"), RL("params", 213, "the field"), RL("gov", 101, "a raised floor lifts the scale")] } },
     { cells: ["Fast Controls", "fast_controls · true", "— (the governor reads it)", "Whether the governor may drop render_scale and shed load while you move. In the View tab's Renderer options."],
       tip: { title: "Fast Controls", ...R("gov", 50), links: [RL("renderer", 46, "the Renderer tab's"), RL("gov", 116, "off: scale 1, shedder reset")] } },
     { cells: ["(governor)", "LoadShedder level 0 … 4", "fog_dist = LEVELS[level].fog", "The fog distance in multiples of near_dist (0 = none); the same level also scales detail and the step budget above."],
-      tip: { title: "fog_dist", ...R("view", 325), links: [RL("shed", 14, "LEVELS"), RL("view", 198, "set_load_level"), RL("sh", 109, "fog_amount")] } },
+      tip: { title: "fog_dist", ...R("view", 366), links: [RL("shed", 14, "LEVELS"), RL("view", 223, "set_load_level"), RL("sh", 123, "fog_amount")] } },
     { cells: ["(none)", "the camera and the shape", "near_dist = max(D(eye), 1e-6)", "The eye's distance to the nearest surface (CPU, de(·, 32)): the unit detail_range and the fog are measured in."],
-      tip: { title: "near_dist", ...R("view", 346), links: [RL("view", 337, "pushed with the camera"), RL("view", 327, "and with the params"), RL("params", 177, "NEAR_FLOOR")] } },
+      tip: { title: "near_dist", ...R("view", 388), links: [RL("view", 378, "pushed with the camera"), RL("view", 368, "and with the params"), RL("params", 177, "NEAR_FLOOR")] } },
+    { cells: ["(none)", "near_dist", "coarse_iters = clamp(ceil(log(2 / (2 · eps · near)) / log|box_scale|), 16, 32)", "Phase 1's iteration count: 16 from the default eye, more within about 0.3 of the surface, so the coarse surface stays inside its own hit threshold of the real one (tab 5)."],
+      tip: { title: "coarse_iters", ...R("view", 390), links: [RL("params", 246, "coarse_iters()"), RL("sh", 28, "uniform int coarse_iters"), RL("sh", 339, "used by phase 1")] } },
+    { cells: ["(none)", "near_dist", "nf_weight = smoothstep(0.1, 2, near)", "How much of the Ice Fractal normal modes 1 to 9 light with: 1 from 2 out (the site's look), fading to the true normal inside 0.1 (tab 7)."],
+      tip: { title: "nf_weight", ...R("view", 391), links: [RL("params", 258, "NF_FADE_NEAR / FAR"), RL("params", 269, "nf_weight()"), RL("sh", 385, "the crossfade")] } },
     { cells: ["View tab: Camera", "camera_mode · FLY / ORBIT · FLY", "— (Main._apply_mode)", "Which camera handles input, and mouse capture."],
-      tip: { title: "Camera", ...R("main", 337), links: [RL("viewPane", 148, "the option row")] } },
+      tip: { title: "Camera", ...R("main", 357), links: [RL("viewPane", 148, "the option row")] } },
     { cells: ["View tab / Settings: Mouse sensitivity", "mouse_sensitivity · 0.02 … 0.5 · 0.1", "— (the cameras read it)", "Degrees per pixel of mouse-look; the orbit uses 0.5°/px × sens / 0.1. The player's setting, copied into each view."],
-      tip: { title: "Mouse sensitivity", ...R("fly", 72), links: [RL("main", 93, "from Settings"), RL("orbit", 86, "orbit")] } },
+      tip: { title: "Mouse sensitivity", ...R("fly", 109), links: [RL("main", 97, "from Settings"), RL("orbit", 86, "orbit")] } },
     { cells: ["(none)", "TAN_HALF_FOV constant", "tan_half_fov = tan 20° = 0.363970", "The 40° vertical field of view of every ray."],
-      tip: { title: "tan_half_fov", ...R("view", 318), links: [RL("view", 11, "TAN_HALF_FOV"), RL("sh", 290, "the ray")] } },
+      tip: { title: "tan_half_fov", ...R("view", 359), links: [RL("view", 11, "TAN_HALF_FOV"), RL("sh", 317, "the ray")] } },
     { cells: ["(none)", "the view's size", "aspect = width / height", "The horizontal spread of the rays; set whenever the size changes."],
-      tip: { title: "aspect", ...R("view", 263), links: [RL("view", 250, "_aspect")] } },
+      tip: { title: "aspect", ...R("view", 288), links: [RL("view", 275, "_aspect")] } },
     { cells: ["(camera)", "CameraState.transform", "eye, cam_right, cam_up, cam_forward", "The ray origin and basis (forward = −basis.z)."],
-      tip: { title: "camera uniforms", ...R("view", 333), links: [RL("cam", 29, "forward()")] } },
+      tip: { title: "camera uniforms", ...R("view", 374), links: [RL("cam", 29, "forward()")] } },
   ],
 };
 
@@ -2270,47 +2297,49 @@ const cards = {
   cards: [
     { title: fixOk ? `CPU estimator = shader: the ${FIX.n} fixtures` : `✗ THIS PAGE'S de() PORT FAILS ${FIX.fails.length} OF ${FIX.n} FIXTURES`,
       tag: fixOk ? "invariant" : "port broken", hue: fixOk ? 3 : 2, ...R("tDE", 17),
-      links: [{ file: F.spec, line: 174, label: "the site fixture tables" }, RL("tDE", 68, "the 4D-knob fixtures"), RL("tDE", 12, "the tolerance"), RL("de", 7, "must equal de(p, 32)")],
+      links: [{ file: F.spec, line: 174, label: "the site fixture tables" }, RL("tDE", 68, "the 4D-knob fixtures"), RL("tDE", 12, "the tolerance"), RL("de", 8, "must equal de(p, 32)")],
       body: fixOk
         ? `DistanceEstimator.estimate_at must give the shader's de(p, 32) numbers, pinned by 24 site-measured fixtures (defaults, an alternative shape, Julia (all)) and six that pin the 4D knobs (box_scale 2, Sphere → Box, iter_rot_xy 30°, w 0.5, julia_0 + julia_2), at relative 1e−5 or absolute 1e−9 below 1e−6. This pane runs all ${FIX.n} through its own de() port at load and they pass (worst relative error ${FIX.worst.toExponential(1)}), so its figures show the real shape. A failure turns this card orange and shows in the red error box.`
         : `The figures on this page are NOT the real shape until the port is fixed (fix the port, never the fixtures): ${FIX.fails.join("; ")}` },
-    { title: "One mb_step, three copies", tag: "invariant", hue: 3, ...SH(174), links: [RL("sh", 208, "field() uses it too"), RL("de", 59, "the GDScript loop"), RL("shape", 12, "ids = uniform names")],
+    { title: "One mb_step, three copies", tag: "invariant", hue: 3, ...SH(201), links: [RL("sh", 235, "field() uses it too"), RL("de", 62, "the GDScript loop"), RL("shape", 12, "ids = uniform names")],
       body: "de(), the Ice Fractal field and DistanceEstimator run the same iteration: folds in fold_order, the optional six-plane rotation, z = box_scale·z + c, dz = dz·|box_scale| + 1, on a 4D point. The knobs are named the same everywhere (catalogue id = FractalParams field = uniform), so a knob cannot reach the shader and miss the CPU." },
-    { title: "The shader's uniforms = the catalogue + 14 renderer uniforms", tag: "invariant", hue: 3, ...R("tShader", 11), links: [RL("sh", 8, "the naming rule"), RL("shape", 293, "catalogue_ids()"), RL("sh", 25, "the two fog uniforms"), RL("tShader", 46, "the look defaults")],
-      body: "A shader that fails to compile yields an empty uniform list, so shader_test catches a broken shader headless by checking the list exactly: the 14 renderer uniforms (camera, fov, aspect, box_half, the level of detail, the step split, fog_dist, fog_color) plus every MandelboxShape id, 61 in all. Fractacular's technique-schema check, ported. Every look uniform (colour, lighting, palette) also declares its catalogue default in the shader, checked from the source, so a frame drawn before the first push already looks right. The noise editor's spliced shaders keep all of them." },
-    { title: "project / unproject round-trip", tag: "invariant", hue: 3, ...R("tView", 25), links: [RL("view", 224, "project"), RL("view", 239, "unproject"), RL("tMarker", 37, "the marker drag")],
+    { title: "The shader's uniforms = the catalogue + 19 renderer uniforms", tag: "invariant", hue: 3, ...R("tShader", 11), links: [RL("sh", 8, "the naming rule"), RL("shape", 293, "catalogue_ids()"), RL("sh", 33, "the two fog uniforms"), RL("tShader", 47, "the look defaults")],
+      body: "A shader that fails to compile yields an empty uniform list, so shader_test catches a broken shader headless by checking the list exactly: the 19 renderer uniforms (camera, fov, aspect, box_half, the level of detail, the step split, the coarse iteration count and the normal crossfade, fog_dist, fog_color, the probe dot) plus every MandelboxShape id, 66 in all. Fractacular's technique-schema check, ported. Every look uniform (colour, lighting, palette) also declares its catalogue default in the shader, checked from the source, so a frame drawn before the first push already looks right. The noise editor's spliced shaders keep all of them." },
+    { title: "project / unproject round-trip", tag: "invariant", hue: 3, ...R("tView", 25), links: [RL("view", 249, "project"), RL("view", 264, "unproject"), RL("tMarker", 37, "the marker drag")],
       body: "FractalView's project and unproject use the shader's own ray maths (forward + ndc.x·aspect·tan_half_fov·right + ndc.y·tan_half_fov·up), so unproject(project(p), depth) == p and the Julia ring sits exactly on the point the shader uses." },
     { title: "COLOR_MODE_IDS match the site", tag: "invariant", hue: 3, ...R("params", 16), links: [RL("tParams", 42, "the id-order test"), RL("shape", 157, "the Colour ENUM spec")],
       body: "The Colour row's order maps to the site's ids [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14], then this project's Palette at 20, past the site's range; saves store the id, not the index, so a saved number means the same colour here and on the site. An unknown id sanitizes back to the default." },
-    { title: "hit_epsilon (CPU) = hit_eps (shader) at level 0", tag: "invariant", hue: 3, ...R("params", 220), links: [RL("sh", 99, "hit_eps"), RL("tParams", 116, "the test"), RL("orbit", 165, "the orbit's CPU march uses it")],
+    { title: "hit_epsilon (CPU) = hit_eps (shader) at level 0", tag: "invariant", hue: 3, ...R("params", 221), links: [RL("sh", 113, "hit_eps"), RL("tParams", 116, "the test"), RL("orbit", 165, "the orbit's CPU march uses it")],
       body: "One threshold, written twice: precision / detail · t, times (t / start)^falloff past start = detail_range · near_dist. The orbit camera's click-to-centre march uses the GDScript copy, so it lands where the shader draws the surface. Under a shed level the shader's precision is also divided by the level's detail factor; the CPU copy is never shed. This pane's march port is a third copy." },
-    { title: "Nothing re-renders a still view", tag: "invariant", hue: 3, ...R("cam", 11), links: [RL("params", 254, "apply_resolved: emit only on a difference"), RL("fly", 70, "a zero mouse delta is ignored"), RL("gov", 29, "settle 0.15 s"), RL("tCam", 31, "the test")],
+    { title: "Nothing re-renders a still view", tag: "invariant", hue: 3, ...R("cam", 11), links: [RL("params", 334, "apply_resolved: emit only on a difference"), RL("fly", 107, "a zero mouse delta is ignored"), RL("gov", 29, "settle 0.15 s"), RL("tCam", 31, "the test")],
       body: "CameraState emits only when the transform or speed factor really differs (exactly, so a 1e−7 deep-zoom move still counts); apply_resolved emits only when a resolved value differs; FlyCamera ignores the zero-delta motion a resting captured mouse sends; and the governor waits 0.15 s of quiet before its full-resolution frame. Without these a still view kept buying full frames." },
-    { title: "A bound knob keeps the view animating", tag: "gotcha", hue: 2, ...R("main", 245), links: [RL("gov", 46, "params.changed → _dirty"), RL("resolver", 13, "resolve")],
+    { title: "A bound knob keeps the view animating", tag: "gotcha", hue: 2, ...R("main", 265), links: [RL("gov", 46, "params.changed → _dirty"), RL("resolver", 13, "resolve")],
       body: "A binding to Time changes its knob every frame, so FractalParams emits every frame, the governor never leaves CONTINUOUS and the GPU never idles. That is correct (the picture is moving), but a view saved with a Time binding costs a continuous render. An axis binding only animates while its key is held." },
-    { title: "Fog only while moving", tag: "gotcha", hue: 2, ...R("gov", 60), links: [RL("shed", 14, "LEVELS"), RL("sh", 304, "the fog exit"), RL("shedSpec", 66, "spec: fog")],
+    { title: "Fog only while moving", tag: "gotcha", hue: 2, ...R("gov", 60), links: [RL("shed", 14, "LEVELS"), RL("sh", 331, "the fog exit"), RL("shedSpec", 66, "spec: fog")],
       body: "applied_level() is the shedder's level only in CONTINUOUS and SETTLING: the final still frame always renders at level 0, full scale, no fog. The level itself is kept through idle, so moving again picks up where it left off. Each colour mode has its own fog tint (a light one for the two white-background modes)." },
-    { title: "Default renderer options keep the threshold, not every pixel", tag: "gotcha", hue: 2, ...SH(310), links: [RL("sh", 340, "ce on the 128-step scale"), RL("view", 314, "detail folded on the CPU")],
+    { title: "Default renderer options keep the threshold, not every pixel", tag: "gotcha", hue: 2, ...SH(337), links: [RL("sh", 369, "ce on the 128-step scale"), RL("view", 355, "detail folded on the CPU")],
       body: "At the defaults hit_eps is exactly the old precision · total (detail is divided on the CPU so the shader multiplies by the same float) and the budget is 96 + 32. But the loop bounds became uniforms, and the GPU compiler emits different code for them: about 1% of pixels, in the chaotic dust, flip (mean 0.5/255 on the default view). Deterministic run to run; invisible to the eye." },
-    { title: "Fractal coordinates are twice the site's", tag: "gotcha", hue: 2, ...R("readme", 311), links: [RL("spec", 50, "spec: coordinates")],
+    { title: "Fractal coordinates are twice the site's", tag: "gotcha", hue: 2, ...R("readme", 353), links: [RL("spec", 50, "spec: coordinates")],
       body: "Everything here (eye, Julia constant, saves) is in the space the estimator is evaluated in. The site reports camera positions at half that: a site position (x, y, z) is (2x, 2y, 2z) here. The shader's h = v/2 and eh = eye/2 are the site's own half-scale coordinates." },
-    { title: "World up is +Z; forward is −basis.z", tag: "gotcha", hue: 2, ...R("spec", 55), links: [RL("cam", 29, "forward() = −basis.z"), RL("fly", 8, "WORLD_UP")],
+    { title: "World up is +Z; forward is −basis.z", tag: "gotcha", hue: 2, ...R("spec", 55), links: [RL("cam", 29, "forward() = −basis.z"), RL("fly", 11, "WORLD_UP")],
       body: "Not Godot's +Y. Cameras yaw about +Z and rebuild their basis with +Z as the up hint. CameraState follows Godot's Transform3D convention, so forward is −basis.z, right basis.x, up basis.y." },
-    { title: "Typing silences the keys, in every window", tag: "gotcha", hue: 2, ...R("textFocus", 11), links: [RL("main", 98, "the Ctrl tap's typing_guard"), RL("fly", 90, "WASD"), RL("main", 411, "N")],
+    { title: "Typing silences the keys, in every window", tag: "gotcha", hue: 2, ...R("textFocus", 11), links: [RL("main", 103, "the Ctrl tap's typing_guard"), RL("fly", 127, "WASD"), RL("main", 431, "N")],
       body: "TextFocus.any(viewports) checks the main window's, the console's and the noise window's viewports: while a text field has focus the Ctrl tap, N, WASD and the axis keys do nothing, so typing an \"e\" in a spin box never moves Axis A." },
-    { title: "Cmd / Ctrl suppresses movement, so Cmd+S is a save", tag: "gotcha", hue: 2, ...R("fly", 88), links: [RL("proj", 73, "workspace_quick_save"), RL("tFly", 37, "the test")],
+    { title: "Cmd / Ctrl suppresses movement, so Cmd+S is a save", tag: "gotcha", hue: 2, ...R("fly", 125), links: [RL("proj", 73, "workspace_quick_save"), RL("tFly", 37, "the test")],
       body: "S alone is move_back; with Cmd or Ctrl held the fly camera ignores the move actions, so ⌘S saves without flying backwards." },
     { title: "A native console must not overlap the view (macOS)", tag: "gotcha", hue: 2, ...R("uiScale", 137), links: [RL("console", 62, "force_native"), RL("uiScale", 160, "beside_position"), RL("proj", 19, "embed_subwindows")],
       body: "On macOS (Godot 4.6.1, GL Compatibility) a native sub-window over the main window corrupts the main window's frame: the fractal squeezed into the uncovered strip, or black. The project embeds sub-windows; only the console forces native, and it opens beside the main window, never over it. Headless and the web have no native sub-windows, so there it is embedded." },
-    { title: "Pointer lock needs a click on the web", tag: "gotcha", hue: 2, ...R("spec", 496), links: [RL("main", 436, "click to capture"), RL("main", 399, "Escape frees the mouse")],
+    { title: "Pointer lock needs a click on the web", tag: "gotcha", hue: 2, ...R("spec", 496), links: [RL("main", 464, "click to capture"), RL("main", 419, "Escape frees the mouse")],
       body: "A browser only grants mouse capture inside a user gesture, and can swallow a bare Ctrl tap. The click-to-capture rule (a click on the view while free in FLY) is that gesture. The pause menu's Console… button, the old way in when the tap was swallowed, went with the pause menu (5ebb10a): there is no second way to open the console." },
-    { title: "float32 limits deep zoom", tag: "gotcha", hue: 2, ...R("spec", 491), links: [RL("sh", 3, "highp = float32 on WebGL 2")],
-      body: "The shader runs 32-bit floats (WebGL 2), so the march breaks down at the same zoom depth as the site's. Accepted. The JS ports on this page run doubles, so they stay clean deeper than the real render." },
-    { title: "DistanceEstimator runs scalars to stay 64-bit", tag: "gotcha", hue: 2, ...R("de", 9), links: [RL("tDE", 5, "fixtures pin estimate_at")],
+    { title: "float32 limits deep zoom, so the fly camera stops at the floor", tag: "gotcha", hue: 2, ...R("zoomSpec", 47), links: [RL("sh", 3, "highp = float32 on WebGL 2"), RL("params", 304, "zoom_floor"), RL("fly", 95, "move_allowed"), RL("movement", 296, "`zoom limit`"), RL("spec", 491, "spec: accepted")],
+      body: "The shader runs 32-bit floats (WebGL 2): near a coordinate x a ray position can only land on a grid ulp32(x) = 2^(floor(log2 x) − 23) apart, about 1.2e−7 near the box. Once the hit threshold eps · total is much finer than that, rays reach the surface only by luck: speckle, shimmer, pits. So the fly camera refuses to come closer than zoom_floor = ulp32(max |eye|) / (50 · eps), about 1e−4 near the box at the default precision (a higher Detail, a finer threshold, stops it further out), and the console's Movement pane shows `zoom limit`. Moving away is always allowed. The orbit camera is not guarded. The JS ports on this page run doubles, so they stay clean deeper than the real render." },
+    { title: "Deep zoom adjusts itself; the default view is untouched", tag: "invariant", hue: 3, ...R("zoomSpec", 69), links: [RL("params", 246, "coarse_iters"), RL("params", 269, "nf_weight"), RL("view", 385, "_push_near pushes both"), RL("tDeep", 1, "deep_zoom_test"), RL("tView", 99, "16 and 1 at the default view")],
+      body: "Three automatic changes, no new option and no save-format change: phase 1's iteration count follows near_dist (coarse_iters, tab 5), the Ice Fractal normal fades into the true one up close (nf_weight, tab 7), and the fly camera stops at the 32-bit floor (zoom_floor). From the default eye coarse_iters is 16 and nf_weight exactly 1, and each shader path is then the site's maths, so the default view is pixel-identical. Without the first change a camera 1e−3 from the surface spent all 96 coarse steps creeping toward the 16-iteration surface: dark shading, then dark pits." },
+    { title: "DistanceEstimator runs scalars to stay 64-bit", tag: "gotcha", hue: 2, ...R("de", 10), links: [RL("tDE", 5, "fixtures pin estimate_at")],
       body: "GDScript floats are 64-bit but Vector3 components are 32-bit; the precision lost on input is amplified near the surface and broke the near-boundary fixtures. estimate_at keeps the 4D orbit in scalar floats in an Array; estimate(Vector3) is for callers whose input is already a 32-bit camera position." },
     { title: "Saved view version 2, and the version-1 migration", tag: "history", hue: 6, ...R("ws", 19), links: [RL("ws", 31, "capture"), RL("ws", 181, "_migrate_v1"), RL("tWs", 94, "the v1 test"), RL("saveDef", 1, "default.json"), RL("wsf", 20, "user://saves/ in exports")],
       body: "{ version: 2, shape: { defaults, bindings }, axes, fractal: the non-shape preference and renderer keys, camera: { eye, forward, up, speed_factor }, noise? }. The clock and the keymap are not saved. Version 1 had one flat `fractal` section of every FractalParams value; it still loads, renamed without a warning (scale → box_scale, inner_radius → min_radius, outer_radius → fixed_radius, julia_enabled → julia_all, julia_point → c_0..c_2). Saving always writes version 2; the committed saves were rewritten once." },
-    { title: "The derivative: −dz·s + 1 became dz·|s| + 1", tag: "history", hue: 6, ...R("consoleSpec", 148), links: [RL("sh", 179, "now"), RL("consoleSpec", 121, "spec: the shader and the estimator")],
+    { title: "The derivative: −dz·s + 1 became dz·|s| + 1", tag: "history", hue: 6, ...R("consoleSpec", 148), links: [RL("sh", 206, "now"), RL("consoleSpec", 121, "spec: the shader and the estimator")],
       body: "The site's form and Fractacular's agree for every negative scale, which is every scale the site allowed and all 24 site fixtures, so they hold unchanged. The catalogue now reaches positive scales (up to 3), where dz·|s| + 1 is the standard derivative; a new fixture pins box_scale 2." },
     { title: "The Q panel became the console (and, for a while, the pause menu)", tag: "history", hue: 6, ...R("consoleSpec", 294), links: [RL("consoleSpec", 1, "the debug console design"), RL("viewPane", 3, "the View tab"), { url: "https://github.com/Adam-G-Klein/HelpImStuckInAFractal/commit/5ebb10a984c529218b76c73813640c1b57fd9d7d", label: "5ebb10a: the pause menu goes" }],
       body: "ControlsPanel (four shape sliders, Colour, Precision, Julia + X/Y/Z, Save/Load, Camera, Fast Controls) was deleted with its test. The shape knobs, and every Fractacular Mandelbox knob besides, are the console's Shape pane over the AttributeTable; Save/Load view, Camera, Fast Controls, Console… and Noise editor… moved to the pause menu, and then (5ebb10a) with the Renderer options and Back to Menu into the console's View tab: Escape now only frees the mouse and nothing pauses the tree." },
@@ -2343,8 +2372,8 @@ VIZ.pane({
   short: "Mandelbox viewer",
   title: "Help I'm Stuck In A Fractal — how a pixel is made",
   subtitle: "A Godot 4.6 GDScript Mandelbox viewer emulating icefractal.com/mandelbox, with every knob of Fractacular's 4D Mandelbox. Each frame Main resolves the shape table, the axes and the clock into FractalParams; with CameraState it carries every value. A canvas_item shader ray-marches the 4D estimator's w slice in two phases inside a ±2 cube, stopping on a hit threshold that can coarsen with distance, and colours each hit by how many steps it took; a governor drops the render scale and then sheds detail into fog while you move, and stops rendering when you stop. The live figures run line-for-line JavaScript ports of the shader and the GDScript, checked at load against the estimator's 30 fixtures.",
-  commit: "3190cd5565293d27d3d8f5077c9a81f6b5b68d51",
-  pinNote: "main, unpushed: links 404 until it is pushed",
+  commit: "15801d3f64bcbf437cf4adefe5a1c7c497a9f9fe",
+  pinNote: "deep-zoom, unpushed: links 404 until it is pushed",
   ctx: {
     state: { hue: 1, label: "state — FractalParams, CameraState" },
     input: { hue: 2, label: "input — Main's dispatch, the menus, the file panels, saves" },
@@ -2371,6 +2400,6 @@ VIZ.pane({
     { label: "Dials, uniforms, saves", rows: [[dialTable], [cards]] },
   ],
   // The ports, exposed for checking from the console or node (VIZ.panes[0].ports.de(...)).
-  ports: { params, withP, hitEps, fogAmount, nearDist, de, mbStep, orbitStages, field, calcNormal, calcNF, hue, boxIntersect, march, shade, renderPixel, lookAt, flySpeed, scrollFactor, applyLook, newShedder, shedderStep, newGovernor, governorStep, appliedLevel, FIX, DEFAULT_CAM },
+  ports: { params, withP, hitEps, fogAmount, nearDist, coarseIters, nfWeight, ulp32, zoomFloor, de, mbStep, orbitStages, field, calcNormal, calcNF, hue, boxIntersect, march, shade, renderPixel, lookAt, flySpeed, scrollFactor, applyLook, newShedder, shedderStep, newGovernor, governorStep, appliedLevel, FIX, DEFAULT_CAM },
 });
 })();

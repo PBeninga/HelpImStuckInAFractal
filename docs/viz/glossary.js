@@ -109,7 +109,7 @@ VIZ.glossary({
   "ray-march": {
     term: "Ray marching",
     match: [/\bray[- ]?march\w*/gi, /\bmarch(?:es|ed|ing)?\b/gi],
-    body: "A way to draw a shape that has no triangles, only a distance estimator. For each pixel, cast a ray from the eye through that pixel and walk ('march') along it in steps. At each step, ask the DE how far the nearest surface is and step exactly that far, which can never overshoot. When the distance gets tiny (below the hit threshold), the ray has hit the surface. If it leaves the scene or runs out of steps, it hasn't.\nHere every pixel's march runs on the GPU in the fragment shader, in two phases: a cheaper 16-iteration DE first, then the 32-iteration one.",
+    body: "A way to draw a shape that has no triangles, only a distance estimator. For each pixel, cast a ray from the eye through that pixel and walk ('march') along it in steps. At each step, ask the DE how far the nearest surface is and step exactly that far, which can never overshoot. When the distance gets tiny (below the hit threshold), the ray has hit the surface. If it leaves the scene or runs out of steps, it hasn't.\nHere every pixel's march runs on the GPU in the fragment shader, in two phases: a cheaper DE first (16 iterations, more when the camera is very close to the surface), then the 32-iteration one.",
     links: [WIKI("Ray_marching"), { url: "https://iquilezles.org/articles/raymarchingdf/", label: "Inigo Quilez: raymarching distance fields" }],
   },
   "sphere-tracing": {
@@ -129,6 +129,13 @@ VIZ.glossary({
     match: ["pixel cone", /\bcone\b/gi, "level of detail", "level-of-detail"],
     body: "A pixel doesn't see along a thin line. It sees a narrow cone that starts at the eye and widens with distance. At distance t, one pixel covers a patch about t × (the pixel's angle) wide, so detail finer than that can't show up in it anyway. The renderer uses this as its hit threshold: a ray stops when the DE drops below precision · t, a tolerance that grows in proportion to distance. That gives level of detail for free: far surfaces are resolved coarsely and near ones finely. detail divides the threshold (sharper), and detail_falloff makes it grow faster than linearly past detail_range · near_dist.",
     links: [WIKI("Level_of_detail_(computer_graphics)"), WIKI("Cone_tracing")],
+  },
+
+  ulp: {
+    term: "ulp and the 32-bit grid",
+    match: [/\bulp32\b/g, /\bulp\b/g, "32-bit grid", "float grid"],
+    body: "'Unit in the last place': the gap between a floating-point number and the next one up. A 32-bit float keeps 24 significant bits, so near x the representable values sit on a grid 2^(floor(log2 x) − 23) apart: about 1.2e−7 for x between 1 and 2, twice that between 2 and 4. Anything the shader computes for a ray position snaps to that grid. When the hit threshold gets much finer than the grid, a ray can no longer land close enough to the surface to stop, which is why the fly camera has a zoom floor.",
+    links: [WIKI("Unit_in_the_last_place"), WIKI("Single-precision_floating-point_format")],
   },
 
   // ---------------------------------------------------------------- normals + fields
@@ -246,6 +253,12 @@ VIZ.glossary({
   },
 
   // ---------------------------------------------------------------- control + smoothing
+  smoothstep: {
+    term: "smoothstep",
+    match: ["smoothstep"],
+    body: "A ramp from 0 to 1 with soft ends. smoothstep(a, b, x) is 0 below a and 1 above b; in between it takes the straight ramp s = (x − a)/(b − a) and bends it into s²·(3 − 2s), an S-curve whose slope is zero at both ends, so a blend driven by it starts and finishes without a visible kink. GLSL and GDScript both have it built in. The shader uses it to fade fog in and to crossfade the Ice Fractal normal into the true one between near_dist 2 and 0.1.",
+    links: [WIKI("Smoothstep")],
+  },
   ema: {
     term: "EMA (exponential moving average)",
     match: [/\bEMA\b/g, "exponential moving average"],

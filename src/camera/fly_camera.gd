@@ -4,7 +4,9 @@ extends Node
 ## right, no roll) and WASD + Space/Backspace (up/down) movement whose speed
 ## follows how far away the surface straight ahead is (the CenterRay), capped
 ## by the distance to the nearest surface in any direction. Holding Shift
-## doubles the speed. Reads and writes a shared CameraState.
+## doubles the speed. A move that would take the camera below the 32-bit zoom
+## floor (FractalParams.zoom_floor) is refused. Reads and writes a shared
+## CameraState.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
@@ -20,6 +22,10 @@ var enabled := false
 var speed_limit := 1.0
 ## Whether Shift was held on the last physics tick.
 var sprinting := false
+## True on a tick that refused a move because it would take the camera below
+## FractalParams.zoom_floor. Cleared by the next accepted move, a tick with no
+## move key held, or disabling the camera. Main shows it in the Movement pane.
+var at_zoom_limit := false
 
 var _params: FractalParams
 var _camera: CameraState
@@ -65,14 +71,32 @@ func handle_event(event: InputEvent) -> bool:
 
 func _physics_process(delta: float) -> void:
 	if not enabled:
+		at_zoom_limit = false
 		return
 	var dir := move_direction()
 	sprinting = Input.is_action_pressed("sprint")
 	if dir.length() == 0.0:
+		at_zoom_limit = false
 		return
 	var t := _camera.transform
 	t.origin += dir * current_speed() * delta
+	if not move_allowed(_camera.eye(), t.origin):
+		at_zoom_limit = true
+		return
+	at_zoom_limit = false
 	_camera.transform = t
+
+
+## Whether the camera may move from `from` to `to`: yes when `to` is at least
+## the zoom floor from the surface, or no closer than `from` is (backing away
+## is always allowed, so a camera already past the floor, say from a loaded
+## save, can leave). The speed already shrinks with the distance, so the last
+## accepted step before the floor is tiny and the stop does not pop.
+func move_allowed(from: Vector3, to: Vector3) -> bool:
+	var d_to := DistanceEstimator.estimate(to, _params)
+	if d_to >= _params.zoom_floor(to):
+		return true
+	return d_to >= DistanceEstimator.estimate(from, _params)
 
 
 ## Rotate the view by a mouse delta (pixels). Yaw turns the heading about world

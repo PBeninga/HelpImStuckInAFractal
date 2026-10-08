@@ -197,8 +197,9 @@ const FOG_COLORS := {
 ## The resolution governor never drops below min_render_scale while moving.
 const RENDER_SCALE_FLOOR := 0.1
 
-## The march's step budget: three quarters coarse (N=16) and the rest fine
-## (N=32), so the default 128 is the original 96 + 32. The shader's loops are
+## The march's step budget: three quarters coarse (N = coarse_iters(), 16 at
+## the default view) and the rest fine (N=32), so the default 128 is the
+## original 96 + 32. The shader's loops are
 ## bounded for MAX_STEPS_MAX.
 const MAX_STEPS_MIN := 32
 const MAX_STEPS_MAX := 512
@@ -224,6 +225,85 @@ func hit_epsilon(t: float, near: float) -> float:
 		if t > start:
 			eps *= pow(t / start, detail_falloff)
 	return eps
+
+
+## The fewest iterations the march's coarse pass uses (the site's fixed count),
+## and the box half-size its count is worked out against.
+const COARSE_ITERS_MIN := 16
+const COARSE_BOX_HALF := 2.0
+
+
+## How many iterations the march's coarse pass needs for a camera `near` from
+## the nearest surface. Each iteration adds detail |box_scale| times finer, so
+## stopping after n leaves a smoother surface about COARSE_BOX_HALF /
+## |box_scale|^n away from the real one. The coarse pass stops at twice the hit
+## threshold, 2 × eps × near (eps = precision / detail), so it needs that gap
+## under the threshold: n = log(box / (2 eps near)) / log|box_scale|, rounded
+## up, kept in [16, 32]. 16 at the default view, so the site's picture is
+## unchanged; it rises inside about 0.3 of the surface and reaches 32 by about
+## 3e-6. A |box_scale| of 1 or less has no shrinking detail: 32. Uses the
+## unshed detail: the still frame renders at load level 0.
+func coarse_iters(near: float) -> int:
+	var s := absf(box_scale)
+	if s <= 1.0:
+		return DistanceEstimator.ITERATIONS
+	var gap := maxf(2.0 * precision / detail * maxf(near, 0.0), 1e-300)
+	var n := ceilf(log(COARSE_BOX_HALF / gap) / log(s))
+	return clampi(int(minf(n, 1e6)), COARSE_ITERS_MIN, DistanceEstimator.ITERATIONS)
+
+
+## The shading crossfade's band, in the camera's distance to the nearest
+## surface: beyond NF_FADE_FAR the Ice Fractal colour modes light with their own
+## normal (calc_nf), inside NF_FADE_NEAR with the true one (calc_normal).
+const NF_FADE_NEAR := 0.1
+const NF_FADE_FAR := 2.0
+
+
+## How much of the Ice Fractal normal the shader's lighting uses for a camera
+## `near` from the surface: 1 (all of it) from NF_FADE_FAR out, 0 inside
+## NF_FADE_NEAR, an S-shaped blend between (smoothstep: eases in and out, so
+## the change has no visible kink). The Ice Fractal normal samples a fixed 0.01
+## from the hit point, which up close spans far more than a pixel and turns
+## the shading to noise; the true normal's sample spacing follows the hit
+## threshold instead. Exactly 1 at the default view (near ~6.57).
+static func nf_weight(near: float) -> float:
+	return smoothstep(NF_FADE_NEAR, NF_FADE_FAR, near)
+
+
+## The zoom floor sits where the hit threshold is this many times finer than
+## the 32-bit grid. Measured: hits start failing at a distance of 1e-4 with
+## ulp32 ~1.2e-7 and eps 2.5e-5, which is ulp32 / (48 × eps).
+const ZOOM_FLOOR_DIVISOR := 50.0
+
+
+## The gap between neighbouring 32-bit floats near x: 2^(floor(log2 |x|) − 23)
+## (a 32-bit float keeps 23 bits after its leading one). Below the smallest
+## normal 32-bit float the gap is the fixed 2^-149.
+static func ulp32(x: float) -> float:
+	x = absf(x)
+	if x < pow(2.0, -126.0):
+		return pow(2.0, -149.0)
+	var e := floori(log(x) / log(2.0))
+	# log() can round either way at an exact power of two.
+	if pow(2.0, e + 1) <= x:
+		e += 1
+	elif pow(2.0, e) > x:
+		e -= 1
+	return pow(2.0, e - 23)
+
+
+## How close the fly camera may come to the surface with its eye at `eye`. The
+## shader works out ray positions in 32-bit floats, which near `eye` can only
+## land on a grid ulp32(largest |coordinate|) apart; once the hit threshold
+## (eps × distance, eps = precision / detail) is much finer than that grid,
+## rays reach the surface only by luck and the picture breaks into speckle and
+## pits. The floor is ulp32 / (ZOOM_FLOOR_DIVISOR × eps): about 1e-4 near the
+## box at the default precision. A higher Detail (a finer threshold) and a
+## larger eye coordinate (Julia mode's bigger box) both push it further out.
+## Uses the unshed detail, like coarse_iters.
+func zoom_floor(eye: Vector3) -> float:
+	var m := maxf(absf(eye.x), maxf(absf(eye.y), absf(eye.z)))
+	return ulp32(m) / (ZOOM_FLOOR_DIVISOR * maxf(precision / detail, 1e-30))
 
 
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the

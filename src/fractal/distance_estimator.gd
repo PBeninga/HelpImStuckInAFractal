@@ -1,10 +1,11 @@
 class_name DistanceEstimator
 extends RefCounted
 ## CPU copy of the shader's Mandelbox distance estimator, N = 32 (the
-## high-precision variant). Mirrors mandelbox.gdshader's mb_step in 64-bit
-## scalars (zx, zy, zz, zw): box fold, sphere fold, optional 4D iteration
+## high-precision variant) unless a smaller iteration count is asked for, as the
+## shader's coarse pass does (FractalParams.coarse_iters). Mirrors
+## mandelbox.gdshader's mb_step in 64-bit scalars (zx, zy, zz, zw): box fold, sphere fold, optional 4D iteration
 ## rotation, scale and add, carrying the running derivative dz. Must give the
-## same numbers as the shader's `de(p, 32)`.
+## same numbers as the shader's `de(p, iters)`.
 ##
 ## The orbit runs in scalar `float` locals (GDScript floats are 64-bit) rather
 ## than Vector math, because Vector components are 32-bit in a standard build
@@ -22,7 +23,9 @@ static func estimate(p: Vector3, params: FractalParams) -> float:
 	return estimate_at(p.x, p.y, p.z, params)
 
 
-static func estimate_at(px: float, py: float, pz: float, params: FractalParams) -> float:
+## `iters` is clamped to [0, ITERATIONS]; the default is the shader's `de(p, 32)`.
+static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
+		iters: int = ITERATIONS) -> float:
 	var scale := params.box_scale
 	var mr2 := params.min_radius * params.min_radius
 	var fr2 := params.fixed_radius * params.fixed_radius
@@ -56,7 +59,7 @@ static func estimate_at(px: float, py: float, pz: float, params: FractalParams) 
 
 	var z := [z0[0], z0[1], z0[2], z0[3]]
 	var dz := 1.0
-	for _i in ITERATIONS:
+	for _i in clampi(iters, 0, ITERATIONS):
 		if fold_order == 0:
 			_box_fold(z, fold)
 			dz = _sphere_fold(z, dz, mr2, fr2)

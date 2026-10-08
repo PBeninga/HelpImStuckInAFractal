@@ -379,6 +379,15 @@ func run() -> void:
 	main.governor.shed_level_changed.emit(0)
 	check(not shed_label.visible, "level 0 hides the readout")
 
+	# the fly camera's zoom limit reaches the Movement pane each frame
+	var zoom_label: Label = main.console().movement_pane().zoom_label
+	main.fly.at_zoom_limit = true
+	main._process(0.0)
+	check(zoom_label.visible, "Main shows the fly camera's zoom limit in the Movement pane")
+	main.fly.at_zoom_limit = false
+	main._process(0.0)
+	check(not zoom_label.visible, "and hides it once the limit clears")
+
 	# Back to Menu swaps to the main menu
 	vp.menu_button.pressed.emit()
 	await frames(2)

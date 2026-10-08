@@ -22,6 +22,14 @@ uniform float detail_falloff;
 uniform float near_dist;
 uniform int coarse_steps;
 uniform int fine_steps;
+// The coarse pass's iteration count, 16..32: more as the camera nears the
+// surface, so the smoother surface it marches toward stays within its hit
+// threshold of the real one (FractalParams.coarse_iters). 16 at the default view.
+uniform int coarse_iters;
+// How much of the Ice Fractal normal (calc_nf) the probe-lit colour modes use:
+// 1 far from the surface, fading to 0 (the true normal) up close, where
+// calc_nf's fixed 0.01 offset turns to noise (FractalParams.nf_weight).
+uniform float nf_weight;
 // The load shedder's distance fog: rays stop at fog_dist x near_dist and fade
 // into fog_color on the way there. fog_dist 0 is no fog.
 uniform float fog_dist;
@@ -326,12 +334,14 @@ void fragment() {
 		float total = max(tb.x, 0.0);
 		bool left_cube = total > t_exit;
 
-		// Phase 1: low precision (N=16), up to coarse_steps (<= 384) steps.
+		// Phase 1: low precision (N = coarse_iters, 16 at the default view), up to
+		// coarse_steps (<= 384) steps. An unpushed 0 reads as the site's 16.
+		int n_coarse = clamp(coarse_iters, 16, 32);
 		int n1 = coarse_steps;
 		for (int i = 0; i < 384; i++) {
 			if (left_cube || i >= coarse_steps) { break; }
 			vec3 pos = eye + dir * total;
-			float d = de(pos, 16);
+			float d = de(pos, n_coarse);
 			if (d < hit_eps(total) * 2.0) { n1 = i; break; }
 			total += d * noise_step_scale();
 			if (total > t_exit) { left_cube = true; break; }
@@ -367,10 +377,22 @@ void fragment() {
 			vec3 eh = eye * 0.5;
 			float delta = hit_eps(total) * 40.0;
 
-			// Normal: NF for modes 1..9 outside Julia mode, N otherwise.
+			// Normal: NF for modes 1..9 outside Julia mode, N otherwise. Up close NF
+			// crossfades to N by nf_weight; each end computes only its own normal,
+			// so a weight of exactly 1 (the default view) is the site's maths.
 			vec3 n;
 			if (color_mode >= 1 && color_mode <= 9 && !julia_all) {
-				n = calc_nf(v, h);
+				if (nf_weight >= 1.0) {
+					n = calc_nf(v, h);
+				} else if (nf_weight <= 0.0) {
+					n = calc_normal(v, delta);
+				} else {
+					vec3 nf = calc_nf(v, h);
+					vec3 m = mix(calc_normal(v, delta), nf, nf_weight);
+					// The two can point nearly opposite ways (NF is not a gradient);
+					// a blend that cancels to nothing keeps NF rather than a NaN.
+					n = dot(m, m) > 1e-12 ? normalize(m) : nf;
+				}
 			} else {
 				n = calc_normal(v, delta);
 			}
