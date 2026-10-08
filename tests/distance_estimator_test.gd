@@ -2,7 +2,7 @@ extends "res://tests/test_case.gd"
 ## Pins the CPU estimator to the site's own numbers (24 fixtures), plus the
 ## spec's non-default fixtures (positive scale, Sphere -> Box, one iteration
 ## rotation, a non-zero w, a per-component Julia mix) and the symmetry /
-## sensitivity invariants. The fixtures pin the 64-bit scalar core
+## sensitivity invariants, and the optional iteration count. The fixtures pin the 64-bit scalar core
 ## `estimate_at`, so every row holds the spec's tolerance: relative 1e-5, or
 ## absolute 1e-9 below 1e-6.
 
@@ -101,3 +101,11 @@ func run() -> void:
 	# a per-component Julia mix changes the distance
 	check(absf(DistanceEstimator.estimate(Vector3(1.2, -0.3, 0.8), mix) - base) > 1e-6,
 		"a per-component Julia mix changes the distance")
+
+	# --- an optional iteration count (the shader's coarse pass uses fewer) ---
+	var full := DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d)
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d, 32), full, "iters 32 is the default, exactly")
+	var d16 := DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d, 16)
+	check(d16 > 0.0 and is_finite(d16) and absf(d16 - full) > 1e-9,
+		"16 iterations describe a slightly different surface (%s vs %s)" % [d16, full])
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d, 99), full, "a count past 32 is clamped to 32")
