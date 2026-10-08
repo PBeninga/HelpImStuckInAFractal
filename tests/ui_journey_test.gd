@@ -244,7 +244,7 @@ func _show_view_tab() -> ViewPane:
 		await ui.tap(KEY_CTRL)
 		await ui.frames(1)
 	var bar := console.tabs().get_tab_bar()
-	var title := ui.global_rect(bar).position + bar.get_tab_rect(2).get_center()
+	var title := ui.control_point(bar, bar.get_tab_rect(2).get_center())
 	await ui.click_at(title)
 	if console.tabs().current_tab != 2:
 		# The console had lost focus (a file panel closed over it): the first

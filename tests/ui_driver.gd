@@ -11,8 +11,9 @@ extends RefCounted
 ## *embedded* in it. `setup()` gives the root a 1280x800 logical surface
 ## (CONTENT_SCALE_MODE_CANVAS_ITEMS), so embedded windows and popups lay out at
 ## their true size. Every mouse event is pushed through the ROOT with
-## `push_input(ev, true)` at global coordinates (the control's rect plus the
-## positions of the embedded windows it sits in), so it goes through the same
+## `push_input(ev, true)` at global coordinates (the control's rect mapped
+## through the position and content scale of each embedded window it sits in,
+## see window_transform()), so it goes through the same
 ## hit-testing and sub-window dispatch a real click does. Pushing into a
 ## sub-window directly delivers nothing: the embedder owns dispatch.
 ##
@@ -59,22 +60,27 @@ func wait(seconds: float) -> void:
 
 # ------------------------------------------------------------ coordinates
 
-## The top-left of `window`'s content in root coordinates: its own position
-## plus that of every embedded window it is embedded in.
-func window_origin(window: Window) -> Vector2:
-	var at := Vector2.ZERO
+## The transform from `window`'s canvas to root coordinates. Each embedded
+## window draws its canvas at its position in its embedder, stretched by its
+## content scale (the console's zoom is one), so a canvas point p lands at
+## `position + final_transform * p` one level up, and so on to the root.
+func window_transform(window: Window) -> Transform2D:
+	var xf := Transform2D.IDENTITY
 	var w := window
 	while w != null and w != root and w.is_embedded():
-		at += Vector2(w.position)
+		xf = Transform2D(0.0, Vector2(w.position)) * w.get_final_transform() * xf
 		w = _embedder(w)
-	return at
+	return xf
+
+
+## The top-left of `window` in root coordinates.
+func window_origin(window: Window) -> Vector2:
+	return window_point(window, Vector2.ZERO)
 
 
 ## A control's rect in root coordinates.
 func global_rect(control: Control) -> Rect2:
-	var r := control.get_global_rect()
-	r.position += window_origin(control.get_window())
-	return r
+	return window_transform(control.get_window()) * control.get_global_rect()
 
 
 ## The global point at `fraction` (0..1 each way) across a control's rect.
@@ -87,9 +93,18 @@ func global_center(control: Control) -> Vector2:
 	return global_point(control)
 
 
-## A point inside a window (a popup, say), in root coordinates.
+## A point given in a control's own coordinates (a TabBar's get_tab_rect(),
+## say), in root coordinates.
+func control_point(control: Control, local: Vector2) -> Vector2:
+	return window_transform(control.get_window()) * (control.get_global_transform() * local)
+
+
+## A point inside a window (a popup, say), `local` pixels from its top-left in
+## its embedder's units (0..size), in root coordinates.
 func window_point(window: Window, local: Vector2) -> Vector2:
-	return window_origin(window) + local
+	if window == root or not window.is_embedded():
+		return local
+	return window_transform(_embedder(window)) * (Vector2(window.position) + local)
 
 
 # ------------------------------------------------------------ mouse

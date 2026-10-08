@@ -130,7 +130,7 @@ func _pan_scrolls() -> void:
 
 func _colour_dropdown() -> void:
 	var tab_bar := console.tabs().get_tab_bar()
-	await ui.click_at(ui.global_rect(tab_bar).position + tab_bar.get_tab_rect(1).get_center())
+	await ui.click_at(ui.control_point(tab_bar, tab_bar.get_tab_rect(1).get_center()))
 	await ui.frames(1)
 	check_eq(console.tabs().current_tab, 1, "a click on the Colour tab shows it")
 	var colour_scroll := console.colour_inspector().get_child(0) as ScrollContainer
