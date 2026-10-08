@@ -1,8 +1,9 @@
 extends "res://tests/test_case.gd"
 ## The console window builds both panes; a row edit lands in the table; the
 ## source dropdown lists the axes and updates on Keymap.changed; the readout
-## follows set_resolved; the Movement pane adds, rebinds and removes an axis
-## through the API and the key-capture button; a Ctrl tap emits toggle_requested;
+## follows set_resolved; the Movement pane shows and hides its zoom limit
+## readout, and adds, rebinds and removes an axis through the API and the
+## key-capture button; a Ctrl tap emits toggle_requested;
 ## the zoom steps, clamps, signals and follows the Cmd/Ctrl chords.
 
 
@@ -86,6 +87,14 @@ func run() -> void:
 	await frames(1)
 	check(inspector.row(&"box_scale").readout().visible, "an active binding shows a readout")
 	check(inspector.row(&"box_scale").readout().text.contains("-1.59"), "the readout shows the resolved value")
+
+	# --- Movement pane: the zoom limit readout shows while set, hidden otherwise ---
+	check(movement.zoom_label != null and not movement.zoom_label.visible, "the zoom limit readout starts hidden")
+	console.show_zoom_limit(true)
+	check(movement.zoom_label.visible and movement.zoom_label.text == "zoom limit",
+		"show_zoom_limit(true) shows 'zoom limit' in the Movement pane")
+	console.show_zoom_limit(false)
+	check(not movement.zoom_label.visible, "and false hides it again")
 
 	# --- Movement pane: Add axis grows the keymap ---
 	var before := km.axes().list().size()

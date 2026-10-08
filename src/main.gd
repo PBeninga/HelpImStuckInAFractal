@@ -376,6 +376,10 @@ func _build_workspace_files() -> void:
 
 func _process(_delta: float) -> void:
 	_resolve_once()
+	# The fly camera's zoom limit reaches the Movement pane the way the shed
+	# level does, polled since it can change on any physics tick.
+	if _console != null:
+		_console.show_zoom_limit(fly.at_zoom_limit)
 
 
 ## Resolve the shape table + axis values + clock into params, and feed the

@@ -3,6 +3,7 @@ extends VBoxContainer
 ## The Movement pane: one line per virtual axis (editable label, id, live value,
 ## a "0" button, speed, two key-capture buttons and a remove button), an "Add
 ## axis" button, the clock readout and the fly camera's speed-factor readout
+## (with "zoom limit" beside it while the camera is held at the zoom floor)
 ## beside a Reset camera button, and a Save / Save as… / Load… strip for the
 ## keymap file. It is a view over Keymap: it writes through the rebind API and
 ## refreshes on `Keymap.changed`.
@@ -26,6 +27,10 @@ var reset_camera_button: Button
 ## The governor's load-shed level, shown only while it is above 0.
 var shed_label: Label
 var _shed_level := 0
+## "zoom limit", on the speed readout line, shown only while the fly camera is
+## refusing to go nearer the surface (FlyCamera.at_zoom_limit).
+var zoom_label: Label
+var _zoom_limit := false
 var _status: Label
 ## id -> {label, value, zero, speed, pos, neg, remove}
 var _lines: Dictionary = {}
@@ -69,6 +74,11 @@ func _ready() -> void:
 	_speed_label = Label.new()
 	_speed_label.tooltip_text = "The fly camera's speed factor (the mouse wheel changes it)."
 	speed_row.add_child(_speed_label)
+	zoom_label = Label.new()
+	zoom_label.text = "zoom limit"
+	zoom_label.tooltip_text = "The fly camera is as close to the surface as the renderer's 32-bit positions can draw, and will not go nearer. Moving away is always allowed."
+	speed_row.add_child(zoom_label)
+	show_zoom_limit(_zoom_limit)
 	reset_camera_button = _flat_button("Reset camera",
 		"Put the camera's position, view and speed factor back where the current save file has them (the starting view when no file is loaded).")
 	reset_camera_button.pressed.connect(reset_camera_requested.emit)
@@ -280,6 +290,14 @@ func show_shed_level(level: int) -> void:
 		return
 	shed_label.text = "load shed %d/%d" % [level, LoadShedder.top()]
 	shed_label.visible = level > 0
+
+
+## Whether the fly camera is held at the zoom floor; the readout shows only then.
+func show_zoom_limit(on: bool) -> void:
+	_zoom_limit = on
+	if zoom_label == null:
+		return
+	zoom_label.visible = on
 
 
 func _refresh_readouts() -> void:

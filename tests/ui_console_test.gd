@@ -190,6 +190,14 @@ func _layout_at_default_size() -> void:
 			check(c.size.x >= 200.0, "the %s slider is wide enough to drag (%.0f px)" % [id, c.size.x])
 	check(win.encloses(ui.global_rect(pane)),
 		"the Movement pane lies wholly inside the window (%s in %s)" % [ui.global_rect(pane), win])
+	pane.show_zoom_limit(true)
+	await ui.frames(1)
+	check(pane.zoom_label.is_visible_in_tree() and win.encloses(ui.global_rect(pane.zoom_label)),
+		"the zoom limit readout, when shown, is inside the window (%s)" % ui.global_rect(pane.zoom_label))
+	check(win.encloses(ui.global_rect(pane.reset_camera_button)),
+		"and so is Reset camera beside it (%s)" % ui.global_rect(pane.reset_camera_button))
+	pane.show_zoom_limit(false)
+	await ui.frames(1)
 	for id in pane.line_ids():
 		var line := pane.axis_line(id)
 		for key in ["label", "zero", "pos", "neg", "remove"]:
