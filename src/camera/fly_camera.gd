@@ -4,9 +4,7 @@ extends Node
 ## right, no roll) and WASD + Space/Backspace (up/down) movement whose speed
 ## follows how far away the surface straight ahead is (the CenterRay), capped
 ## by the distance to the nearest surface in any direction. Holding Shift
-## sprints and keeps accelerating; letting go of Shift eases back down, and
-## letting go of every move key stops dead. Reads and writes a shared
-## CameraState.
+## doubles the speed. Reads and writes a shared CameraState.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
@@ -14,23 +12,18 @@ const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg of
 ## nearest-surface distance, so flying alongside a wall while looking down a
 ## long corridor cannot carry you sideways through the wall.
 const NEAR_CAP := 10.0
-## Sprint ("sprint", Shift) starts at SPRINT_MULTIPLIER, climbs by SPRINT_RATE
-## every second held, and stops growing at SPRINT_MAX. Released, the boost
-## halves every BOOST_HALVING seconds back down to 1.
-const SPRINT_MULTIPLIER := 4.0
-const SPRINT_RATE := 100.0
-const SPRINT_MAX := 1000.0
-const BOOST_HALVING := 0.5
+## Sprint ("sprint", Shift) multiplies the speed by this while held.
+const SPRINT_MULTIPLIER := 2.0
 
 var enabled := false
 ## The load shedder's cap on travel speed: 1.0 normally, lower at its top level.
 var speed_limit := 1.0
+## Whether Shift was held on the last physics tick.
+var sprinting := false
 
 var _params: FractalParams
 var _camera: CameraState
 var _ray: CenterRay
-## The sprint multiplier on the base speed: 1 at rest, see step_boost().
-var _boost := 1.0
 ## Viewports whose text focus silences WASD, so typing in the console or a
 ## panel never flies the camera. Set by Main; empty for a standalone camera.
 var _text_viewports: Array = []
@@ -74,7 +67,7 @@ func _physics_process(delta: float) -> void:
 	if not enabled:
 		return
 	var dir := move_direction()
-	step_boost(delta, dir.length() > 0.0, Input.is_action_pressed("sprint"))
+	sprinting = Input.is_action_pressed("sprint")
 	if dir.length() == 0.0:
 		return
 	var t := _camera.transform
@@ -118,9 +111,9 @@ func move_direction() -> Vector3:
 	return dir
 
 
-## Travel speed: base_speed() times the sprint boost.
+## Travel speed: base_speed(), times SPRINT_MULTIPLIER while sprinting.
 func current_speed() -> float:
-	return base_speed() * _boost
+	return base_speed() * (SPRINT_MULTIPLIER if sprinting else 1.0)
 
 
 ## Speed before sprinting: ~one second covers the distance to the surface
@@ -131,24 +124,6 @@ func base_speed() -> float:
 	var near := DistanceEstimator.estimate(_camera.eye(), _params)
 	var d := minf(_ray.distance(), near * NEAR_CAP)
 	return clampf(d, 1e-6, 20.0) * _camera.speed_factor * speed_limit
-
-
-## The current sprint multiplier (1 when not sprinting).
-func boost() -> float:
-	return _boost
-
-
-## Advance the sprint boost by `delta` seconds. Not moving: back to 1 at once,
-## so letting go of the move keys stops dead and the next start is gentle.
-## Sprinting: at least SPRINT_MULTIPLIER, climbing by SPRINT_RATE per second up
-## to SPRINT_MAX. Moving without Shift: halving every BOOST_HALVING s down to 1.
-func step_boost(delta: float, moving: bool, sprinting: bool) -> void:
-	if not moving:
-		_boost = 1.0
-	elif sprinting:
-		_boost = minf(maxf(_boost, SPRINT_MULTIPLIER) + SPRINT_RATE * delta, SPRINT_MAX)
-	else:
-		_boost = maxf(_boost * pow(0.5, delta / BOOST_HALVING), 1.0)
 
 
 func scroll(up: bool) -> void:

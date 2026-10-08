@@ -406,9 +406,9 @@ function lookAt(eye, target, upHint) {
 const DEFAULT_CAM = lookAt(DEFAULT_EYE, [0, 0, 0]);
 
 // flySpeed: fly_camera.gd:104-109, speed = clamp(D(eye), 1e-6, 20) · speed_factor · speed_limit,
-// ×SPRINT_MULTIPLIER (4, line 10) while Shift is held. speed_limit is the shed level's `speed`.
+// ×SPRINT_MULTIPLIER (2, line 16) while Shift is held. speed_limit is the shed level's `speed`.
 function flySpeed(eye, P, speedFactor, limit = 1, sprint = false) {
-  return clamp(de(eye[0], eye[1], eye[2], 32, P), 1e-6, 20) * speedFactor * limit * (sprint ? 4 : 1);
+  return clamp(de(eye[0], eye[1], eye[2], 32, P), 1e-6, 20) * speedFactor * limit * (sprint ? 2 : 1);
 }
 // The wheel: fly_camera.gd:112-114, ×1.25 per tick up, ÷1.25 down, clamped to [0.01, 100].
 function scrollFactor(f, up) { return clamp(f * (up ? 1.25 : 1 / 1.25), 0.01, 100); }
@@ -714,7 +714,7 @@ const arch = {
       links: [RL("shed", 14, "LEVELS"), RL("shed", 62, "step"), RL("tShed", 24, "the test")] },
 
     { id: "fly", label: "FlyCamera", sub: "mouse-look · WASD · distance-scaled speed", ctx: "camera", zone: "cameras", x: 790, y: 540, ...R("fly", 1),
-      blurb: "Yaw about world +Z, pitch about its own right clamped 1° off ±Z, never roll. Moves every physics tick at `clamp(D(eye), 1e-6, 20) · speed_factor · speed_limit`, ×4 while Shift sprints, so a second of flight covers about the gap to the nearest surface. Silent while a text field has focus.",
+      blurb: "Yaw about world +Z, pitch about its own right clamped 1° off ±Z, never roll. Moves every physics tick at `clamp(D(eye), 1e-6, 20) · speed_factor · speed_limit`, ×2 while Shift sprints, so a second of flight covers about the gap to the nearest surface. Silent while a text field has focus.",
       links: [RL("fly", 69, "apply_look"), RL("fly", 104, "current_speed"), RL("fly", 90, "TextFocus")] },
     { id: "orbit", label: "OrbitCamera", sub: "drag to orbit · click to re-centre", ctx: "camera", zone: "cameras", x: 1120, y: 540, ...R("orbit", 1),
       blurb: "The site's orbit controller: keeps a `center`; left-drag orbits it, Shift pans, right/Alt dollies, the wheel moves toward the cursor, a click re-centres on a CPU-marched hit. The mouse is never captured.",
@@ -1886,7 +1886,7 @@ const normalsFig = {
 const camFig = {
   type: "figure",
   title: "Fly speed, and how the fly camera turns",
-  note: "Left: flying along the default centre ray toward the surface it hits. The fly speed is the CPU estimate at the eye, clamped to [1e−6, 20], times speed_factor and the load shedder's speed_limit (0.4 only at its top rung), ×4 while Shift sprints, so speed tracks the remaining gap (grey) and you slow down as you arrive, never overshooting at factor 1. The dots are where a held W puts you after each whole second (60 Hz physics ticks, the port of _physics_process). The wheel slider is the speed factor in wheel ticks (×1.25 each). Right: mouse-look from the default view: yaw turns about world +Z, pitch is clamped 1° off ±Z, and the basis is rebuilt with +Z as the up hint, so roll is always 0.",
+  note: "Left: flying along the default centre ray toward the surface it hits. The fly speed is the CPU estimate at the eye, clamped to [1e−6, 20], times speed_factor and the load shedder's speed_limit (0.4 only at its top rung), ×2 while Shift sprints, so speed tracks the remaining gap (grey) and you slow down as you arrive, never overshooting at factor 1. The dots are where a held W puts you after each whole second (60 Hz physics ticks, the port of _physics_process). The wheel slider is the speed factor in wheel ticks (×1.25 each). Right: mouse-look from the default view: yaw turns about world +Z, pitch is clamped 1° off ±Z, and the basis is rebuilt with +Z as the up hint, so roll is always 0.",
   w: 1400, h: 640,
   draw(api) {
     const P = params(), cam = DEFAULT_CAM;
@@ -1930,9 +1930,9 @@ const camFig = {
         S.ticks = v; S.factor = ticksToFactor(v); drawSpeed();
       } });
     api.link(X0 + 430, Y0 + H + 132, RL("fly", 112, "scroll(): ×1.25, clamp 0.01 … 100"));
-    api.button({ x: X0, y: Y0 + H + 160, w: 150, label: "Shift: sprint ×4", on: false, onClick: b => { S.sprint = !S.sprint; b.set(S.sprint); drawSpeed(); } });
+    api.button({ x: X0, y: Y0 + H + 160, w: 150, label: "Shift: sprint ×2", on: false, onClick: b => { S.sprint = !S.sprint; b.set(S.sprint); drawSpeed(); } });
     api.button({ x: X0 + 160, y: Y0 + H + 160, w: 230, label: "shed level 4: speed_limit 0.4", on: false, onClick: b => { S.limit = S.limit === 1 ? SHED_LEVELS[4].speed : 1; b.set(S.limit !== 1); drawSpeed(); } });
-    api.link(X0 + 400, Y0 + H + 176, RL("fly", 10, "SPRINT_MULTIPLIER"));
+    api.link(X0 + 400, Y0 + H + 176, RL("fly", 16, "SPRINT_MULTIPLIER"));
     function drawSpeed() {
       const pts = [];
       for (let k = 0; k <= 400; k++) {
@@ -1953,7 +1953,7 @@ const camFig = {
         d.c.style.display = d.t.style.display = s < 6 || s === 9 ? "" : "none";
       }
       const d1 = secDots[0];
-      read1.textContent = `speed at the eye = clamp(D(eye) = ${fmt(de(...cam.eye, 32, P), 4)}, 1e−6, 20) × ${sci(S.factor, 3)} × ${S.limit}${S.sprint ? " × 4" : ""} = ${sci(flySpeed(cam.eye, P, S.factor, S.limit, S.sprint), 4)} units/s`;
+      read1.textContent = `speed at the eye = clamp(D(eye) = ${fmt(de(...cam.eye, 32, P), 4)}, 1e−6, 20) × ${sci(S.factor, 3)} × ${S.limit}${S.sprint ? " × 2" : ""} = ${sci(flySpeed(cam.eye, P, S.factor, S.limit, S.sprint), 4)} units/s`;
       read2.textContent = `after 1 s: ${fmt(100 * d1.x / T, 2)}% of the gap · after 10 s: ${fmt(100 * secDots[9].x / T, 4)}%${over ? " · OVERSHOT the surface" : " · never past the surface"}`;
     }
     drawSpeed();
@@ -2019,8 +2019,8 @@ const camTable = {
       tip: { ...R("fly", 69), links: [RL("fly", 75, "the clamp"), RL("fly", 70, "a zero delta returns"), RL("tFly", 88, "saturation test")] } },
     { cells: ["fly", "W A S D · Space Backspace", "dir · clamp(D(eye), 1e−6, 20) · factor · limit · delta", "Camera-axis direction, normalised (a diagonal is not faster); nothing while Cmd or Ctrl is held or a text field in any window has focus."],
       tip: { ...R("fly", 87), links: [RL("fly", 104, "current_speed"), RL("fly", 90, "TextFocus"), RL("tFly", 29, "normalised test")] } },
-    { cells: ["fly", "hold Shift (sprint)", "× SPRINT_MULTIPLIER = 4", "Quadruples the travel speed while held; Q and E are free for Axis A."],
-      tip: { ...R("fly", 107), links: [RL("fly", 10, "SPRINT_MULTIPLIER"), RL("proj", 53, "the sprint action"), RL("tFly", 57, "the test")] } },
+    { cells: ["fly", "hold Shift (sprint)", "× SPRINT_MULTIPLIER = 2", "Doubles the travel speed while held; Q and E are free for Axis A."],
+      tip: { ...R("fly", 107), links: [RL("fly", 16, "SPRINT_MULTIPLIER"), RL("proj", 53, "the sprint action"), RL("tFly", 57, "the test")] } },
     { cells: ["fly", "(load shed level 4)", "speed_limit = 0.4", "The governor's last resort: at the top shed rung Main caps the travel speed, so the march gets fewer new pixels per second."],
       tip: { ...R("main", 318), links: [RL("shed", 19, "level 4"), RL("fly", 14, "speed_limit")] } },
     { cells: ["fly", "wheel", "×1.25 / ÷1.25, clamp 0.01 … 100", "Scales speed_factor; the console's Movement pane shows `speed x f`."], tip: { ...R("fly", 112), links: [{ file: "src/ui/console/movement_pane.gd", line: 292, label: "the speed readout" }] } },
