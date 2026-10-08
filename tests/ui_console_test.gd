@@ -64,6 +64,10 @@ func _opens_on_screen() -> void:
 	var bar := scroll.get_v_scroll_bar()
 	check(bar.max_value > bar.page + 100.0,
 		"the Shape list is taller than the window, so it can scroll (range %.0f, page %.0f)" % [bar.max_value, bar.page])
+	var ss := console.self_similarity_label()
+	check(ss != null and ss.is_visible_in_tree() and ui.global_rect(scroll).encloses(ui.global_rect(ss)),
+		"the self-similarity line is on screen at the top of the Shape tab")
+	check(ss != null and ss.text.begins_with("Self-similar: "), "and reads as one (%s)" % (ss.text if ss else "none"))
 
 
 ## The first row (in list order) of the given widget kind that is wholly inside
