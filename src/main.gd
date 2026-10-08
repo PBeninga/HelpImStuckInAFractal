@@ -43,8 +43,9 @@ var _ctrl := CtrlTap.new()
 ## the Ctrl tap: the main window's, the console's and the noise window's. One
 ## array, shared by reference with the fly camera and the axis controller.
 var _text_viewports: Array = []
-## The sub-windows pause() hid and resume() shows again: embedded windows are
-## drawn above every canvas layer, so an open console would cover the pause menu.
+## The sub-windows pause() hid and resume() shows again: an embedded window is
+## drawn above every canvas layer, so an open one would cover the pause menu (and
+## a native console would sit there unresponsive while the tree is paused).
 var _hidden_by_pause: Array[Window] = []
 
 
@@ -374,7 +375,7 @@ func _on_console_toggle() -> void:
 	_update_mouse()
 
 
-## A key the focused console or noise window did not use. An embedded window
+## A key the focused console or noise window did not use. A window
 ## that holds keyboard focus keeps keys from the main window, so they come here
 ## to get the same Ctrl tap / Escape / N / screenshot / quick-save handling.
 func _on_window_key(event: InputEventKey) -> void:
@@ -429,7 +430,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# 3. click in the view in FLY mode while free: recapture, close the noise
 	# editor, and LEAVE the console open, so its readouts stay in sight while
-	# flying. (A click on an embedded window is that window's; it never gets here.)
+	# flying. (A click on the console or noise window is that window's; it never
+	# gets here.)
 	if event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT \
 			and params.camera_mode == FractalParams.CameraMode.FLY \

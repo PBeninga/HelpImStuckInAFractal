@@ -7,16 +7,18 @@ extends Window
 ## window); the Movement pane keeps its natural height (a line per axis and a
 ## few readouts) and the inspector takes the rest.
 ##
-## It is a window embedded in the main window (the project sets
-## embed_subwindows = true, as headless and the web always do): dragged within
-## it by its title bar, closed with its ✕, always drawn above the view. Native
-## OS sub-windows corrupted the main window's picture on macOS. A Ctrl tap in
-## this window forwards `toggle_requested`; other keys go to `unhandled_key`.
+## It is a separate, native OS window (force_native, though the project embeds
+## its other sub-windows): it can be dragged anywhere, onto another monitor too.
+## Headless and the web have no native sub-windows, so there it falls back to a
+## window embedded in the main one. A native window overlapping the main window
+## corrupts the main window's picture on macOS, so open() places it beside the
+## main window, never over it. A Ctrl tap in this window forwards
+## `toggle_requested`; other keys go to `unhandled_key`.
 
 signal toggle_requested
-## A key this window's controls left unhandled (Escape, N, Cmd+S…). Showing an
-## embedded window gives it keyboard focus, and a focused window keeps keys from
-## the main window, so Main runs these through its own dispatch.
+## A key this window's controls left unhandled (Escape, N, Cmd+S…). Showing the
+## window gives it keyboard focus, and a focused window keeps keys from the main
+## window, so Main runs these through its own dispatch.
 signal unhandled_key(event: InputEventKey)
 
 ## In points (logical units); UiScale.px turns them into window pixels.
@@ -32,12 +34,13 @@ var _ctrl := CtrlTap.new()
 func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable()) -> void:
 	_keymap = keymap
 	title = "Console"
+	visible = false   # force_native cannot change while a window is shown
+	force_native = true
 	UiScale.apply(self)
 	size = UiScale.px(DEFAULT_SIZE, self)
 	min_size = UiScale.px(MIN_SIZE, self)
 	unresizable = false
 	wrap_controls = false
-	visible = false
 	close_requested.connect(hide_console)
 
 	var split := VSplitContainer.new()
@@ -82,7 +85,7 @@ func set_resolved(values: Dictionary) -> void:
 
 
 func open() -> void:
-	UiScale.center_over(self, _parent_window())
+	UiScale.place_beside(self, _parent_window())
 	visible = true
 
 
@@ -126,7 +129,7 @@ func _refresh_sources() -> void:
 	_inspector.set_sources(axis_list)
 
 
-## The window this one opens over (the main window), or null before it is added.
+## The window this one opens beside (the main window), or null before it is added.
 func _parent_window() -> Window:
 	var parent := get_parent()
 	return parent.get_window() if parent != null else null

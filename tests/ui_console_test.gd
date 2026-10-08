@@ -55,7 +55,7 @@ func run() -> void:
 
 
 func _opens_on_screen() -> void:
-	check(console.visible and console.is_embedded(), "the console opens as a window embedded in the root")
+	check(console.visible and console.is_embedded(), "the console opens as a window embedded in the root (headless has no native sub-windows)")
 	var surface := root.get_visible_rect()
 	var rect := Rect2(Vector2(console.position), Vector2(console.size))
 	check(surface.encloses(rect), "it opens wholly inside the main window (%s in %s)" % [rect, surface])
