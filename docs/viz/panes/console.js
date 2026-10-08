@@ -35,6 +35,12 @@ const F = {
   fly: "src/camera/fly_camera.gd",
   orbit: "src/camera/orbit_camera.gd",
   ws: "src/workspace/workspace.gd",
+  palette: "src/color/palette.gd",
+  pwin: "src/ui/console/palette_window.gd",
+  pstrip: "src/ui/console/palette_strip.gd",
+  pcurves: "src/ui/console/palette_curves.gd",
+  settings: "src/settings/settings.gd",
+  renderer: "src/ui/renderer_options.gd",
   kfile: "saves/keymap.json",
   saveDef: "saves/default.json",
   proj: "project.godot",
@@ -54,8 +60,11 @@ const F = {
   tWs: "tests/workspace_test.gd",
   tMarker: "tests/julia_marker_test.gd",
   tBoot: "tests/boot_test.gd",
+  tPalette: "tests/palette_test.gd",
+  tPalWin: "tests/palette_window_test.gd",
+  tShader: "tests/shader_test.gd",
 };
-// Link helpers: R("main", 266) is { file, line }; RL adds a label for a tooltip's link list.
+// Link helpers: R("main", 278) is { file, line }; RL adds a label for a tooltip's link list.
 const R = (f, line) => ({ file: F[f], line });
 const RL = (f, line, label) => ({ file: F[f], line, label });
 const REPO = "https://github.com/Adam-G-Klein/HelpImStuckInAFractal";
@@ -151,26 +160,51 @@ function resolveParts(s, def, b, axisValues, t) {
 function axesStep(value, direction, speed, delta) { return direction === 0 ? value : value + direction * speed * delta; }
 
 // ================================================================== the catalogue
-// MandelboxShape.specs(), mandelbox_shape.gd:30-137, in inspector order. `line` is the spec's id line,
-// `field` its FractalParams field (fractal_params.gd:34-85), `push` FractalView._push_params' line.
-const COLOR_MODE_IDS = [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14];      // fractal_params.gd:15
+// MandelboxShape.specs(), mandelbox_shape.gd:56-270, in inspector order. `line` is the spec's id line,
+// `field` its FractalParams field (fractal_params.gd:51-155), `push` the FractalView._push_params line
+// that sends it (the look keys go in one loop over FractalParams.LOOK_KEYS, fractal_view.gd:316-317).
+// The console's Shape tab shows SHAPE_GROUPS, its Colour tab COLOUR_GROUPS (mandelbox_shape.gd:274-275).
+const COLOR_MODE_IDS = [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14, 20];  // fractal_params.gd:16
 const COLOR_MODE_NAMES = ["Grayscale", "Ice Fractal", "Borg", "Rainbow", "Rainbow 2", "Rainbow 3",
-  "Rainbow Metal", "Blue", "Blue 2", "Pink-Blue", "Ice Box", "Ice Box 2", "Gold"];
+  "Rainbow Metal", "Blue", "Blue 2", "Pink-Blue", "Ice Box", "Ice Box 2", "Gold", "Palette"];
+const PALETTE_MODE = 20;                                                   // Palette.MODE_ID, palette.gd:27
+const SHAPE_GROUPS = ["Box", "Julia", "Iteration rotation", "Render"];
+const COLOUR_GROUPS = ["Colour", "Lighting", "Palette"];
 const AX4 = ["x", "y", "z", "w"];
-const PLANES = ["xy", "xz", "xw", "yz", "yw", "zw"];                       // PLANE_PAIRS, line 19
+const PLANES = ["xy", "xz", "xw", "yz", "yw", "zw"];                       // PLANE_PAIRS, line 38
+const PAL_V = ["A", "B", "C", "D"], PAL_CH = ["red", "green", "blue"], PAL_KEY = ["a", "b", "c", "d"], PAL_RGB = ["r", "g", "b"];
+const PAL_RANGE = [[0, 1], [0, 1], [0, 4], [0, 1]];                         // Palette.RANGES, palette.gd:32-33
+const PAL_DEF = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 0.0, 0.33, 0.67]; // DEFAULT_COMPONENTS, palette.gd:45-46
+const PSHOWN = "color_mode is Palette";
+const LOOK = 316;
 const SPECS = [
-  makeSpec({ id: "box_scale", label: "Scale", group: "Box", type: "FLOAT", default: -2.09, min: -5, max: 3, step: 0.01, hardMin: -6, hardMax: 6, line: 35, field: 34, push: 293 }),
-  makeSpec({ id: "fold_limit", label: "Fold limit", group: "Box", type: "FLOAT", default: 1.0, min: 0, max: 3, step: 0.01, line: 42, field: 36, push: 294 }),
-  makeSpec({ id: "min_radius", label: "Min radius", group: "Box", type: "FLOAT", default: 0.7, min: 0, max: 2, step: 0.01, line: 48, field: 38, push: 295 }),
-  makeSpec({ id: "fixed_radius", label: "Fixed radius", group: "Box", type: "FLOAT", default: 1.0, min: 0, max: 4, step: 0.01, line: 54, field: 40, push: 296 }),
-  makeSpec({ id: "fold_order", label: "Fold order", group: "Box", type: "ENUM", default: 0, enumLabels: ["Box → Sphere", "Sphere → Box"], enumValues: [0, 1], line: 60, field: 42, push: 297 }),
-  makeSpec({ id: "w", label: "W", group: "Box", type: "FLOAT", default: 0.0, min: -4, max: 4, step: 0.01, line: 69, field: 44, push: 298 }),
-  makeSpec({ id: "julia_all", label: "Julia (all)", group: "Julia", type: "BOOL", default: false, line: 77, field: 48, push: 299 }),
-  ...[0, 1, 2, 3].map(i => makeSpec({ id: `julia_${i}`, label: `Julia ${AX4[i]}`, group: "Julia", type: "BOOL", default: false, line: 85, field: 50 + 2 * i, push: 300 + i })),
-  ...[-0.23, 1.512, 1.892, 0.0].map((d, i) => makeSpec({ id: `c_${i}`, label: `Constant ${AX4[i]}`, group: "Julia", type: "FLOAT", default: d, min: -4, max: 4, step: 0.001, hardMin: -16, hardMax: 16, line: 95, field: 58 + 2 * i, push: 304 + i, shown: `julia_all or julia_${i}` })),
-  ...PLANES.map((p, i) => makeSpec({ id: `iter_rot_${p}`, label: `Iter rotation ${p}`, group: "Iteration rotation", type: "FLOAT", default: 0, min: -180, max: 180, step: 0.1, wrap: true, line: 108, field: 68 + 2 * i, push: 308 + i })),
-  makeSpec({ id: "color_mode", label: "Colour", group: "Render", type: "ENUM", default: 1, enumLabels: COLOR_MODE_NAMES, enumValues: COLOR_MODE_IDS, line: 123, field: 82, push: 315 }),
-  makeSpec({ id: "precision", label: "Precision", group: "Render", type: "FLOAT", default: 0.000025, min: 1e-6, max: 1e-3, step: 1e-6, log: true, line: 130, field: 84, push: 314 }),
+  makeSpec({ id: "box_scale", label: "Scale", group: "Box", type: "FLOAT", default: -2.09, min: -5, max: 3, step: 0.01, hardMin: -6, hardMax: 6, line: 61, field: 51, push: 293 }),
+  makeSpec({ id: "fold_limit", label: "Fold limit", group: "Box", type: "FLOAT", default: 1.0, min: 0, max: 3, step: 0.01, line: 68, field: 53, push: 294 }),
+  makeSpec({ id: "min_radius", label: "Min radius", group: "Box", type: "FLOAT", default: 0.7, min: 0, max: 2, step: 0.01, line: 74, field: 55, push: 295 }),
+  makeSpec({ id: "fixed_radius", label: "Fixed radius", group: "Box", type: "FLOAT", default: 1.0, min: 0, max: 4, step: 0.01, line: 80, field: 57, push: 296 }),
+  makeSpec({ id: "fold_order", label: "Fold order", group: "Box", type: "ENUM", default: 0, enumLabels: ["Box → Sphere", "Sphere → Box"], enumValues: [0, 1], line: 86, field: 59, push: 297 }),
+  makeSpec({ id: "w", label: "W", group: "Box", type: "FLOAT", default: 0.0, min: -4, max: 4, step: 0.01, line: 95, field: 61, push: 298 }),
+  makeSpec({ id: "julia_all", label: "Julia (all)", group: "Julia", type: "BOOL", default: false, line: 103, field: 65, push: 299 }),
+  ...[0, 1, 2, 3].map(i => makeSpec({ id: `julia_${i}`, label: `Julia ${AX4[i]}`, group: "Julia", type: "BOOL", default: false, line: 111, field: 67 + 2 * i, push: 300 + i })),
+  ...[-0.23, 1.512, 1.892, 0.0].map((d, i) => makeSpec({ id: `c_${i}`, label: `Constant ${AX4[i]}`, group: "Julia", type: "FLOAT", default: d, min: -4, max: 4, step: 0.001, hardMin: -16, hardMax: 16, line: 121, field: 75 + 2 * i, push: 304 + i, shown: `julia_all or julia_${i}` })),
+  ...PLANES.map((p, i) => makeSpec({ id: `iter_rot_${p}`, label: `Iter rotation ${p}`, group: "Iteration rotation", type: "FLOAT", default: 0, min: -180, max: 180, step: 0.1, wrap: true, line: 134, field: 85 + 2 * i, push: 308 + i })),
+  makeSpec({ id: "precision", label: "Precision", group: "Render", type: "FLOAT", default: 0.000025, min: 1e-6, max: 1e-3, step: 1e-6, log: true, line: 144, field: 99, push: 314 }),
+  makeSpec({ id: "color_mode", label: "Colour", group: "Colour", type: "ENUM", default: 1, enumLabels: COLOR_MODE_NAMES, enumValues: COLOR_MODE_IDS, line: 158, field: 103, push: 315 }),
+  makeSpec({ id: "palette_source", label: "Palette input", group: "Colour", type: "ENUM", default: 0, enumLabels: ["Steps", "Radius", "Normal"], enumValues: [0, 1, 2], line: 165, field: 105, push: LOOK, shown: PSHOWN }),
+  makeSpec({ id: "palette_frequency", label: "Palette frequency", group: "Colour", type: "FLOAT", default: 1.0, min: 0, max: 8, step: 0.01, hardMin: -64, hardMax: 64, line: 174, field: 107, push: LOOK, shown: PSHOWN }),
+  makeSpec({ id: "palette_offset", label: "Palette offset", group: "Colour", type: "FLOAT", default: 0.0, min: 0, max: 1, step: 0.001, wrap: true, line: 182, field: 109, push: LOOK, shown: PSHOWN }),
+  makeSpec({ id: "palette_occlusion", label: "Palette occlusion", group: "Colour", type: "FLOAT", default: 0.5, min: 0, max: 1, step: 0.01, line: 189, field: 111, push: LOOK, shown: PSHOWN }),
+  makeSpec({ id: "light_ambient", label: "Ambient", group: "Lighting", type: "FLOAT", default: 0.1, min: 0, max: 1, step: 0.01, hardMax: 4, line: 198, field: 115, push: LOOK }),
+  makeSpec({ id: "light_diffuse", label: "Diffuse", group: "Lighting", type: "FLOAT", default: 0.5, min: 0, max: 2, step: 0.01, hardMax: 8, line: 205, field: 117, push: LOOK }),
+  makeSpec({ id: "light_specular", label: "Specular", group: "Lighting", type: "FLOAT", default: 1.0, min: 0, max: 4, step: 0.01, hardMax: 16, line: 212, field: 119, push: LOOK }),
+  makeSpec({ id: "light_shininess", label: "Shininess", group: "Lighting", type: "FLOAT", default: 160, min: 1, max: 512, step: 0.1, log: true, line: 219, field: 121, push: LOOK }),
+  makeSpec({ id: "light_yaw", label: "Light yaw", group: "Lighting", type: "FLOAT", default: 0, min: -180, max: 180, step: 0.1, wrap: true, line: 226, field: 123, push: LOOK }),
+  makeSpec({ id: "light_pitch", label: "Light pitch", group: "Lighting", type: "FLOAT", default: 0, min: -90, max: 90, step: 0.1, line: 233, field: 125, push: LOOK }),
+  makeSpec({ id: "exposure", label: "Exposure", group: "Lighting", type: "FLOAT", default: 1.0, min: 0, max: 4, step: 0.01, hardMax: 16, line: 240, field: 127, push: LOOK }),
+  makeSpec({ id: "saturation", label: "Saturation", group: "Lighting", type: "FLOAT", default: 1.0, min: 0, max: 2, step: 0.01, hardMax: 4, line: 247, field: 129, push: LOOK }),
+  ...PAL_DEF.map((d, i) => { const v = Math.floor(i / 3), ch = i % 3;
+    return makeSpec({ id: `palette_${PAL_KEY[v]}_${PAL_RGB[ch]}`, label: `${PAL_V[v]} ${PAL_CH[ch]}`, group: "Palette", type: "FLOAT", default: d,
+      min: PAL_RANGE[v][0], max: PAL_RANGE[v][1], step: 0.01, hardMax: v === 2 ? 16 : PAL_RANGE[v][1], wrap: v === 3, line: 259, field: 133 + 2 * i, push: LOOK, shown: PSHOWN }); }),
 ];
 const SPEC = Object.fromEntries(SPECS.map(s => [s.id, s]));
 
@@ -216,7 +250,7 @@ const PORT = (function () {
     ["tAttr", 33, "INT clamps", sanitize(i8, 99), 8],
     ["tAttr", 44, "ENUM keeps a listed value", sanitize(e3, 5), 5],
     ["tAttr", 45, "ENUM falls back to default for an unlisted value", sanitize(e3, 3), 2],
-    ["tUiConsole", 161, "default -2.09 plus gain 1 x 0.5", rv(SPEC.box_scale, bind("a", 1), { a: 0.5 }, 0), -1.59],
+    ["tUiConsole", 169, "default -2.09 plus gain 1 x 0.5", rv(SPEC.box_scale, bind("a", 1), { a: 0.5 }, 0), -1.59],
   ];
   const fails = cases.filter(c => !(Math.abs(c[3] - c[4]) <= 1e-4)).map(c => `${F[c[0]]}:${c[1]} ${c[2]}: want ${c[4]}, port gives ${c[3]}`);
   if (fails.length) {
@@ -252,7 +286,7 @@ const arch = {
     // movement layer
     { id: "kfile", label: "saves/keymap.json", sub: "Axis A on E / Q, speed 1", ctx: "files", zone: "move", x: 30, y: 450, w: 180, ...R("kfile", 1),
       blurb: "The shipped keymap: one axis `a` labelled Axis A, pushed at 1 unit per second, E positive, Q negative. Keys are stored by NAME (layout-independent), `\"\"` meaning unbound. Deliberately not part of a saved view: a level loads a view and a keymap separately.",
-      links: [RL("kfile", 5, "the axis entry"), RL("readme", 174, "README: Keymap"), RL("design", 190, "spec: the keymap")] },
+      links: [RL("kfile", 5, "the axis entry"), RL("readme", 207, "README: Keymap"), RL("design", 190, "spec: the keymap")] },
     { id: "keymap", label: "Keymap", sub: "pairs · rebind API · actions", ctx: "axes", zone: "move", x: 270, y: 450, w: 180, ...R("keymap", 1),
       blurb: "Owns the Axes and one key pair per axis, and keeps two InputMap actions per axis equal to the pair. The rebind API (`add_axis`, `remove_axis`, `bind`, `set_speed`, `set_label`, `load_file`, `save_file`) each emit `changed` so the Movement pane and the Source dropdowns follow. A missing or malformed file yields the default axis.",
       links: [RL("keymap", 40, "add_axis"), RL("keymap", 60, "bind"), RL("keymap", 113, "load_file"), RL("keymap", 187, "_apply_default")] },
@@ -261,10 +295,10 @@ const arch = {
       links: [RL("keymap", 93, "_set_action"), RL("tAxes", 21, "the actions test"), RL("design", 210, "spec: InputMap")] },
     { id: "axisctl", label: "AxisController", sub: "_process: push the axes", ctx: "axes", zone: "move", x: 270, y: 60, w: 180, ...R("axisCtl", 1),
       blurb: "The only node in the movement layer that touches input. Each frame: direction = strength(pos) − strength(neg) for every axis, then `step`. Skips everything while a text field is focused in any of the main / console / noise viewports, so typing \"e\" never moves an axis.",
-      links: [RL("axisCtl", 19, "_process"), RL("axisCtl", 22, "the text-focus gate"), RL("main", 146, "Main gives it the viewports")] },
+      links: [RL("axisCtl", 19, "_process"), RL("axisCtl", 22, "the text-focus gate"), RL("main", 157, "Main gives it the viewports")] },
     { id: "textfocus", label: "TextFocus.any", sub: "a LineEdit focused anywhere?", ctx: "axes", zone: "move", x: 30, y: 190, w: 180, ...R("textFocus", 11),
       blurb: "True when a LineEdit or TextEdit holds focus in any of the given viewports. Each Window is its own viewport (embedded or not), so the axis controller, FlyCamera's WASD, the N key and both Ctrl-tap detectors ask about all of them.",
-      links: [RL("fly", 90, "FlyCamera.move_direction uses it"), RL("main", 93, "Main's Ctrl-tap guard"), RL("main", 411, "the N key")] },
+      links: [RL("fly", 90, "FlyCamera.move_direction uses it"), RL("main", 100, "Main's Ctrl-tap guard"), RL("main", 442, "the N key")] },
     { id: "axes", label: "Axes", sub: "id · label · speed · value", ctx: "axes", zone: "move", x: 270, y: 190, w: 180, ...R("axes", 1),
       blurb: "The virtual axes: an ordered list, each an id, label, push speed and an UNBOUNDED value. `step` adds direction × speed × delta; `set_value` is for loads and the 0 button; `values()` hands the resolver a {id: value} dictionary.",
       links: [RL("axes", 98, "step"), RL("axes", 107, "values"), RL("tAxes", 8, "the test")] },
@@ -273,9 +307,9 @@ const arch = {
       links: [RL("clock", 10, "_process"), RL("design", 235, "spec: Clock")] },
 
     // catalogue + resolve
-    { id: "shape", label: "MandelboxShape", sub: "specs(): the 23 knobs", ctx: "attr", zone: "core", x: 570, y: 60, w: 200, ...R("shape", 1),
-      blurb: "The catalogue: Box (scale, fold limit, the two radii, fold order, w), Julia (a master toggle, four per-component toggles, four constants), six iteration-rotation angles, then Render (colour mode, precision). Defaults are the site's, so the opening view is unchanged. Ids are the shader uniform names and the FractalParams field names.",
-      links: [RL("shape", 30, "specs()"), RL("shape", 141, "group_tooltips"), RL("tShape", 19, "the 23 ids")] },
+    { id: "shape", label: "MandelboxShape", sub: "specs(): 47 knobs, two tabs", ctx: "attr", zone: "core", x: 570, y: 60, w: 200, ...R("shape", 1),
+      blurb: "The catalogue, in inspector order: Box (scale, fold limit, the two radii, fold order, w), Julia (a master toggle, four per-component toggles, four constants), six iteration-rotation angles and Render (precision) on the console's Shape tab; Colour (the colour mode and the Palette mode's input, frequency, offset, occlusion), Lighting (eight knobs) and the Palette's twelve numbers on its Colour tab. Defaults are the site's, so the opening view is unchanged. Ids are the shader uniform names and the FractalParams field names.",
+      links: [RL("shape", 56, "specs()"), RL("shape", 274, "SHAPE_GROUPS / COLOUR_GROUPS"), RL("shape", 280, "group_tooltips"), RL("tShape", 26, "the 47 ids")] },
     { id: "table", label: "AttributeTable", sub: "defaults + Bindings · changed(id)", ctx: "attr", zone: "core", x: 830, y: 190, w: 210, ...R("table", 1),
       blurb: "THE shape state: the specs in order, a default per id and a Binding per bindable id. `set_default` sanitizes and emits `changed(id)` only when the value differs. Every editor writes here (rows, the Julia marker, a load); nothing writes the shape fields of FractalParams directly.",
       links: [RL("table", 51, "set_default"), RL("table", 103, "to_dict"), RL("table", 115, "apply_dict")] },
@@ -288,17 +322,17 @@ const arch = {
     { id: "resolver", label: "BindingResolver", sub: "resolve(table, axes, t)", ctx: "attr", zone: "core", x: 680, y: 320, w: 220, ...R("resolver", 1),
       blurb: "Pure functions, no nodes. For each spec: the default if unbound or not bindable; else raw = t, the axis value, or 0 for an axis id the keymap lacks; then default + gain × wave(raw), sanitized. The stepper tab runs a port of it.",
       links: [RL("resolver", 13, "resolve"), RL("resolver", 25, "resolve_value"), RL("resolver", 39, "waveform_value"), RL("tBind", 22, "the test")] },
-    { id: "mresolve", label: "Main._resolve_once", sub: "each _process, first", ctx: "main", zone: "core", x: 680, y: 450, w: 200, ...R("main", 265),
+    { id: "mresolve", label: "Main._resolve_once", sub: "each _process, first", ctx: "main", zone: "core", x: 680, y: 450, w: 200, ...R("main", 277),
       blurb: "Each frame: `resolve(_table, _keymap.axes().values(), _clock.t)`, then `params.apply_resolved(values)`, then the console's readouts if it is visible. About thirty scalars, so it runs every frame instead of watching the table, every axis and the clock. Main is the parent of Clock and AxisController, so it runs first and reads LAST frame's axis values (stepper tab).",
-      links: [RL("main", 258, "_process"), RL("main", 97, "once in _ready"), RL("main", 294, "and after a load"), RL("design", 348, "spec: Main's wiring")] },
+      links: [RL("main", 270, "_process"), RL("main", 104, "once in _ready"), RL("main", 308, "and after a load"), RL("design", 348, "spec: Main's wiring")] },
 
     // consumers
     { id: "params", label: "FractalParams", sub: "resolved fields · apply_resolved", ctx: "cons", zone: "cons", x: 1150, y: 60, w: 230, ...R("params", 1),
-      blurb: "The object every consumer reads. Its 23 shape fields are now the RESOLVED values, named by catalogue id. `apply_resolved` writes them with the setters muted and emits `changed` once, and only if something differed: an idle view costs no signal per frame, a Time binding changes every frame.",
-      links: [RL("params", 22, "RESOLVED_KEYS"), RL("params", 182, "apply_resolved"), RL("tParams", 45, "emits-once test")] },
+      blurb: "The object every consumer reads. Its 47 shape and look fields are the RESOLVED values, named by catalogue id. `apply_resolved` writes them with the setters muted and emits `changed` once, and only if something differed: an idle view costs no signal per frame, a Time binding changes every frame.",
+      links: [RL("params", 24, "RESOLVED_KEYS"), RL("params", 39, "LOOK_KEYS"), RL("params", 254, "apply_resolved"), RL("tParams", 62, "emits-once test")] },
     { id: "view", label: "FractalView", sub: "_push_params → uniforms", ctx: "cons", zone: "cons", x: 1450, y: 170, w: 220, ...R("view", 290),
-      blurb: "On `changed`: pushes every shape field as the uniform of the same name (Fractacular's convention) and requests a frame. `box_half` follows `julia_enabled()`, which is `julia_all` only.",
-      links: [RL("view", 280, "_on_params_changed"), RL("view", 293, "box_scale uniform"), RL("view", 317, "box_half")] },
+      blurb: "On `changed`: pushes every field as the uniform of the same name (Fractacular's convention; the 24 colour, lighting and palette fields in one loop over LOOK_KEYS) and requests a frame. `box_half` follows `julia_enabled()`, which is `julia_all` only.",
+      links: [RL("view", 280, "_on_params_changed"), RL("view", 293, "box_scale uniform"), RL("view", 316, "the LOOK_KEYS loop"), RL("view", 319, "box_half")] },
     { id: "gov", label: "ResolutionGovernor", sub: "_dirty → a changing frame", ctx: "cons", zone: "cons", x: 1400, y: 320, w: 230, ...R("gov", 46),
       blurb: "Any `changed` marks the frame as changing, so an animating binding is treated like camera motion: continuous rendering, the adaptive render scale and the load shedder.",
       links: [RL("gov", 69, "reads _dirty in _process")] },
@@ -306,30 +340,40 @@ const arch = {
       blurb: "The white ring at the projected Julia point (shown while `julia_all` is on). A drag writes `c_0..2` into the TABLE with `set_default`, so the next resolve keeps it, and mirrors the defaults into params at once.",
       links: [RL("marker", 61, "set_default c_0"), RL("marker", 64, "mirror into params"), RL("tMarker", 37, "the test")] },
 
+    { id: "palette", label: "Palette", sub: "a cosine palette over the table", ctx: "attr", zone: "cons", x: 1420, y: 450, w: 240, ...R("palette", 1),
+      blurb: "Inigo Quilez's cosine palette, ported from Fractacular, but it holds no numbers: the twelve components are catalogue attributes (palette_a_r … palette_d_b) in the shape table, so each saves with the view and can be bound on its own. Palette is the twelve-number view of them for the Colour window. `color_at` is the shader's `palette()` and reads the DRIVEN value of a bound component (`set_live`), the table default otherwise.",
+      links: [RL("palette", 109, "color_at"), RL("sh", 254, "the shader's palette()"), RL("palette", 144, "set_live"), RL("tPalette", 114, "the numbers live in the table")] },
+    { id: "pwin", label: "PaletteWindow", sub: "Colour tab: sliders · curves · strip", ctx: "ui", zone: "ui", x: 830, y: 900, w: 210, ...R("pwin", 1),
+      blurb: "Fractacular's Colour window, now the header of the Colour tab's inspector: twelve sliders, the three cosine curves and the gradient strip, plus Reset. It owns no colour: sliders write `Palette.set_component` (so the table) and everything redraws from the model. A hint shows until the Colour mode is Palette.",
+      links: [RL("pwin", 206, "a slider writes the table"), RL("pwin", 114, "set_resolved → set_live"), RL("pwin", 217, "the hint"), RL("tPalWin", 2, "the test")] },
+    { id: "mreset", label: "Main.reset_camera", sub: "back to the current file's camera", ctx: "main", zone: "mainz", x: 250, y: 900, w: 210, ...R("main", 325),
+      blurb: "The Movement pane's Reset camera button (and the Settings menu's Renderer tab) put the camera and its speed factor back where the current file has them: `_remember_home` runs at start, after a load and after a save. In Orbit it re-centres.",
+      links: [RL("main", 334, "_remember_home"), RL("main", 307, "after a load"), RL("main", 191, "the Renderer tab's button"), RL("tMain", 165, "the test")] },
+
     // Main wiring
-    { id: "mready", label: "Main._ready", sub: "builds table, keymap, console", ctx: "main", zone: "mainz", x: 30, y: 680, w: 200, ...R("main", 52),
+    { id: "mready", label: "Main._ready", sub: "builds table, keymap, console", ctx: "main", zone: "mainz", x: 30, y: 680, w: 200, ...R("main", 57),
       blurb: "Builds, in order: the AttributeTable from MandelboxShape, the Keymap (loads saves/keymap.json), view, governor, cameras, the marker (given the table), then the Clock, the ConsoleWindow and the AxisController as children of Main, then file panels, pause menu and noise window. Ends with one resolve.",
-      links: [RL("main", 60, "the table"), RL("main", 62, "the keymap"), RL("main", 76, "clock, console, axis controller"), RL("main", 146, "AxisController.setup(keymap, viewports)")] },
-    { id: "mdispatch", label: "Main._unhandled_input", sub: "Ctrl tap first, then the rest", ctx: "main", zone: "mainz", x: 250, y: 680, w: 210, ...R("main", 392),
+      links: [RL("main", 67, "the table"), RL("main", 69, "the keymap"), RL("main", 83, "clock, console, axis controller"), RL("main", 157, "AxisController.setup(keymap, viewports)")] },
+    { id: "mdispatch", label: "Main._unhandled_input", sub: "Ctrl tap first, then the rest", ctx: "main", zone: "mainz", x: 250, y: 680, w: 210, ...R("main", 423),
       blurb: "The one dispatcher: the Ctrl tap, Escape, ⌘P, N, the Julia marker drag, click-to-capture, then the active camera. Keys the focused console does not use arrive here too, through `unhandled_key`.",
-      links: [RL("main", 394, "1. the Ctrl tap"), RL("main", 435, "3. click to capture"), RL("main", 381, "_on_window_key")] },
+      links: [RL("main", 425, "1. the Ctrl tap"), RL("main", 466, "3. click to capture"), RL("main", 412, "_on_window_key")] },
     { id: "ctrltap", label: "CtrlTap", sub: "arm on Ctrl down, fire on up", ctx: "main", zone: "mainz", x: 30, y: 810, w: 200, ...R("ctrlTap", 1),
       blurb: "The arm/disarm detector, shared: a bare non-echo Ctrl down arms (unless a text field is focused), any other key down disarms, a Ctrl up while armed fires. So Ctrl+S and Ctrl+P never toggle the console. Main runs one; the console runs its own.",
-      links: [RL("ctrlTap", 21, "feed"), RL("tMain", 44, "Ctrl+S / Ctrl+P test")] },
-    { id: "mtoggle", label: "Main._on_console_toggle", sub: "the capture rule", ctx: "main", zone: "mainz", x: 250, y: 810, w: 210, ...R("main", 366),
+      links: [RL("ctrlTap", 21, "feed"), RL("tMain", 59, "Ctrl+S / Ctrl+P test")] },
+    { id: "mtoggle", label: "Main._on_console_toggle", sub: "the capture rule", ctx: "main", zone: "mainz", x: 250, y: 810, w: 210, ...R("main", 397),
       blurb: "Mouse captured: free it and make sure the console is open. Mouse free: toggle the console, and recapture when that closed it. Capture is FLY ∧ not paused ∧ not `_free_requested` ∧ noise editor closed: the console's visibility no longer gates it.",
-      links: [RL("main", 350, "_update_mouse"), RL("tMain", 35, "the test")] },
+      links: [RL("main", 381, "_update_mouse"), RL("tMain", 50, "the test")] },
 
     // console UI
-    { id: "console", label: "ConsoleWindow", sub: "force_native · VSplit", ctx: "ui", zone: "ui", x: 570, y: 680, w: 200, ...R("console", 1),
-      blurb: "A Window with `force_native`: on the desktop its own OS window, opened BESIDE the main window (a native window overlapping it corrupts the main picture on macOS); headless and the web embed it. A VSplit: Shape inspector on top, Movement pane below. Runs its own Ctrl-tap detector and hands other keys to Main.",
-      links: [RL("console", 38, "force_native"), RL("console", 87, "open: place_beside"), RL("console", 46, "the VSplit")] },
-    { id: "inspector", label: "AttributeInspector", sub: "Shape pane: headings + rows", ctx: "ui", zone: "ui", x: 830, y: 800, w: 210, ...R("inspector", 1),
-      blurb: "A ScrollContainer of group headings and one AttributeRow per spec, built once from the table. Owns no state: forwards the Source list (`set_sources`) and each frame's resolved values (`set_resolved`) to the rows.",
-      links: [RL("inspector", 51, "_populate"), RL("inspector", 78, "set_resolved")] },
+    { id: "console", label: "ConsoleWindow", sub: "force_native · two tabs · zoom", ctx: "ui", zone: "ui", x: 570, y: 680, w: 200, ...R("console", 1),
+      blurb: "A Window with `force_native`: on the desktop its own OS window, opened BESIDE the main window (a native window overlapping it corrupts the main picture on macOS); headless and the web embed it. A VSplit: a TabContainer on top (Shape, and Colour with the palette window), the Movement pane below. Runs its own Ctrl-tap detector and hands other keys to Main. Cmd+= / Cmd+- / Cmd+0 zoom the whole window through its content scale, caught in `_input` before any control; Main keeps the level in `Settings.console_zoom`.",
+      links: [RL("console", 59, "force_native"), RL("console", 156, "open: place_beside"), RL("console", 72, "the tabs"), RL("console", 198, "zoom_key"), RL("main", 149, "zoom ↔ Settings"), RL("tConsole", 121, "zoom test")] },
+    { id: "inspector", label: "AttributeInspector", sub: "one per tab: headings + rows", ctx: "ui", zone: "ui", x: 830, y: 800, w: 210, ...R("inspector", 1),
+      blurb: "A ScrollContainer of group headings and one AttributeRow per spec, built once from the table. There are two over the one table: the Shape tab limited to SHAPE_GROUPS, and the Colour tab limited to COLOUR_GROUPS with the palette window as a header that scrolls with the rows. Owns no state: forwards the Source list and each frame's resolved values to the rows; both stay in step through the table's `changed`.",
+      links: [RL("inspector", 59, "_populate"), RL("console", 83, "Shape tab"), RL("console", 94, "Colour tab"), RL("inspector", 91, "set_resolved"), RL("tConsole", 48, "one row per spec across the tabs")] },
     { id: "movement", label: "MovementPane", sub: "axis lines · clock · keymap files", ctx: "ui", zone: "ui", x: 570, y: 800, w: 200, ...R("movement", 1),
-      blurb: "One line per axis (label, id, live value, 0, speed, two key-capture buttons, ✕), Add axis, the clock and speed-factor readouts, the load-shed level, and Save / Save as… / Load… for the keymap. A view over Keymap: writes through the rebind API, rebuilds on a structural `changed`.",
-      links: [RL("movement", 137, "_build_line"), RL("movement", 250, "_on_keymap_changed"), RL("movement", 273, "readouts")] },
+      blurb: "One line per axis (label, id, live value, 0, speed, two key-capture buttons, ✕), Add axis, the clock and speed-factor readouts beside a Reset camera button, the load-shed level, and Save / Save as… / Load… for the keymap. A view over Keymap: writes through the rebind API, rebuilds on a structural `changed`.",
+      links: [RL("movement", 149, "_build_line"), RL("movement", 262, "_on_keymap_changed"), RL("movement", 285, "readouts")] },
     { id: "row", label: "AttributeRow", sub: "value + source · gain · wave", ctx: "ui", zone: "ui", x: 830, y: 680, w: 210, ...R("row", 1),
       blurb: "Fractacular's wide row: label, slider + spin (or a CheckBox / OptionButton), and for bindable specs Source ▾ (None, Time, each axis), Gain, Waveform ▾, Period. Every edit goes to the table; the row re-reads itself on `changed`. While a binding is active it shows `→ value`, the resolved value this frame.",
       links: [RL("row", 52, "setup"), RL("row", 251, "_build_binding"), RL("row", 101, "set_resolved")] },
@@ -338,13 +382,13 @@ const arch = {
       links: [RL("keycap", 38, "_input"), RL("keycap", 47, "_capture")] },
 
     // saved views
-    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "main", zone: "files", x: 1140, y: 680, w: 220, ...R("main", 274),
+    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "main", zone: "files", x: 1440, y: 680, w: 230, ...R("main", 286),
       blurb: "The pause menu's Save view… / Load view… and ⌘S land here. After a load Main resolves at once so the picture follows this frame.",
-      links: [RL("main", 284, "load_view_from"), RL("main", 294, "resolve after a load")] },
-    { id: "ws", label: "Workspace", sub: "view JSON v2 · v1 migration", ctx: "files", zone: "files", x: 1440, y: 680, w: 230, ...R("ws", 1),
+      links: [RL("main", 297, "load_view_from"), RL("main", 308, "resolve after a load")] },
+    { id: "ws", label: "Workspace", sub: "view JSON v2 · v1 migration", ctx: "files", zone: "files", x: 1440, y: 790, w: 230, ...R("ws", 1),
       blurb: "A view, version 2: `shape` (the table's defaults and ACTIVE bindings), `axes` (every axis value), `fractal` (preferences), `camera`, `noise`. The clock and the keymap are not saved. A version-1 file is migrated to the new ids without a warning.",
       links: [RL("ws", 31, "capture"), RL("ws", 56, "restore"), RL("ws", 75, "axis values: Axes.set_value"), RL("ws", 181, "_migrate_v1")] },
-    { id: "saves", label: "saves/*.json", sub: "default.json and friends, all v2", ctx: "files", zone: "files", x: 1440, y: 830, w: 230, ...R("saveDef", 2),
+    { id: "saves", label: "saves/*.json", sub: "default.json and friends, all v2", ctx: "files", zone: "files", x: 1440, y: 900, w: 230, ...R("saveDef", 2),
       blurb: "The committed views, rewritten to version 2 once: every catalogue id under shape.defaults, no bindings, no axis values.",
       links: [RL("saveDef", 3, "the shape section")] },
   ],
@@ -361,9 +405,9 @@ const arch = {
       blurb: "`step(id, direction, delta)`: value += direction × speed × delta, then `changed`." },
     { from: "axisctl", to: "textfocus", kind: "data", label: "typing?", ...R("axisCtl", 22), bow: 0.3,
       blurb: "A focused text field in any viewport silences every axis for the frame." },
-    { from: "shape", to: "spec", kind: "call", label: "make", ...R("shape", 34),
+    { from: "shape", to: "spec", kind: "call", label: "make", ...R("shape", 60),
       blurb: "Each knob is one `AttributeSpec.make({...})` dictionary." },
-    { from: "shape", to: "table", kind: "call", label: "specs()", ...R("main", 60), bow: 0,
+    { from: "shape", to: "table", kind: "call", label: "specs()", ...R("main", 67), bow: 0,
       blurb: "Main builds `AttributeTable.new(MandelboxShape.specs())`." },
     { from: "table", to: "spec", kind: "call", label: "sanitize", ...R("table", 56), bow: 0.3,
       blurb: "`set_default` sanitizes through the spec, so a typed or dragged default obeys the same clamp / wrap as a driven value." },
@@ -373,16 +417,16 @@ const arch = {
       blurb: "For each spec: `table.get_default(id)` and `table.binding(id)`." },
     { from: "resolver", to: "spec", kind: "call", label: "sanitize", ...R("resolver", 36), bow: 0.3,
       blurb: "The driven value goes through the spec's `sanitize`." },
-    { from: "mresolve", to: "resolver", kind: "call", label: "resolve()", ...R("main", 266), bow: 0,
+    { from: "mresolve", to: "resolver", kind: "call", label: "resolve()", ...R("main", 278), bow: 0,
       blurb: "`BindingResolver.resolve(_table, _keymap.axes().values(), _clock.t)`." },
-    { from: "mresolve", to: "axes", kind: "data", label: "values()", ...R("main", 266), bow: -0.2,
+    { from: "mresolve", to: "axes", kind: "data", label: "values()", ...R("main", 278), bow: -0.2,
       blurb: "The axis values as AxisController left them at the END of the previous frame (Main processes before its children)." },
-    { from: "mresolve", to: "clock", kind: "data", label: "t", ...R("main", 266), bow: 0.2,
+    { from: "mresolve", to: "clock", kind: "data", label: "t", ...R("main", 278), bow: 0.2,
       blurb: "The clock as it stood after the previous frame." },
-    { from: "mresolve", to: "params", kind: "call", label: "apply_resolved", ...R("main", 267), bow: 0.4,
+    { from: "mresolve", to: "params", kind: "call", label: "apply_resolved", ...R("main", 279), bow: 0.4,
       blurb: "Writes every resolved field, emits `changed` at most once." },
-    { from: "mresolve", to: "console", kind: "call", label: "set_resolved", ...R("main", 269), bow: -0.2,
-      blurb: "Only while the console is visible: the bound rows' `→ value` readouts follow.", links: [RL("console", 82, "set_resolved")] },
+    { from: "mresolve", to: "console", kind: "call", label: "set_resolved", ...R("main", 281), bow: -0.2,
+      blurb: "Only while the console is visible: the bound rows' `→ value` readouts follow.", links: [RL("console", 147, "set_resolved")] },
     { from: "params", to: "view", kind: "signal", label: "changed → uniforms", ...R("view", 74), bow: 0,
       blurb: "`_on_params_changed` → `_push_params` + `request_frame`." },
     { from: "params", to: "gov", kind: "signal", label: "_dirty", ...R("gov", 46), bow: -0.6,
@@ -391,36 +435,44 @@ const arch = {
       blurb: "The ring shows with `julia_all` and redraws at the new point." },
     { from: "marker", to: "table", kind: "call", label: "set_default c_0..2", ...R("marker", 61), bow: 0.2,
       blurb: "The drag lands in the table, so the next resolve keeps it." },
-    { from: "mready", to: "keymap", kind: "call", label: "load_file()", ...R("main", 62), bow: 0.3,
+    { from: "mready", to: "keymap", kind: "call", label: "load_file()", ...R("main", 69), bow: 0.3,
       blurb: "`Keymap.new()` then `load_file()`: saves/keymap.json, or the shipped default with a warning." },
-    { from: "mready", to: "console", kind: "call", label: "setup", ...R("main", 136), bow: -0.2,
+    { from: "mready", to: "console", kind: "call", label: "setup", ...R("main", 143), bow: -0.2,
       blurb: "`setup(table, keymap, clock, group_tooltips, speed source)`." },
-    { from: "mdispatch", to: "ctrltap", kind: "call", label: "feed", ...R("main", 394), bow: 0.3,
+    { from: "mdispatch", to: "ctrltap", kind: "call", label: "feed", ...R("main", 425), bow: 0.3,
       blurb: "Step 1 of the dispatcher." },
-    { from: "mdispatch", to: "mtoggle", kind: "call", label: "a tap", ...R("main", 395), bow: 0,
+    { from: "mdispatch", to: "mtoggle", kind: "call", label: "a tap", ...R("main", 426), bow: 0,
       blurb: "A fired tap runs the capture rule." },
-    { from: "mtoggle", to: "console", kind: "call", label: "open / toggle", ...R("main", 370), bow: 0.4,
-      blurb: "Captured: `open()` if hidden. Free: `toggle()`.", links: [RL("main", 372, "toggle")] },
-    { from: "console", to: "mtoggle", kind: "signal", label: "toggle_requested", ...R("main", 139), bow: 0.4,
-      blurb: "The console's own detector fired: the native window received the Ctrl keys, so Main never saw them.", links: [RL("console", 107, "emit")] },
-    { from: "console", to: "mdispatch", kind: "signal", label: "unhandled_key", ...R("main", 140), bow: -0.6,
-      blurb: "Escape, N, ⌘S, ⌘P… pressed while the console has focus run through Main's dispatch.", links: [RL("console", 119, "the forward")] },
-    { from: "console", to: "inspector", kind: "call", label: "setup", ...R("console", 54), bow: 0,
-      blurb: "`_inspector.setup(table, group_tooltips)`; on every Keymap `changed`, `set_sources(axes)`.", links: [RL("console", 123, "_refresh_sources")] },
-    { from: "console", to: "movement", kind: "call", label: "setup", ...R("console", 59), bow: 0 },
-    { from: "inspector", to: "row", kind: "call", label: "one per spec", ...R("inspector", 66), bow: 0 },
+    { from: "mtoggle", to: "console", kind: "call", label: "open / toggle", ...R("main", 401), bow: 0.4,
+      blurb: "Captured: `open()` if hidden. Free: `toggle()`.", links: [RL("main", 403, "toggle")] },
+    { from: "console", to: "mtoggle", kind: "signal", label: "toggle_requested", ...R("main", 146), bow: 0.4,
+      blurb: "The console's own detector fired: the native window received the Ctrl keys, so Main never saw them.", links: [RL("console", 219, "emit")] },
+    { from: "console", to: "mdispatch", kind: "signal", label: "unhandled_key", ...R("main", 147), bow: -0.6,
+      blurb: "Escape, N, ⌘S, ⌘P… pressed while the console has focus run through Main's dispatch.", links: [RL("console", 241, "the forward")] },
+    { from: "console", to: "inspector", kind: "call", label: "setup", ...R("console", 83), bow: 0,
+      blurb: "`_inspector.setup(table, group_tooltips)`; on every Keymap `changed`, `set_sources(axes)`.", links: [RL("console", 245, "_refresh_sources")] },
+    { from: "console", to: "movement", kind: "call", label: "setup", ...R("console", 99), bow: 0 },
+    { from: "inspector", to: "row", kind: "call", label: "one per spec", ...R("inspector", 79), bow: 0 },
     { from: "row", to: "table", kind: "call", label: "edits", ...R("row", 334), bow: 1.2,
       blurb: "Slider / spin / check / option → `set_default`; source / gain / wave / period edit the Binding and `notify_binding_changed`.", links: [RL("row", 368, "binding edits")] },
     { from: "table", to: "row", kind: "signal", label: "changed(id)", ...R("row", 60), bow: 0.8,
       blurb: "Each row connects `changed` to `refresh`, guarded by `_updating` so its own edit does not echo." },
-    { from: "movement", to: "keymap", kind: "call", label: "rebind API", ...R("movement", 246), bow: -1.6,
-      blurb: "Add axis, bind, set_speed, set_label, remove_axis, save_file, load_file.", links: [RL("movement", 213, "add_axis"), RL("movement", 193, "remove_axis")] },
-    { from: "keymap", to: "console", kind: "signal", label: "changed", ...R("console", 64), bow: -0.3,
-      blurb: "The Source dropdowns relist the axes; the Movement pane rebuilds on add / remove (movement_pane.gd:98)." },
-    { from: "movement", to: "keycap", kind: "call", label: "two per axis", ...R("movement", 177), bow: 0,
+    { from: "movement", to: "keymap", kind: "call", label: "rebind API", ...R("movement", 258), bow: -1.6,
+      blurb: "Add axis, bind, set_speed, set_label, remove_axis, save_file, load_file.", links: [RL("movement", 225, "add_axis"), RL("movement", 205, "remove_axis")] },
+    { from: "keymap", to: "console", kind: "signal", label: "changed", ...R("console", 105), bow: -0.3,
+      blurb: "The Source dropdowns relist the axes; the Movement pane rebuilds on add / remove (movement_pane.gd:110)." },
+    { from: "movement", to: "keycap", kind: "call", label: "two per axis", ...R("movement", 189), bow: 0,
       blurb: "Positive and negative; `key_captured` → `Keymap.bind(id, pos.key(), neg.key())`." },
-    { from: "msave", to: "ws", kind: "call", label: "save / load", ...R("main", 276), bow: 0,
-      blurb: "`Workspace.save_file(path, _table, _keymap.axes(), params, camera, noise)`.", links: [RL("main", 286, "load_file")] },
+    { from: "pwin", to: "palette", kind: "call", label: "set_component · set_live", ...R("pwin", 209), bow: 0,
+      blurb: "A slider writes one component through the palette into the table; each frame the console's `set_resolved` hands the resolved values to `set_live`, so the strip follows a bound channel.", links: [RL("pwin", 116, "set_live")] },
+    { from: "palette", to: "table", kind: "call", label: "the twelve ids", ...R("palette", 127), bow: 0.2,
+      blurb: "`set_component` is `set_default` on `palette_<v>_<ch>`; `get_component` reads the default; `_on_table_changed` re-emits `changed` for color_mode and the twelve.", links: [RL("palette", 202, "_on_table_changed")] },
+    { from: "inspector", to: "pwin", kind: "call", label: "Colour tab header", ...R("console", 94), bow: 0,
+      blurb: "The Colour tab is a second AttributeInspector limited to COLOUR_GROUPS, with the palette window as its header row." },
+    { from: "movement", to: "mreset", kind: "signal", label: "reset_camera_requested", ...R("main", 151), bow: 0,
+      blurb: "The button's signal, relayed by the console (console_window.gd:100).", links: [RL("movement", 74, "the button")] },
+    { from: "msave", to: "ws", kind: "call", label: "save / load", ...R("main", 288), bow: 0,
+      blurb: "`Workspace.save_file(path, _table, _keymap.axes(), params, camera, noise)`.", links: [RL("main", 299, "load_file")] },
     { from: "ws", to: "saves", kind: "data", label: "JSON", ...R("ws", 108), bow: 0 },
     { from: "ws", to: "table", kind: "call", label: "to_dict / apply_dict", ...R("ws", 61), bow: 1.0,
       blurb: "Capture writes `table.to_dict()` (active bindings only); restore runs `apply_dict`, which sets the listed defaults and bindings and leaves the rest.", links: [RL("ws", 40, "capture")] },
@@ -439,7 +491,7 @@ const frameSeq = {
     { id: "ctl", col: 1, ctx: "axes", name: "AxisController", sub: "child of Main", ...R("axisCtl", 1) },
     { id: "axes", col: 2, ctx: "axes", name: "Axes", sub: "Axis A value", ...R("axes", 1) },
     { id: "clock", col: 3, ctx: "axes", name: "Clock", sub: "child of Main", ...R("clock", 1) },
-    { id: "main", col: 4, ctx: "main", name: "Main", sub: "_process (the parent)", ...R("main", 258) },
+    { id: "main", col: 4, ctx: "main", name: "Main", sub: "_process (the parent)", ...R("main", 270) },
     { id: "res", col: 5, ctx: "attr", name: "BindingResolver", sub: "static, pure", ...R("resolver", 1) },
     { id: "spec", col: 6, ctx: "attr", name: "AttributeSpec", sub: "sanitize", ...R("spec", 113) },
     { id: "params", col: 7, ctx: "cons", name: "FractalParams", sub: "resolved fields", ...R("params", 1) },
@@ -449,13 +501,13 @@ const frameSeq = {
   ],
   rows: [
     { sec: "FRAME N · Main._process: the parent runs before its children" },
-    { from: "main", to: "main", kind: "call", label: "_process → _resolve_once()", ...R("main", 258),
-      blurb: "Every frame, not only on change: about thirty scalars.", links: [RL("main", 262, "why every frame")] },
-    { from: "main", to: "axes", kind: "data", label: "_keymap.axes().values()", tick: "what frame N−1 pushed", ...R("main", 266),
+    { from: "main", to: "main", kind: "call", label: "_process → _resolve_once()", ...R("main", 270),
+      blurb: "Every frame, not only on change: about thirty scalars.", links: [RL("main", 274, "why every frame")] },
+    { from: "main", to: "axes", kind: "data", label: "_keymap.axes().values()", tick: "what frame N−1 pushed", ...R("main", 278),
       blurb: "A {id: value} dictionary of every axis.", links: [RL("axes", 107, "values")] },
-    { from: "main", to: "clock", kind: "data", label: "_clock.t", tick: "frame N−1's t", ...R("main", 266),
+    { from: "main", to: "clock", kind: "data", label: "_clock.t", tick: "frame N−1's t", ...R("main", 278),
       blurb: "Clock has not run its own `_process` yet this frame." },
-    { from: "main", to: "res", kind: "call", label: "resolve(table, values, t)", ...R("main", 266),
+    { from: "main", to: "res", kind: "call", label: "resolve(table, values, t)", ...R("main", 278),
       blurb: "One dictionary out: catalogue id → value.", links: [RL("resolver", 13, "resolve")] },
     { from: "res", to: "res", kind: "call", label: "resolve_value(spec, default, binding)", ...R("resolver", 16),
       blurb: "Once per spec, in catalogue order." },
@@ -467,20 +519,20 @@ const frameSeq = {
       links: [RL("resolver", 39, "waveform_value")] },
     { from: "res", to: "spec", kind: "call", label: "sanitize(value)", ...R("resolver", 36), toRole: "wrapf into [min, max) for angles, else clampf to the hard range; INT rounds; ENUM falls back.",
       blurb: "The same rule a typed value goes through.", links: [RL("spec", 113, "sanitize")] },
-    { from: "main", to: "params", kind: "call", label: "apply_resolved(values)", ...R("main", 267),
-      links: [RL("params", 182, "apply_resolved")] },
-    { from: "params", to: "params", kind: "call", label: "get(k) != v → set, setters muted", ...R("params", 189),
-      blurb: "`_suppress` stops each setter's `emit_changed`; `dirty` remembers whether anything moved.", links: [RL("params", 184, "_suppress = true")] },
+    { from: "main", to: "params", kind: "call", label: "apply_resolved(values)", ...R("main", 279),
+      links: [RL("params", 254, "apply_resolved")] },
+    { from: "params", to: "params", kind: "call", label: "get(k) != v → set, setters muted", ...R("params", 261),
+      blurb: "`_suppress` stops each setter's `emit_changed`; `dirty` remembers whether anything moved.", links: [RL("params", 256, "_suppress = true")] },
     { from: "params", to: "view", kind: "signal", label: "changed → _push_params", tick: "+ request_frame()", ...R("view", 280),
       blurb: "All shape uniforms are pushed again (and near_dist recomputed), then a frame is requested.", links: [RL("view", 293, "box_scale")] },
     { from: "params", to: "gov", kind: "signal", label: "changed → _dirty = true", ...R("gov", 46),
       blurb: "This frame counts as 'changing': continuous rendering and the adaptive scale." },
-    { from: "params", to: "params", kind: "call", label: "nothing differed: no signal at all", ...R("params", 193),
-      blurb: "An axis at rest, or no active binding: the resolve costs the scalars and nothing else.", links: [RL("tParams", 57, "the no-emit test")] },
-    { from: "main", to: "console", kind: "call", label: "set_resolved(values)", ...R("main", 269),
-      blurb: "Only while the console is visible.", links: [RL("console", 82, "set_resolved")] },
+    { from: "params", to: "params", kind: "call", label: "nothing differed: no signal at all", ...R("params", 265),
+      blurb: "An axis at rest, or no active binding: the resolve costs the scalars and nothing else.", links: [RL("tParams", 74, "the no-emit test")] },
+    { from: "main", to: "console", kind: "call", label: "set_resolved(values)", ...R("main", 281),
+      blurb: "Only while the console is visible.", links: [RL("console", 147, "set_resolved")] },
     { from: "console", to: "console", kind: "call", label: "each bound row: \"→ value\"", ...R("row", 109),
-      blurb: "The inspector forwards to every row; a row with an active binding shows the value in use this frame.", links: [RL("inspector", 78, "inspector.set_resolved")] },
+      blurb: "Both tabs' inspectors forward to every row (a row with an active binding shows the value in use this frame), and the palette window hands the values to `Palette.set_live`, so the strip and curves follow a bound channel.", links: [RL("console", 147, "both tabs and the palette window"), RL("inspector", 91, "inspector.set_resolved"), RL("pwin", 114, "PaletteWindow.set_resolved")] },
     { sec: "LATER IN FRAME N · the children of Main, in tree order" },
     { from: "gov", to: "gov", kind: "call", label: "_process: changing = _dirty", ...R("gov", 69),
       blurb: "Sees the `changed` from this frame's resolve." },
@@ -493,7 +545,7 @@ const frameSeq = {
     { from: "axes", to: "axes", kind: "call", label: "value += direction × speed × delta", tick: "1 × 1.0 × 1/60 = 0.0167", ...R("axes", 102),
       blurb: "Unbounded; emits `changed` (the Movement pane polls its readouts in `_process` instead).", links: [RL("kfile", 7, "speed 1.0")] },
     { sec: "FRAME N+1" },
-    { from: "main", to: "axes", kind: "data", label: "values(): now sees the pushed value", ...R("main", 266),
+    { from: "main", to: "axes", kind: "data", label: "values(): now sees the pushed value", ...R("main", 278),
       blurb: "The key press of frame N reaches params, the uniforms and the readout here." },
   ],
   fragments: [
@@ -513,48 +565,48 @@ const tapSeq = {
   laneWidth: 210, headWidth: 180,
   participants: [
     { id: "kb", col: 0, ctx: "axes", name: "player", sub: "keyboard · mouse" },
-    { id: "disp", col: 1, ctx: "main", name: "Main._unhandled_input", sub: "the dispatcher", ...R("main", 392) },
-    { id: "tapM", col: 2, ctx: "main", name: "CtrlTap", sub: "Main's", ...R("main", 41) },
-    { id: "tog", col: 3, ctx: "main", name: "Main._on_console_toggle", sub: "the capture rule", ...R("main", 366) },
+    { id: "disp", col: 1, ctx: "main", name: "Main._unhandled_input", sub: "the dispatcher", ...R("main", 423) },
+    { id: "tapM", col: 2, ctx: "main", name: "CtrlTap", sub: "Main's", ...R("main", 42) },
+    { id: "tog", col: 3, ctx: "main", name: "Main._on_console_toggle", sub: "the capture rule", ...R("main", 397) },
     { id: "con", col: 4, ctx: "ui", name: "ConsoleWindow", sub: "native OS window", ...R("console", 1) },
-    { id: "tapC", col: 5, ctx: "ui", name: "CtrlTap", sub: "the console's", ...R("console", 31) },
-    { id: "mouse", col: 6, ctx: "axes", name: "Input.mouse_mode", sub: "CAPTURED / VISIBLE", ...R("main", 354) },
+    { id: "tapC", col: 5, ctx: "ui", name: "CtrlTap", sub: "the console's", ...R("console", 52) },
+    { id: "mouse", col: 6, ctx: "axes", name: "Input.mouse_mode", sub: "CAPTURED / VISIBLE", ...R("main", 385) },
   ],
   rows: [
     { sec: "THE MAIN WINDOW HAS FOCUS · Main's own detector" },
-    { from: "kb", to: "disp", kind: "call", label: "Ctrl down (not an echo)", ...R("main", 394) },
+    { from: "kb", to: "disp", kind: "call", label: "Ctrl down (not an echo)", ...R("main", 425) },
     { from: "disp", to: "tapM", kind: "call", label: "feed(event): arm", tick: "unless a text field is focused", ...R("ctrlTap", 27),
-      blurb: "`_armed = not _typing()`: the typing guard asks TextFocus about every viewport.", links: [RL("main", 93, "the guard")] },
-    { from: "kb", to: "disp", kind: "call", label: "S down (Ctrl+S)", tick: "any other key while armed", ...R("main", 394) },
+      blurb: "`_armed = not _typing()`: the typing guard asks TextFocus about every viewport.", links: [RL("main", 100, "the guard")] },
+    { from: "kb", to: "disp", kind: "call", label: "S down (Ctrl+S)", tick: "any other key while armed", ...R("main", 425) },
     { from: "disp", to: "tapM", kind: "call", label: "feed: disarm", ...R("ctrlTap", 32),
-      blurb: "So Ctrl+S saves and never toggles; Ctrl+P is disarmed before the screenshot consumes its P.", links: [RL("tMain", 50, "the Ctrl+P test")] },
-    { from: "kb", to: "disp", kind: "call", label: "Ctrl up", ...R("main", 394) },
+      blurb: "So Ctrl+S saves and never toggles; Ctrl+P is disarmed before the screenshot consumes its P.", links: [RL("tMain", 65, "the Ctrl+P test")] },
+    { from: "kb", to: "disp", kind: "call", label: "Ctrl up", ...R("main", 425) },
     { from: "disp", to: "tapM", kind: "call", label: "feed: armed → fire (true)", ...R("ctrlTap", 28) },
-    { from: "disp", to: "tog", kind: "call", label: "_on_console_toggle()", ...R("main", 395) },
-    { from: "tog", to: "tog", kind: "call", label: "_free_requested = true", ...R("main", 368),
+    { from: "disp", to: "tog", kind: "call", label: "_on_console_toggle()", ...R("main", 426) },
+    { from: "tog", to: "tog", kind: "call", label: "_free_requested = true", ...R("main", 399),
       blurb: "Flying: the tap frees the mouse." },
-    { from: "tog", to: "con", kind: "call", label: "open() if hidden", ...R("main", 370), blurb: "open() places the native window beside the main one (UiScale.place_beside), never over it.",
-      links: [RL("console", 88, "place_beside"), RL("uiScale", 118, "beside_position")] },
-    { from: "tog", to: "con", kind: "call", label: "toggle()", ...R("main", 372) },
-    { from: "tog", to: "tog", kind: "call", label: "now hidden → _free_requested = false", ...R("main", 374) },
-    { from: "tog", to: "mouse", kind: "call", label: "_update_mouse()", tick: "FLY ∧ ¬paused ∧ ¬_free_requested ∧ ¬noise", ...R("main", 375),
-      links: [RL("main", 351, "the rule")] },
+    { from: "tog", to: "con", kind: "call", label: "open() if hidden", ...R("main", 401), blurb: "open() places the native window beside the main one (UiScale.place_beside), never over it.",
+      links: [RL("console", 157, "place_beside"), RL("uiScale", 160, "beside_position")] },
+    { from: "tog", to: "con", kind: "call", label: "toggle()", ...R("main", 403) },
+    { from: "tog", to: "tog", kind: "call", label: "now hidden → _free_requested = false", ...R("main", 405) },
+    { from: "tog", to: "mouse", kind: "call", label: "_update_mouse()", tick: "FLY ∧ ¬paused ∧ ¬_free_requested ∧ ¬noise", ...R("main", 406),
+      links: [RL("main", 382, "the rule")] },
     { sec: "THE CONSOLE HAS FOCUS · the native window gets the keys" },
-    { from: "kb", to: "con", kind: "call", label: "Ctrl down … Ctrl up", ...R("console", 112),
+    { from: "kb", to: "con", kind: "call", label: "Ctrl down … Ctrl up", ...R("console", 234),
       blurb: "Only while visible." },
-    { from: "con", to: "tapC", kind: "call", label: "feed_ctrl(event)", ...R("console", 106),
-      links: [RL("console", 62, "its typing guard: its own viewport")] },
-    { from: "con", to: "tog", kind: "signal", label: "toggle_requested", ...R("main", 139),
-      blurb: "Main runs the same rule as for its own tap.", links: [RL("console", 107, "emit")] },
-    { from: "kb", to: "con", kind: "call", label: "Escape · N · ⌘S · ⌘P", ...R("console", 119),
+    { from: "con", to: "tapC", kind: "call", label: "feed_ctrl(event)", ...R("console", 218),
+      links: [RL("console", 103, "its typing guard: its own viewport")] },
+    { from: "con", to: "tog", kind: "signal", label: "toggle_requested", ...R("main", 146),
+      blurb: "Main runs the same rule as for its own tap.", links: [RL("console", 219, "emit")] },
+    { from: "kb", to: "con", kind: "call", label: "Escape · N · ⌘S · ⌘P", ...R("console", 241),
       blurb: "Any key except Ctrl that the console's controls left unhandled." },
-    { from: "con", to: "disp", kind: "signal", label: "unhandled_key → _on_window_key", ...R("main", 140),
-      blurb: "Runs Main's whole dispatch, plus ⌘S quick-save.", links: [RL("main", 381, "_on_window_key")] },
+    { from: "con", to: "disp", kind: "signal", label: "unhandled_key → _on_window_key", ...R("main", 147),
+      blurb: "Runs Main's whole dispatch, plus ⌘S quick-save.", links: [RL("main", 412, "_on_window_key")] },
     { sec: "A CLICK IN THE VIEW" },
-    { from: "kb", to: "disp", kind: "call", label: "left click · FLY · mouse free", ...R("main", 435),
-      blurb: "A click on the console is the console's own and never gets here.", links: [RL("tMain", 103, "the real-click test")] },
-    { from: "disp", to: "mouse", kind: "call", label: "_free_requested = false · _update_mouse()", tick: "the console stays open", ...R("main", 439),
-      links: [RL("main", 442, "_update_mouse"), RL("tMain", 89, "the test")] },
+    { from: "kb", to: "disp", kind: "call", label: "left click · FLY · mouse free", ...R("main", 466),
+      blurb: "A click on the console is the console's own and never gets here.", links: [RL("tMain", 118, "the real-click test")] },
+    { from: "disp", to: "mouse", kind: "call", label: "_free_requested = false · _update_mouse()", tick: "the console stays open", ...R("main", 470),
+      links: [RL("main", 473, "_update_mouse"), RL("tMain", 104, "the test")] },
   ],
   fragments: [
     { type: "alt", rows: [8, 11], cols: [3, 5], guard1: "mouse captured", divRow: 10, guard2: "mouse free" },
@@ -562,9 +614,9 @@ const tapSeq = {
 };
 
 // ================================================================== 3. the stepper
-// simulate: the frames of Main._process → Clock._process → AxisController._process (main.gd:258-269,
+// simulate: the frames of Main._process → Clock._process → AxisController._process (main.gd:270-281,
 // clock.gd:10-11, axis_controller.gd:19-28), from the key held in each frame. Frame 0 is Main._ready's
-// resolve (main.gd:97). Each frame READS the axis and t frame n−1 left and WRITES params, t and the axis.
+// resolve (main.gd:104). Each frame READS the axis and t frame n−1 left and WRITES params, t and the axis.
 // `alt` is a hypothetical: the value the same frame would write if the axes moved before the resolve.
 const STEP_IDS = ["box_scale", "fold_limit", "iter_rot_xy", "c_0"];
 const STEP_DIALS = {
@@ -610,11 +662,11 @@ const stepFig = {
     // ---- the stage boxes: frame N's steps in run order, each showing this frame's number
     const BW = 208, BG = 10, BH = 76, BY0 = 16;
     const STAGES = [
-      { n: "1", name: "raw", f: "axis(N−1) | t(N−1) | 0", c: C_RAW, tip: { ...R("resolver", 28), blurb: "Main reads `_keymap.axes().values()` and `_clock.t` as the previous frame left them. `time` reads t, a known axis id its value, an unknown id 0.", links: [RL("main", 266, "the call"), RL("resolver", 33, "unknown axis → 0")] } },
+      { n: "1", name: "raw", f: "axis(N−1) | t(N−1) | 0", c: C_RAW, tip: { ...R("resolver", 28), blurb: "Main reads `_keymap.axes().values()` and `_clock.t` as the previous frame left them. `time` reads t, a known axis id its value, an unknown id 0.", links: [RL("main", 278, "the call"), RL("resolver", 33, "unknown axis → 0")] } },
       { n: "2", name: "wave", f: "raw | sin 2πr/p | tri", c: C_RAW, tip: { ...R("resolver", 39), blurb: "Linear passes raw through (period unused). Sine is sin(2π·raw/p). Triangle is 1 − 4·|fposmod(raw/p + ¼, 1) − ½|: 0 at 0, +1 at p/4, 0 at p/2, −1 at 3p/4.", links: [RL("resolver", 43, "sine"), RL("resolver", 46, "triangle")] } },
       { n: "3", name: "drive", f: "default + gain × wave", c: C_PRE, tip: { ...R("resolver", 35), blurb: "The table default plus the binding's gain times the wave. Gain is the key's sensitivity: with Linear and speed 1, gain 0.5 moves the knob half a unit per second of E.", links: [RL("binding", 12, "gain default 1")] } },
       { n: "4", name: "sanitize", f: "wrap [min,max) | clamp hard", c: C_PAR, tip: { ...R("spec", 113), blurb: "Angles (`wrap`) fold into [min, max) with wrapf; every other FLOAT clamps to the HARD range, which may be wider than the slider (box_scale: slider −5…3, hard ±6; constants: slider ±4, hard ±16).", links: [RL("spec", 118, "wrapf"), RL("spec", 119, "clampf")] } },
-      { n: "5", name: "apply_resolved", f: "emit only on a difference", c: C_PAR, tip: { ...R("params", 182), blurb: "Writes the field with the setter muted; one `changed` for the whole batch, and none if nothing differed. That signal is what pushes the uniforms and marks the governor's frame as changing.", links: [RL("params", 189, "the compare"), RL("params", 193, "the single emit")] } },
+      { n: "5", name: "apply_resolved", f: "emit only on a difference", c: C_PAR, tip: { ...R("params", 254), blurb: "Writes the field with the setter muted; one `changed` for the whole batch, and none if nothing differed. That signal is what pushes the uniforms and marks the governor's frame as changing.", links: [RL("params", 261, "the compare"), RL("params", 265, "the single emit")] } },
       { n: "6", name: "Clock", f: "t += delta", c: C_AX, tip: { ...R("clock", 11), blurb: "A child of Main, so it runs after the resolve." } },
       { n: "7", name: "AxisController", f: "value += dir·speed·Δ", c: C_AX, tip: { ...R("axisCtl", 25), blurb: "direction = strength(axis_a_pos) − strength(axis_a_neg); Axes.step adds direction × speed × delta. Read by the NEXT frame's resolve.", links: [RL("axes", 102, "Axes.step")] } },
     ];
@@ -628,8 +680,8 @@ const stepFig = {
       return api.text(x + 10, BY0 + 62, "", "mono", { style: `font-size:11.5px;fill:${st.c};${noPtr}` });
     });
     api.el("line", { x1: 20 + 5 * (BW + BG) - BG / 2, y1: BY0 - 4, x2: 20 + 5 * (BW + BG) - BG / 2, y2: BY0 + BH + 4, style: "stroke:var(--muted);stroke-width:1.2;stroke-dasharray:3 3" });
-    api.text(20, BY0 + BH + 16, "Main._process: the resolve (main.gd:265-269)", "muted", { style: small });
-    api.text(20 + 5 * (BW + BG), BY0 + BH + 16, "then Main's children (main.gd:127-147)", "muted", { style: small });
+    api.text(20, BY0 + BH + 16, "Main._process: the resolve (main.gd:277-281)", "muted", { style: small });
+    api.text(20 + 5 * (BW + BG), BY0 + BH + 16, "then Main's children (main.gd:134-158)", "muted", { style: small });
 
     // ---- the two charts
     const GX = 70, NCOL = 240, COLW = 4, CW = NCOL * COLW;
@@ -670,7 +722,7 @@ const stepFig = {
     let s0 = 0;
     for (let i = 0; i < NCOL; i++) {
       const hit = api.el("rect", { x: GX + i * COLW, y: A.y, width: COLW, height: EY + 14 - A.y, style: "fill:transparent;cursor:pointer" });
-      api.tip(hit, { title: "a frame", ...R("main", 265), links: [RL("resolver", 25, "resolve_value"), RL("axes", 102, "Axes.step")], live() {
+      api.tip(hit, { title: "a frame", ...R("main", 277), links: [RL("resolver", 25, "resolve_value"), RL("axes", 102, "Axes.step")], live() {
         const f = frames[s0 + i];
         if (!f || s0 + i > S.k) return { title: "no frame yet", blurb: "Step ▶ adds frames." };
         return { title: `frame ${f.n}${f.n === 0 ? " (Main._ready's resolve)" : ` · ${KEYNAME(f.key)}`}`, sub: "click to open this frame",
@@ -694,9 +746,9 @@ const stepFig = {
     const readL = box(142, 112, "READS — what frame N−1 left", C_RAW);
     const writeL = box(266, 94, "WRITES", C_PAR);
     const calcL = [0, 1, 2, 3, 4].map(i => api.text(RX, 384 + i * 19, "", "mono", { style: "font-size:11.5px" }));
-    api.tip(api.el("rect", { x: RX, y: 142, width: RW, height: 112, style: "fill:transparent" }), { title: "what the resolve reads", ...R("main", 266),
+    api.tip(api.el("rect", { x: RX, y: 142, width: RW, height: 112, style: "fill:transparent" }), { title: "what the resolve reads", ...R("main", 278),
       blurb: "Axis values and t as the children left them at the end of the previous frame; the table default and binding as the console last edited them.", links: [RL("table", 46, "get_default"), RL("table", 69, "binding")] });
-    api.tip(api.el("rect", { x: RX, y: 266, width: RW, height: 94, style: "fill:transparent" }), { title: "what the frame writes", ...R("params", 182),
+    api.tip(api.el("rect", { x: RX, y: 266, width: RW, height: 94, style: "fill:transparent" }), { title: "what the frame writes", ...R("params", 254),
       blurb: "params (once, through apply_resolved), then the clock and the axis for the next frame.", links: [RL("clock", 11, "t += delta"), RL("axes", 102, "the axis")] });
     // the waveform for these controls, with this frame's raw on it
     const WY = 500, WH = 110;
@@ -883,8 +935,8 @@ const consoleFig = {
   type: "figure",
   tab: "The console window",
   title: "The console window, widget by widget",
-  note: "A sketch of the window at about its default 1000 × 700 points: the Shape inspector stacked above the Movement pane in a VSplitContainer (side by side, the two panes' minimum widths overflowed the window). Scale is shown bound to Axis A with E held half a second, as ui_console_test checks it (→ −1.59). Hover any widget for the line that builds it and what an edit does.",
-  w: 1330, h: 800,
+  note: "A sketch of the window at about its default 1000 × 700 points: two tabs (Shape, Colour) stacked above the Movement pane in a VSplitContainer (side by side, the panes' minimum widths overflowed the window). Left, the Shape tab, with Scale bound to Axis A and E held half a second, as ui_console_test checks it (→ −1.59). Right, the same window on its Colour tab: the palette window above the Colour, Lighting and Palette rows. Hover any widget for the line that builds it and what an edit does.",
+  w: 1700, h: 820,
   draw(api) {
     const X0 = 30, Y0 = 30, WW = 1000, TB = 28, CH = 740;
     const C_UI = api.hue(2), C_OK = api.hue(3), C_ATTR = api.hue(1);
@@ -895,17 +947,26 @@ const consoleFig = {
       return r;
     };
     // window chrome
-    const winRect = rr(X0, Y0, WW, TB + CH, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "ConsoleWindow", ...R("console", 34),
-      blurb: "Title \"Console\", sized `UiScale.px(DEFAULT_SIZE)` (1000 × 700 points), minimum 700 × 400, resizable, hidden at start. `force_native` must be set while hidden. Opened BESIDE the main window by `place_beside`; on the web and headless it is embedded.",
-      links: [RL("console", 25, "DEFAULT_SIZE"), RL("console", 37, "hidden before force_native"), RL("console", 87, "open")] });
-    rr(X0, Y0, WW, TB, `fill:var(--surface);stroke:var(--muted);stroke-width:1`, { title: "the window's own title bar", ...R("console", 36),
-      blurb: "A native OS window: drag it anywhere, onto another monitor. Its ✕ calls `hide_console`.", links: [RL("console", 44, "close_requested")] }, "Console", "ink", "font-weight:600");
+    const winRect = rr(X0, Y0, WW, TB + CH, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "ConsoleWindow", ...R("console", 55),
+      blurb: "Title \"Console\", sized `UiScale.px(DEFAULT_SIZE)` (1000 × 700 points), minimum 700 × 400, resizable, hidden at start. `force_native` must be set while hidden. Opened BESIDE the main window by `place_beside`; on the web and headless it is embedded. Cmd+= / Cmd+- step the zoom through ZOOM_STEPS (0.5 … 2) and Cmd+0 resets it: the content scale grows, the window keeps its size and the panes reflow. The level is the player's, kept in Settings.console_zoom.",
+      links: [RL("console", 37, "DEFAULT_SIZE"), RL("console", 58, "hidden before force_native"), RL("console", 156, "open"), RL("console", 40, "ZOOM_STEPS"), RL("console", 226, "zoom chords caught in _input"), RL("settings", 29, "Settings.console_zoom")] });
+    rr(X0, Y0, WW, TB, `fill:var(--surface);stroke:var(--muted);stroke-width:1`, { title: "the window's own title bar", ...R("console", 57),
+      blurb: "A native OS window: drag it anywhere, onto another monitor. Its ✕ calls `hide_console`.", links: [RL("console", 66, "close_requested")] }, "Console", "ink", "font-weight:600");
     // columns of a wide row (attribute_row.gd: label 140, spin 92, option 92, small spin 76)
     const LX = X0 + 12, VX = LX + 146, SPX = X0 + 524, BX0 = X0 + 624, SRC = 92, GN = 76, WV = 92, PD = 76;
-    let y = Y0 + TB + 10;
+    let y = Y0 + TB + 6;
+    const tabBar = (x0, active) => {
+      ["Shape", "Colour"].forEach((name, i) => {
+        rr(x0 + i * 74, y, 70, 22, i === active ? `fill:var(--surface);stroke:${C_UI};stroke-width:1.4` : "fill:var(--fig-bg);stroke:var(--hairline);stroke-width:1",
+          { title: `the ${name} tab`, ...R("console", 72), blurb: i === 0 ? "An AttributeInspector limited to SHAPE_GROUPS: Box, Julia, Iteration rotation, Render." : "An AttributeInspector limited to COLOUR_GROUPS (Colour, Lighting, Palette), with the palette window as its header.",
+            links: [RL("console", i === 0 ? 83 : 94, "setup"), RL("shape", 274, "SHAPE_GROUPS / COLOUR_GROUPS")] }, name, "ink", "font-size:11.5px");
+      });
+    };
+    tabBar(LX, 0);
+    y += 26;
     const heading = (text, tipText) => {
       const t = api.text(LX, y + 14, text, "", { style: `${caps};font-size:12px;fill:${C_ATTR};cursor:pointer` });
-      api.tip(t, { title: `${text} heading`, ...R("inspector", 64), blurb: `Hover tooltip: ${tipText}`, links: [RL("inspector", 93, "_make_heading"), RL("shape", 141, "group_tooltips")] });
+      api.tip(t, { title: `${text} heading`, ...R("inspector", 77), blurb: `Hover tooltip: ${tipText}`, links: [RL("inspector", 106, "_make_heading"), RL("shape", 280, "group_tooltips")] });
       y += 24;
     };
     const label = (s, specLine) => {
@@ -935,92 +996,166 @@ const consoleFig = {
       y += h || 32;
     };
     heading("BOX", "the fold-and-scale step repeated at every pixel …");
-    label("Scale", 35); slider((-2.09 + 5) / 8); spin("-2.09"); binding("Axis A", "1.00", "Linear", "4.00", true);
+    label("Scale", 61); slider((-2.09 + 5) / 8); spin("-2.09"); binding("Axis A", "1.00", "Linear", "4.00", true);
     const ro = api.text(VX, y + 42, "→ -1.59", "mono", { style: `font-size:11px;fill:${C_OK};cursor:pointer` });
-    api.tip(ro, { title: "the readout", ...R("row", 101), blurb: "Visible while the binding is active: the value in use this frame (default + gain × wave(source)), fed by Main through `set_resolved` each frame the console is open. −2.09 + 1 × 0.5 = −1.59.", links: [RL("main", 269, "Main feeds it"), RL("tUiConsole", 161, "the test")] });
+    api.tip(ro, { title: "the readout", ...R("row", 101), blurb: "Visible while the binding is active: the value in use this frame (default + gain × wave(source)), fed by Main through `set_resolved` each frame the console is open. −2.09 + 1 × 0.5 = −1.59.", links: [RL("main", 281, "Main feeds it"), RL("tUiConsole", 169, "the test")] });
     y += 50;
-    floatRow("Fold limit", 42, 1 / 3, "1");
-    floatRow("Min radius", 48, 0.35, "0.7");
-    floatRow("Fixed radius", 54, 0.25, "1");
-    label("Fold order", 60);
+    floatRow("Fold limit", 68, 1 / 3, "1");
+    floatRow("Min radius", 74, 0.35, "0.7");
+    floatRow("Fixed radius", 80, 0.25, "1");
+    label("Fold order", 86);
     rr(VX, y + 3, 150, 24, null, { title: "an ENUM row", ...R("row", 212), blurb: "An OptionButton of the enum labels, item ids = enum values. ENUM and BOOL rows have no binding widgets: they are never bindable.", links: [RL("spec", 92, "ENUM: bindable = false")] }, "Box → Sphere ▾");
     y += 32;
-    floatRow("W", 69, 0.5, "0");
+    floatRow("W", 95, 0.5, "0");
     heading("JULIA", "which components add a fixed constant …");
-    label("Julia (all)", 77);
-    rr(VX, y + 5, 18, 18, null, { title: "a BOOL row", ...R("row", 206), blurb: "A CheckBox \"on\". `julia_all` also drives the on-screen marker and the ±20 Julia cube.", links: [RL("params", 203, "julia_enabled() = julia_all")] });
+    label("Julia (all)", 103);
+    rr(VX, y + 5, 18, 18, null, { title: "a BOOL row", ...R("row", 206), blurb: "A CheckBox \"on\". `julia_all` also drives the on-screen marker and the ±20 Julia cube.", links: [RL("params", 275, "julia_enabled() = julia_all")] });
     api.text(VX + 26, y + 19, "on", "ink", { style: noPtr });
     y += 30;
     const hid = api.text(LX, y + 16, "Julia x · y · z · w (four more checkboxes) · Constant x / y / z / w: collapsed until julia_all or their own toggle is on", "muted", { style: `${small};cursor:pointer` });
-    api.tip(hid, { title: "show_when", ...R("shape", 98), blurb: "`refresh()` sets `visible = spec.is_shown(table.defaults())`: a Constant row shows while its Julia toggle or Julia (all) is on.", links: [RL("row", 77, "refresh"), RL("shape", 25, "_julia_shown"), RL("tShape", 57, "the test")] });
+    api.tip(hid, { title: "show_when", ...R("shape", 124), blurb: "`refresh()` sets `visible = spec.is_shown(table.defaults())`: a Constant row shows while its Julia toggle or Julia (all) is on.", links: [RL("row", 77, "refresh"), RL("shape", 44, "_julia_shown"), RL("tShape", 102, "the test")] });
     y += 28;
     heading("ITERATION ROTATION", "a 4D rotation applied inside every iteration …");
-    floatRow("Iter rotation xy", 108, 0.5, "0");
-    heading("RENDER", "how the surface is coloured and how finely …");
-    label("Colour", 123);
-    rr(VX, y + 3, 150, 24, null, { title: "Colour ▾", ...R("shape", 123), blurb: "The thirteen site modes by site id (COLOR_MODE_IDS order). Not bindable.", links: [RL("params", 15, "COLOR_MODE_IDS")] }, "Ice Fractal ▾");
-    y += 32;
-    label("Precision (log)", 130); slider(Math.log(25) / Math.log(1000), true); spin("2.5e-05"); binding("None", "1.00", "Linear", "4.00", false);
+    floatRow("Iter rotation xy", 134, 0.5, "0");
+    heading("RENDER", "how finely the ray march resolves the surface …");
+    label("Precision (log)", 144); slider(Math.log(25) / Math.log(1000), true); spin("2.5e-05"); binding("None", "1.00", "Linear", "4.00", false);
     const ticks = ["1e-06", "3.16e-05", "0.001"];
     ticks.forEach((t, i) => api.text(VX + i * (SPX - VX - 8) / 2, y + 40, t, "muted", { "text-anchor": ["start", "middle", "end"][i], style: "font-size:10px" }));
     api.tip(api.el("rect", { x: VX, y: y + 30, width: SPX - VX - 8, height: 14, style: "fill:transparent" }), { title: "log ticks", ...R("row", 230), blurb: "Min, geometric mid (√(min·max)) and max under every log slider." });
     y += 52;
     // scrollbar and the VSplit dragger
-    rr(X0 + WW - 12, Y0 + TB + 6, 6, y - Y0 - TB - 12, "fill:var(--hairline);stroke:none", { title: "the Shape list scrolls", ...R("inspector", 39),
-      blurb: "A ScrollContainer with horizontal scrolling off; the wheel over a label, slider or unfocused spin box scrolls without changing a value.", links: [RL("tUiConsole", 93, "the wheel test")] });
+    rr(X0 + WW - 12, Y0 + TB + 6, 6, y - Y0 - TB - 12, "fill:var(--hairline);stroke:none", { title: "the Shape list scrolls", ...R("inspector", 47),
+      blurb: "A ScrollContainer with horizontal scrolling off; the wheel over a label, slider or unfocused spin box scrolls without changing a value.", links: [RL("tUiConsole", 94, "the wheel test")] });
     const dragY = y + 4;
-    rr(X0 + 4, dragY - 3, WW - 8, 6, "fill:var(--hairline);stroke:none", { title: "the VSplitContainer dragger", ...R("console", 46),
-      blurb: "Drag to share the height differently (kept for the session only). The inspector expands; the Movement pane keeps its natural height.", links: [RL("console", 58, "Movement: SIZE_FILL"), RL("addendum", 201, "why stacked")] });
+    rr(X0 + 4, dragY - 3, WW - 8, 6, "fill:var(--hairline);stroke:none", { title: "the VSplitContainer dragger", ...R("console", 68),
+      blurb: "Drag to share the height differently (kept for the session only). The inspector expands; the Movement pane keeps its natural height.", links: [RL("console", 98, "Movement: SIZE_FILL"), RL("addendum", 201, "why stacked")] });
     y = dragY + 10;
     // Movement pane
     const mh = api.text(LX, y + 14, "MOVEMENT", "", { style: `${caps};font-size:12px;fill:${C_ATTR}` });
-    api.tip(mh, { title: "the Movement pane", ...R("movement", 37), blurb: "A view over Keymap; built in `_ready`." });
+    api.tip(mh, { title: "the Movement pane", ...R("movement", 42), blurb: "A view over Keymap; built in `_ready`." });
     y += 24;
     let mx = LX;
     const mw = (w, lbl, t) => { rr(mx, y + 3, w, 24, null, t, lbl); mx += w + 4; };
-    mw(90, "Axis A", { title: "label (LineEdit)", ...R("movement", 141), blurb: "Rename on Enter or focus loss: `Keymap.set_label`; the Source dropdowns relist. While it has focus, every axis key, WASD, N and the Ctrl tap are silenced.", links: [RL("movement", 225, "_on_label_submitted"), RL("tMain", 162, "WASD silenced")] });
+    mw(90, "Axis A", { title: "label (LineEdit)", ...R("movement", 153), blurb: "Rename on Enter or focus loss: `Keymap.set_label`; the Source dropdowns relist. While it has focus, every axis key, WASD, N and the Ctrl tap are silenced.", links: [RL("movement", 237, "_on_label_submitted"), RL("tMain", 200, "WASD silenced")] });
     api.text(mx + 4, y + 19, "a", "muted", { style: "font-size:12px" }); mx += 44;
     const vt = api.text(mx, y + 19, "0.500", "mono", { style: "font-size:12px;cursor:pointer" });
-    api.tip(vt, { title: "the live value", ...R("movement", 155), blurb: "Unbounded; refreshed every `_process` (\"%.3f\").", links: [RL("movement", 275, "the readout")] });
+    api.tip(vt, { title: "the live value", ...R("movement", 167), blurb: "Unbounded; refreshed every `_process` (\"%.3f\").", links: [RL("movement", 287, "the readout")] });
     mx += 84;
-    mw(26, "0", { title: "0", ...R("movement", 160), blurb: "`axes().set_value(id, 0)`: a bound knob snaps back to default + gain × wave(0) = the default." });
-    mw(72, "1.0", { title: "speed", ...R("movement", 167), blurb: "Units per second while a key is held: `Keymap.set_speed`.", links: [RL("movement", 233, "_on_speed_changed")] });
-    mw(40, "E", { title: "positive key", ...R("movement", 177), blurb: "A KeyCaptureButton: click, then press a key (Escape cancels); then `Keymap.bind(id, pos, neg)` repoints `axis_a_pos`.", links: [RL("keycap", 32, "_begin_capture"), RL("movement", 241, "_on_key_captured")] });
-    mw(40, "Q", { title: "negative key", ...R("movement", 183), blurb: "The same for `axis_a_neg`." });
-    mw(28, "✕", { title: "remove", ...R("movement", 189), blurb: "`Keymap.remove_axis`: the actions are erased; bindings to it resolve to their default and their Source shows \"(missing: a)\"." });
+    mw(26, "0", { title: "0", ...R("movement", 172), blurb: "`axes().set_value(id, 0)`: a bound knob snaps back to default + gain × wave(0) = the default." });
+    mw(72, "1.0", { title: "speed", ...R("movement", 179), blurb: "Units per second while a key is held: `Keymap.set_speed`.", links: [RL("movement", 245, "_on_speed_changed")] });
+    mw(40, "E", { title: "positive key", ...R("movement", 189), blurb: "A KeyCaptureButton: click, then press a key (Escape cancels); then `Keymap.bind(id, pos, neg)` repoints `axis_a_pos`.", links: [RL("keycap", 32, "_begin_capture"), RL("movement", 253, "_on_key_captured")] });
+    mw(40, "Q", { title: "negative key", ...R("movement", 195), blurb: "The same for `axis_a_neg`." });
+    mw(28, "✕", { title: "remove", ...R("movement", 201), blurb: "`Keymap.remove_axis`: the actions are erased; bindings to it resolve to their default and their Source shows \"(missing: a)\"." });
     y += 32;
     mx = LX;
-    mw(84, "Add axis", { title: "Add axis", ...R("movement", 211), blurb: "A new axis `ax1`, `ax2`… labelled \"Axis AX1\", speed 1, no keys.", links: [RL("movement", 216, "_unique_id")] });
+    mw(84, "Add axis", { title: "Add axis", ...R("movement", 223), blurb: "A new axis `ax1`, `ax2`… labelled \"Axis AX1\", speed 1, no keys.", links: [RL("movement", 228, "_unique_id")] });
     y += 34;
     const ro2 = (s, line, title, blurb, dim) => { const t = api.text(LX, y + 14, s, "mono", { style: `font-size:12px;cursor:pointer;${dim ? "opacity:.45" : ""}` }); api.tip(t, { title, ...R("movement", line), blurb }); y += 20; };
-    ro2("t = 12.34 s", 277, "the clock", "`Clock.t`: what a Time binding reads.");
-    ro2("speed x1.00", 280, "the fly speed factor", "Moved here from the Q panel; the mouse wheel changes it.");
-    ro2("load shed 2/4", 265, "the load-shed level", "Shown only while the governor sheds quality (level > 0).", true);
+    ro2("t = 12.34 s", 289, "the clock", "`Clock.t`: what a Time binding reads.");
+    api.text(LX, y + 14, "speed x1.00", "mono", { style: "font-size:12px;" + noPtr });
+    api.tip(api.el("rect", { x: LX, y: y, width: 84, height: 18, style: "fill:transparent;cursor:pointer" }), { title: "the fly speed factor", ...R("movement", 292), blurb: "Moved here from the Q panel; the mouse wheel changes it." });
+    mx = LX + 96;
+    rr(mx, y - 2, 104, 22, null, { title: "Reset camera", ...R("movement", 72), blurb: "Emits reset_camera_requested, relayed by the console to Main.reset_camera: the camera and its speed factor go back to where the current file has them (the starting view when none is current; a save or a load moves that point). The Settings menu's Renderer tab has the same button.",
+      links: [RL("console", 100, "relayed"), RL("main", 325, "Main.reset_camera"), RL("main", 334, "_remember_home"), RL("renderer", 57, "the Renderer tab's button"), RL("tMain", 165, "the test")] }, "Reset camera");
+    y += 24;
+    ro2("load shed 2/4", 277, "the load-shed level", "Shown only while the governor sheds quality (level > 0).", true);
     y += 6;
     mx = LX;
-    mw(52, "Save", { title: "Save", ...R("movement", 287), blurb: "Over the keymap's current file (saves/keymap.json at start), or the panel if there is none." });
-    mw(76, "Save as…", { title: "Save as…", ...R("movement", 94), blurb: "A WorkspaceFiles with subdir \"\" filtered to keymap*.json.", links: [RL("movement", 85, "the file panels")] });
-    mw(60, "Load…", { title: "Load…", ...R("movement", 304), blurb: "`Keymap.load_file(path)`. A failed load still resets the keymap to the default (see the gotcha cards)." });
+    mw(52, "Save", { title: "Save", ...R("movement", 299), blurb: "Over the keymap's current file (saves/keymap.json at start), or the panel if there is none." });
+    mw(76, "Save as…", { title: "Save as…", ...R("movement", 106), blurb: "A WorkspaceFiles with subdir \"\" filtered to keymap*.json.", links: [RL("movement", 97, "the file panels")] });
+    mw(60, "Load…", { title: "Load…", ...R("movement", 316), blurb: "`Keymap.load_file(path)`. A failed load still resets the keymap to the default (see the gotcha cards)." });
     winRect.setAttribute("height", y + 44 - Y0);
 
-    // notes on the right
-    const NX = X0 + WW + 30;
-    const notes = [
-      ["Every edit goes to the table", "A row writes `set_default` or edits its Binding and calls `notify_binding_changed`; the table's `changed(id)` makes every row `refresh()`, with `_updating` stopping the echo."],
-      ["The readout is the only per-frame traffic", "Rows never poll: `set_resolved` from Main is the one per-frame call, and only while the console is open."],
-      ["Native, beside, never over", "The console is a separate OS window opened right of the main window, else left of it, else on another screen (UiScale.beside_position). On the web and headless it is embedded."],
-      ["Keys it does not use go to Main", "Escape, N, ⌘S, ⌘P reach Main's dispatch through `unhandled_key`; the Ctrl tap has its own detector here."],
-    ];
-    let ny = Y0 + 10;
-    for (const [h, b] of notes) {
-      api.text(NX, ny, h, "ink", { style: "font-weight:600;font-size:12px" });
-      ny += 18;
-      for (const line of api.wrap(b, 38)) { api.text(NX, ny, line.replace(/`/g, ""), "muted", { style: small }); ny += 15; }
-      ny += 14;
+    // ---- the Colour tab, on the right
+    const CX = X0 + WW + 30, CW = 600, C_R = api.hue(5), C_G = api.hue(3), C_B = api.hue(1);
+    const CH_COL = [C_R, C_G, C_B];
+    const cRect = rr(CX, Y0, CW, 100, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "the same window on its Colour tab", ...R("console", 85),
+      blurb: "One Palette over the shape table, one PaletteWindow over that palette, as the header of a second AttributeInspector.", links: [RL("console", 94, "the Colour inspector")] });
+    rr(CX, Y0, CW, TB, "fill:var(--surface);stroke:var(--muted);stroke-width:1", null, "Console", "ink", "font-weight:600");
+    y = Y0 + TB + 6;
+    tabBar(CX + 12, 1);
+    y += 30;
+    const cl = CX + 16, cw = CW - 32;
+    const ftxt = api.text(CX + CW / 2, y + 12, "color(x) = A + B · cos(2π (Cx + D))", "muted", { "text-anchor": "middle", style: "font-size:12px;cursor:pointer" });
+    api.tip(ftxt, { title: "the formula", ...R("pwin", 18), blurb: "Inigo Quilez's cosine palette; A, B, C and D are each an RGB triple, so twelve numbers make a whole gradient. The shader's palette() is the same formula.", links: [RL("sh", 254, "palette()")] });
+    y += 20;
+    const hint = api.text(CX + CW / 2, y + 12, "Set Colour to Palette (below) to paint the fractal with this.", "", { "text-anchor": "middle", style: `font-size:11px;fill:${api.hue(4)};cursor:pointer` });
+    api.tip(hint, { title: "the hint", ...R("pwin", 217), blurb: "Shown while the Colour mode is anything but Palette (Palette.in_use() reads the table default): editing the palette then changes nothing on screen.", links: [RL("palette", 159, "in_use")] });
+    y += 22;
+    const PD3 = [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [1, 1, 1], [0, 0.33, 0.67]];
+    for (let v = 0; v < 4; v++) {
+      const lt = api.text(cl, y + 16, PAL_V[v], "ink", { style: "font-size:15px;font-weight:700;cursor:pointer" });
+      api.tip(lt, { title: `${PAL_V[v]} — ${["the middle level", "the contrast", "cycles per pass", "the phase, in turns"][v]}`, ...R("pwin", 143), blurb: `Slider range ${PAL_RANGE[v][0]} … ${PAL_RANGE[v][1]} (Palette.RANGES), step 0.01.${v === 2 ? " The catalogue row lets C go to 16; the slider stops at 4." : v === 3 ? " The catalogue row wraps D at 1." : ""}`, links: [RL("palette", 32, "RANGES")] });
+      const cellW = (cw - 30) / 3;
+      for (let ch = 0; ch < 3; ch++) {
+        const x = cl + 26 + ch * cellW, val = PD3[v][ch], frac = (val - PAL_RANGE[v][0]) / (PAL_RANGE[v][1] - PAL_RANGE[v][0]);
+        rr(x, y + 6, cellW - 14, 4, "fill:var(--hairline);stroke:none", { title: `${PAL_V[v]}, ${PAL_CH[ch]} channel`, ...R("pwin", 167), blurb: `Writes palette_${PAL_KEY[v]}_${PAL_RGB[ch]} through Palette.set_component, so into the shape table; it redraws from the model whatever edited it (this slider, the matching Palette row, Reset, a load).`, links: [RL("pwin", 206, "_on_slider_changed"), RL("palette", 126, "set_component")] });
+        api.el("circle", { cx: x + frac * (cellW - 14), cy: y + 8, r: 5, style: `fill:var(--muted);${noPtr}` });
+        api.text(x + (cellW - 14) / 2, y + 24, val.toFixed(2), "mono", { "text-anchor": "middle", style: `font-size:10.5px;fill:${CH_COL[ch]};${noPtr}` });
+      }
+      y += 32;
     }
-    api.link(NX, ny, RL("readme", 125, "README: Console"));
-    api.link(NX, ny + 20, RL("design", 238, "spec: the console window"));
-    api.link(NX, ny + 40, RL("addendum", 173, "addendum: embedded, then stacked"));
+    // the curves and the strip, drawn with the port of Palette.color_at (palette.gd:109-117)
+    const pal = (t, ch) => Math.max(0, Math.min(1, PD3[0][ch] + PD3[1][ch] * Math.cos(TAU * (PD3[2][ch] * t + PD3[3][ch]))));
+    const cvH = 60;
+    rr(cl, y, cw, cvH, "fill:var(--fig-bg);stroke:var(--hairline);stroke-width:1", { title: "the curves", ...R("pcurves", 55), blurb: "The red, green and blue curves over one pass: a flat line is a channel with no contrast, one squashed against an edge is clamped, curves in step make greys." });
+    for (let ch = 0; ch < 3; ch++) {
+      let d = "";
+      for (let k = 0; k <= 60; k++) { const t = k / 60; d += (k ? "L" : "M") + (cl + t * cw).toFixed(1) + " " + (y + cvH - 4 - pal(t, ch) * (cvH - 8)).toFixed(1) + " "; }
+      api.el("path", { d, style: `fill:none;stroke:${CH_COL[ch]};stroke-width:1.6;${noPtr}` });
+    }
+    y += cvH + 6;
+    const N = 60, sg = api.el("g", {});
+    for (let k = 0; k < N; k++) {
+      const t = (k + 0.5) / N, c = [0, 1, 2].map(ch => Math.round(pal(t, ch) * 255));
+      api.el("rect", { x: cl + k * cw / N, y, width: cw / N + 0.5, height: 22, style: `fill:rgb(${c.join(",")});stroke:none` }, sg);
+    }
+    api.tip(api.el("rect", { x: cl, y, width: cw, height: 22, style: "fill:transparent;cursor:pointer" }), { title: "the strip", ...R("pstrip", 47), blurb: "The palette end to end, the honest preview of the picture: color_at() with the DRIVEN value of any bound component (set_live), drawn here from the default rainbow (A, B 0.5 · C 1 · D 0 / 0.33 / 0.67).", links: [RL("palette", 109, "color_at"), RL("palette", 144, "set_live"), RL("tPalWin", 87, "the strip follows a bound channel")] });
+    y += 28;
+    rr(cl, y, 60, 22, null, { title: "Reset", ...R("pwin", 73), blurb: "Back to the default rainbow, one `changed` for the whole move; bindings are kept.", links: [RL("palette", 131, "Palette.reset")] }, "Reset");
+    y += 32;
+    const cHead = (text, tipText) => {
+      const t = api.text(cl, y + 14, text, "", { style: `${caps};font-size:12px;fill:${C_ATTR};cursor:pointer` });
+      api.tip(t, { title: `${text} heading`, ...R("inspector", 77), blurb: `Hover tooltip: ${tipText}`, links: [RL("shape", 280, "group_tooltips")] });
+      y += 22;
+    };
+    const cRow = (lbl, specLine, widget, tipObj) => {
+      api.text(cl, y + 16, lbl, "ink", { style: "font-size:12.5px;" + noPtr });
+      rr(cl + 150, y + 2, 170, 22, null, Object.assign({ ...R("shape", specLine) }, tipObj), widget);
+      y += 28;
+    };
+    const cNote = (text, specLine, title, blurb) => {
+      const t = api.text(cl, y + 12, text, "muted", { style: `${small};cursor:pointer` });
+      api.tip(t, { title, ...R("shape", specLine), blurb });
+      y += 20;
+    };
+    cHead("COLOUR", "which colouring mode paints the surface …");
+    cRow("Colour", 158, "Ice Fractal ▾", { title: "Colour ▾", blurb: "The thirteen site modes by site id, plus Palette (20), this project's own. Not bindable.", links: [RL("params", 16, "COLOR_MODE_IDS")] });
+    cNote("Palette input · frequency · offset · occlusion: shown only in the Palette mode", 165, "the Palette mode's rows", "show_when color_mode == Palette.MODE_ID: what picks the position along the palette (steps, radius, normal), how fast, where it starts, and how much the step count darkens it.");
+    cHead("LIGHTING", "the light every lit colour mode shares …");
+    cRow("Ambient", 198, "0.1", { title: "a Lighting row", blurb: "A normal bindable FLOAT row (only the value and Source shown here). The eight lighting defaults are the site's constants, so the default picture is unchanged.", links: [RL("tShape", 61, "the defaults test")] });
+    cNote("Diffuse · Specular · Shininess (log) · Light yaw (wraps) · Light pitch · Exposure · Saturation", 205, "the other lighting rows", "Yaw and pitch rake the headlight across the surface; exposure and saturation act on the final colour of every mode but Grayscale.");
+    cHead("PALETTE", "the twelve numbers of the cosine palette …");
+    cNote("A red … D blue: twelve rows, Palette mode only, each with its own Source / Gain / Wave / Period", 259, "the twelve palette rows", "The same numbers as the sliders above, as catalogue rows, so each channel can pulse, ripple or cycle on its own binding.");
+    cRect.setAttribute("height", y + 12 - Y0);
+
+    // notes under the Colour tab
+    const notes = [
+      ["Every edit goes to the table", "A row writes `set_default` or edits its Binding; the palette sliders write the same table through Palette. The table's `changed(id)` redraws every row in both tabs."],
+      ["The readouts are the only per-frame traffic", "`set_resolved` from Main is the one per-frame call, only while the console is open; it reaches both tabs and the palette strip."],
+      ["Native, beside, never over", "A separate OS window opened right of the main window, else left of it, else on another screen. On the web and headless it is embedded."],
+      ["Keys it does not use go to Main", "Escape, N, ⌘S, ⌘P go through `unhandled_key`; the Ctrl tap has its own detector; Cmd+= / - / 0 zoom."],
+    ];
+    let ny = y + 34;
+    notes.forEach(([h, b], k) => {
+      const nx = CX + (k % 2) * 305, yy = ny + Math.floor(k / 2) * 92;
+      api.text(nx, yy, h, "ink", { style: "font-weight:600;font-size:12px" });
+      api.wrap(b, 46).forEach((line, li) => api.text(nx, yy + 18 + li * 15, line.replace(/`/g, ""), "muted", { style: small }));
+    });
+    ny += 184;
+    api.link(CX, ny, RL("readme", 128, "README: Console"));
+    api.link(CX + 180, ny, RL("design", 238, "spec: the console window"));
+    api.link(CX + 380, ny, RL("addendum", 173, "addendum: embedded, then stacked"));
   },
 };
 
@@ -1028,24 +1163,35 @@ const consoleFig = {
 const g6 = x => String(+(+x).toPrecision(6));
 const rangeOf = s => (s.type === "FLOAT" ? `${g6(s.min)} … ${g6(s.max)}` : s.type === "ENUM" ? `${s.enumValues.length} values` : "on / off");
 const limitOf = s => (s.type !== "FLOAT" ? (s.type === "ENUM" ? "unlisted → default" : "—") : s.wrap ? `wraps [${s.min}, ${s.max})` : (s.hardMin !== s.min || s.hardMax !== s.max) ? `clamp ${g6(s.hardMin)} … ${g6(s.hardMax)}` : "clamp = slider");
-const catTable = {
-  type: "table",
-  tab: "The catalogue",
-  title: "The catalogue: MandelboxShape.specs(), in inspector order",
-  note: "23 knobs, the uniform names and the FractalParams field names at once. BOOL and ENUM knobs are never bindable. A FLOAT clamps to its hard range (which may be wider than the slider) or, for the six angles, wraps. Hover a row for its spec, its FractalParams field and the line that pushes it to the shader.",
-  columns: [{ label: "group", w: 140 }, { label: "id", w: 120, mono: true }, { label: "label", w: 130 }, { label: "type", w: 60 }, { label: "default", w: 130, mono: true },
-    { label: "slider", w: 150, mono: true }, { label: "typed / driven", w: 160, mono: true }, { label: "bindable", w: 70 }, { label: "notes", w: 300 }],
-  rows: SPECS.map(s => ({
-    cells: [s.group, s.id, s.label, s.type, s.type === "ENUM" ? (s.id === "color_mode" ? "1 (Ice Fractal)" : "0 (Box → Sphere)") : s.type === "BOOL" ? String(s.def) : g6(s.def), rangeOf(s), limitOf(s), s.bindable ? "yes" : "no",
-      s.log ? "log slider with min / mid / max ticks" : s.shown ? `shown while ${s.shown}` : s.id === "julia_all" ? "drives the marker and the ±20 cube" : s.id === "w" ? "the 4D sample point's fourth coordinate" : s.id === "color_mode" ? "site ids [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14]" : ""],
-    tip: { title: `${s.id} · ${s.label}`, sub: `${s.group} · ${s.type}`, ...R("shape", s.line),
-      blurb: (s.type === "BOOL" || s.type === "ENUM") ? "Not bindable: `make` forces bindable = false for BOOL and ENUM, so the row has no Source / Gain / Wave / Period."
-        : s.wrap ? "An angle in degrees: driven or typed values wrap into [−180, 180) with wrapf, so a Time binding spins forever."
-        : (s.hardMin !== s.min) ? `The slider covers ${num(s.min, 3)} … ${num(s.max, 3)}; typing and bindings may go to ${num(s.hardMin, 3)} … ${num(s.hardMax, 3)}, then clamp.`
-        : "Typed and driven values clamp to the slider range (hard range = slider range).",
-      links: [RL("params", s.field, "FractalParams field"), RL("view", s.push, "the uniform push"), RL("tShape", 6, "the 23 expected ids")] },
-  })),
-};
+const ENUM_DEF = { fold_order: "0 (Box → Sphere)", color_mode: "1 (Ice Fractal)", palette_source: "0 (Steps)" };
+const noteOf = s => (s.log ? "log slider with min / mid / max ticks"
+  : s.id === "julia_all" ? "drives the marker and the ±20 cube"
+  : s.id === "w" ? "the 4D sample point's fourth coordinate"
+  : s.id === "color_mode" ? "site ids, plus 20 = Palette (this project's)"
+  : s.group === "Palette" ? ["A: the middle level", "B: the contrast", "C: cycles per pass", "D: the phase, in turns"][PAL_V.indexOf(s.label[0])] + " · Palette mode only"
+  : s.shown === PSHOWN ? "shown only in the Palette mode"
+  : s.shown ? `shown while ${s.shown}`
+  : s.group === "Lighting" ? (s.id.startsWith("light_") ? "the site's constant by default" : "every mode but Grayscale") : "");
+function catalogueTable(tab, groups, title, note) {
+  return {
+    type: "table", title, note,
+    columns: [{ label: "group", w: 140 }, { label: "id", w: 140, mono: true }, { label: "label", w: 130 }, { label: "type", w: 60 }, { label: "default", w: 130, mono: true },
+      { label: "slider", w: 130, mono: true }, { label: "typed / driven", w: 160, mono: true }, { label: "bindable", w: 70 }, { label: "notes", w: 290 }],
+    rows: SPECS.filter(s => groups.includes(s.group)).map(s => ({
+      cells: [s.group, s.id, s.label, s.type, s.type === "ENUM" ? ENUM_DEF[s.id] : s.type === "BOOL" ? String(s.def) : g6(s.def), rangeOf(s), limitOf(s), s.bindable ? "yes" : "no", noteOf(s)],
+      tip: { title: `${s.id} · ${s.label}`, sub: `${tab} tab · ${s.group} · ${s.type}`, ...R("shape", s.line),
+        blurb: (s.type === "BOOL" || s.type === "ENUM") ? "Not bindable: `make` forces bindable = false for BOOL and ENUM, so the row has no Source / Gain / Wave / Period."
+          : s.wrap ? `Driven or typed values wrap into [${s.min}, ${s.max}) with wrapf, so a Linear binding to Time cycles it forever.`
+          : (s.hardMin !== s.min || s.hardMax !== s.max) ? `The slider covers ${g6(s.min)} … ${g6(s.max)}; typing and bindings may go to ${g6(s.hardMin)} … ${g6(s.hardMax)}, then clamp.`
+          : "Typed and driven values clamp to the slider range (hard range = slider range).",
+        links: [RL("params", s.field, "FractalParams field"), RL("view", s.push, s.push === LOOK ? "pushed in the LOOK_KEYS loop" : "the uniform push"), RL("tShape", 8, "the 47 expected ids")] },
+    })),
+  };
+}
+const shapeCat = catalogueTable("Shape", SHAPE_GROUPS, "The Shape tab: Box, Julia, Iteration rotation, Render",
+  "MandelboxShape.specs() in inspector order, the first 22 of 47: the uniform names and the FractalParams field names at once. BOOL and ENUM knobs are never bindable. A FLOAT clamps to its hard range (which may be wider than the slider) or wraps. Hover a row for its spec, its FractalParams field and the line that pushes it to the shader.");
+const colourCat = catalogueTable("Colour", COLOUR_GROUPS, "The Colour tab: Colour, Lighting, Palette",
+  "The other 25, under the palette window. The lighting defaults are the site's constants, so the default picture is unchanged until one moves. The Palette mode's four rows and the palette's twelve numbers show only while the Colour mode is Palette (id 20); the palette window above them is always there. Each of the twelve can be bound on its own.");
 
 // ================================================================== 7. keymap tables
 const kmFile = {
@@ -1056,7 +1202,7 @@ const kmFile = {
   rows: [
     { cells: ["version", "1", "Written as Keymap.VERSION. Load never reads it: it only checks that `axes` is an array."], tip: { ...R("keymap", 13), links: [RL("keymap", 139, "the only shape check")] } },
     { cells: ["axes[].id", "\"a\"", "The binding source id. A missing or duplicate id is skipped with a warning."], tip: { ...R("kfile", 5), links: [RL("keymap", 148, "skip")] } },
-    { cells: ["label", "\"Axis A\"", "Shown in every Source dropdown and the Movement pane."], tip: { ...R("kfile", 6), links: [RL("console", 128, "into set_sources")] } },
+    { cells: ["label", "\"Axis A\"", "Shown in every Source dropdown and the Movement pane."], tip: { ...R("kfile", 6), links: [RL("console", 250, "into set_sources")] } },
     { cells: ["speed", "1.0", "Units per second while a key is held."], tip: { ...R("kfile", 7), links: [RL("axes", 102, "step")] } },
     { cells: ["positive", "\"E\"", "OS.find_keycode_from_string; \"\" is unbound. Registered as `axis_a_pos`."], tip: { ...R("kfile", 8), links: [RL("keymap", 192, "_key_from_name"), RL("keymap", 78, "pos_action")] } },
     { cells: ["negative", "\"Q\"", "Registered as `axis_a_neg`."], tip: { ...R("kfile", 9), links: [RL("keymap", 82, "neg_action")] } },
@@ -1070,15 +1216,15 @@ const kmApi = {
   note: "What a level's code will call. The Movement pane is a view over exactly these.",
   columns: [{ label: "call", w: 290, mono: true }, { label: "does", w: 360 }, { label: "called from", w: 210 }],
   rows: [
-    { cells: ["add_axis(id, label, speed, pos, neg)", "Adds to Axes, stores the pair, registers both actions. A duplicate id warns and does nothing.", "Add axis; load_file"], tip: { ...R("keymap", 40), links: [RL("movement", 213, "Add axis"), RL("keymap", 155, "load")] } },
-    { cells: ["remove_axis(id)", "Erases the actions, the pair and the axis. Bindings to it resolve to their default.", "the ✕ button"], tip: { ...R("keymap", 50), links: [RL("movement", 193, "✕"), RL("tAxes", 41, "inert binding test")] } },
-    { cells: ["bind(id, positive, negative)", "Repoints the pair; either may be KEY_NONE. The actions' events are erased and re-added.", "key capture buttons"], tip: { ...R("keymap", 60), links: [RL("movement", 246, "_on_key_captured"), RL("tAxes", 30, "the test")] } },
-    { cells: ["set_speed(id, units_per_second)", "", "the speed spin"], tip: { ...R("keymap", 68), links: [RL("movement", 237, "the spin")] } },
-    { cells: ["set_label(id, text)", "", "the label field"], tip: { ...R("keymap", 73), links: [RL("movement", 229, "the field")] } },
-    { cells: ["load_file(path = \"\") → {ok, warnings}", "Missing or malformed: the default axis, and current_path still becomes `path`.", "Main._ready; Load…"], tip: { ...R("keymap", 113), links: [RL("main", 62, "_ready"), RL("movement", 305, "Load…")] } },
-    { cells: ["save_file(path = \"\") → Error", "To `path`, else current_path, else the default file. Keys by name.", "Save; Save as…"], tip: { ...R("keymap", 159), links: [RL("movement", 291, "Save"), RL("movement", 296, "Save as…")] } },
-    { cells: ["pos_action(id) / neg_action(id)", "\"axis_<id>_pos\" / \"axis_<id>_neg\"", "AxisController; tests"], tip: { ...R("keymap", 78), links: [RL("axisCtl", 25, "AxisController"), RL("tMain", 73, "hold(&\"axis_a_pos\")")] } },
-    { cells: ["axes() → Axes", "The values, for the resolver and saves.", "Main; Workspace"], tip: { ...R("keymap", 23), links: [RL("main", 266, "the resolve"), RL("main", 276, "save")] } },
+    { cells: ["add_axis(id, label, speed, pos, neg)", "Adds to Axes, stores the pair, registers both actions. A duplicate id warns and does nothing.", "Add axis; load_file"], tip: { ...R("keymap", 40), links: [RL("movement", 225, "Add axis"), RL("keymap", 155, "load")] } },
+    { cells: ["remove_axis(id)", "Erases the actions, the pair and the axis. Bindings to it resolve to their default.", "the ✕ button"], tip: { ...R("keymap", 50), links: [RL("movement", 205, "✕"), RL("tAxes", 41, "inert binding test")] } },
+    { cells: ["bind(id, positive, negative)", "Repoints the pair; either may be KEY_NONE. The actions' events are erased and re-added.", "key capture buttons"], tip: { ...R("keymap", 60), links: [RL("movement", 258, "_on_key_captured"), RL("tAxes", 30, "the test")] } },
+    { cells: ["set_speed(id, units_per_second)", "", "the speed spin"], tip: { ...R("keymap", 68), links: [RL("movement", 249, "the spin")] } },
+    { cells: ["set_label(id, text)", "", "the label field"], tip: { ...R("keymap", 73), links: [RL("movement", 241, "the field")] } },
+    { cells: ["load_file(path = \"\") → {ok, warnings}", "Missing or malformed: the default axis, and current_path still becomes `path`.", "Main._ready; Load…"], tip: { ...R("keymap", 113), links: [RL("main", 69, "_ready"), RL("movement", 317, "Load…")] } },
+    { cells: ["save_file(path = \"\") → Error", "To `path`, else current_path, else the default file. Keys by name.", "Save; Save as…"], tip: { ...R("keymap", 159), links: [RL("movement", 303, "Save"), RL("movement", 308, "Save as…")] } },
+    { cells: ["pos_action(id) / neg_action(id)", "\"axis_<id>_pos\" / \"axis_<id>_neg\"", "AxisController; tests"], tip: { ...R("keymap", 78), links: [RL("axisCtl", 25, "AxisController"), RL("tMain", 88, "hold(&\"axis_a_pos\")")] } },
+    { cells: ["axes() → Axes", "The values, for the resolver and saves.", "Main; Workspace"], tip: { ...R("keymap", 23), links: [RL("main", 278, "the resolve"), RL("main", 288, "save")] } },
   ],
 };
 
@@ -1093,9 +1239,9 @@ const viewTable = {
     { cells: ["shape.defaults", "table.to_dict(): every catalogue id", "apply_dict → set_default (sanitized); an unknown id warns."], tip: { ...R("ws", 40), links: [RL("table", 115, "apply_dict"), RL("tWs", 79, "unknown id test")] } },
     { cells: ["shape.bindings", "only ACTIVE bindings", "set_binding(Binding.from_dict) for the listed ids; a binding the file does not list is left as it is."], tip: { ...R("table", 108), links: [RL("table", 123, "apply_dict bindings"), RL("binding", 40, "from_dict")] } },
     { cells: ["axes", "every axis value by id", "set_value for ids the keymap has; an unknown axis id is dropped with a warning."], tip: { ...R("ws", 41), links: [RL("ws", 66, "restore"), RL("ws", 71, "the warning")] } },
-    { cells: ["fractal", "fast_controls, camera_mode, mouse_sensitivity, detail, detail_range, detail_falloff, max_steps, min_render_scale", "_parse_fractal per key; Main then puts mouse_sensitivity back to the player's Settings value."], tip: { ...R("ws", 23), links: [RL("ws", 214, "_parse_fractal"), RL("main", 288, "sensitivity reset")] } },
+    { cells: ["fractal", "fast_controls, camera_mode, mouse_sensitivity, detail, detail_range, detail_falloff, max_steps, min_render_scale", "_parse_fractal per key; Main then puts mouse_sensitivity back to the player's Settings value."], tip: { ...R("ws", 23), links: [RL("ws", 214, "_parse_fractal"), RL("main", 301, "sensitivity reset")] } },
     { cells: ["camera", "eye, forward, up (7 significant digits), speed_factor", "looking_at(eye + forward, up); a degenerate orientation warns."], tip: { ...R("ws", 43), links: [RL("ws", 231, "_restore_camera")] } },
-    { cells: ["noise", "the noise graph, when wired", "NoiseWindow.apply_dict, after the shape."], tip: { ...R("ws", 50), links: [RL("main", 297, "apply_dict")] } },
+    { cells: ["noise", "the noise graph, when wired", "NoiseWindow.apply_dict, after the shape."], tip: { ...R("ws", 50), links: [RL("main", 311, "apply_dict")] } },
     { cells: ["(not saved)", "the clock, the keymap", "A level loads a view and a keymap separately."], tip: { ...R("ws", 5), links: [RL("design", 345, "spec: why")] } },
   ],
 };
@@ -1127,46 +1273,58 @@ const cards = {
   cards: [
     { title: portOk ? `This page's binding port passes the tests' ${PORT.n} values` : `✗ THE BINDING PORT FAILS ${PORT.fails.length} OF ${PORT.n} TEST VALUES`,
       tag: portOk ? "invariant" : "port broken", hue: portOk ? 3 : 2, ...R("tBind", 22),
-      links: [RL("tAttr", 16, "attribute_test"), RL("tUiConsole", 161, "the −1.59 readout")],
+      links: [RL("tAttr", 16, "attribute_test"), RL("tUiConsole", 169, "the −1.59 readout")],
       body: portOk ? "At load the stepper's port of resolve_value, waveform_value and sanitize is run against every expected value in binding_test.gd (time, axis, missing axis, the three waveforms, clamp, wrap, INT rounding) and attribute_test.gd's sanitize checks, at the tests' 1e−4 tolerance. A failure turns this card orange and lands in the red error box."
         : `Fix the port, never the tests: ${PORT.fails.join("; ")}` },
-    { title: "The table is canonical; params is a per-frame projection", tag: "invariant", hue: 3, ...R("main", 265),
+    { title: "The table is canonical; params is a per-frame projection", tag: "invariant", hue: 3, ...R("main", 277),
       links: [RL("params", 3, "FractalParams header"), RL("marker", 57, "the marker writes the table"), RL("design", 174, "spec")],
-      body: "Rows, the Julia marker and a load all write the AttributeTable. Main resolves it into FractalParams every frame; nothing else writes the shape fields (the marker's mirror writes the same table defaults). An edit that bypassed the table would be overwritten by the next resolve." },
-    { title: "apply_resolved emits once, and only on a difference", tag: "invariant", hue: 3, ...R("params", 182),
-      links: [RL("tParams", 45, "the test"), RL("gov", 46, "the governor counts it as motion")],
+      body: "Rows in both tabs, the palette window's sliders (through Palette), the Julia marker and a load all write the AttributeTable. Main resolves it into FractalParams every frame; nothing else writes the shape fields (the marker's mirror writes the same table defaults). An edit that bypassed the table would be overwritten by the next resolve." },
+    { title: "apply_resolved emits once, and only on a difference", tag: "invariant", hue: 3, ...R("params", 254),
+      links: [RL("tParams", 62, "the test"), RL("gov", 46, "the governor counts it as motion")],
       body: "A view with no active binding, or one bound to an axis at rest, costs the resolve and no signal. A Time binding (or a held key) changes a value every frame, so the governor renders continuously and adapts the scale, as it does for camera motion." },
     { title: "An unknown axis resolves to raw 0, so to the default", tag: "invariant", hue: 3, ...R("resolver", 33),
       links: [RL("tBind", 48, "the test"), RL("tAxes", 51, "after remove_axis"), RL("row", 307, "the row keeps (missing: id)")],
       body: "All three waveforms give 0 at raw 0 (Triangle's quarter-period offset is there for exactly this), so default + gain × 0 = default. A view bound to an axis the loaded keymap lacks shows its defaults, and the row keeps the source so the keymap can be fixed without losing the binding." },
     { title: "One sanitize rule for typed, dragged and driven values", tag: "invariant", hue: 3, ...R("spec", 113),
       links: [RL("table", 56, "set_default sanitizes"), RL("resolver", 36, "the resolve sanitizes")],
-      body: "set_default and the resolve both go through the spec: angles wrap into [min, max), everything else clamps to the hard range. BOOL and ENUM are never bindable (make forces it), so the Julia toggles, fold order and colour mode only ever change by a click or a load." },
+      body: "set_default and the resolve both go through the spec: angles wrap into [min, max), everything else clamps to the hard range. BOOL and ENUM are never bindable (make forces it), so the Julia toggles, fold order, colour mode and palette input only ever change by a click or a load." },
     { title: "Each axis owns two InputMap actions equal to its pair", tag: "invariant", hue: 3, ...R("keymap", 88),
-      links: [RL("tAxes", 21, "the test"), RL("tMain", 59, "Q and E are the default axis")],
+      links: [RL("tAxes", 21, "the test"), RL("tMain", 74, "Q and E are the default axis")],
       body: "axis_<id>_pos and axis_<id>_neg are created, repointed and erased with the axis, so key reading is plain Input.get_action_strength and tests drive an axis with hold(&\"axis_a_pos\", s)." },
 
-    { title: "One frame of latency: Main resolves before the axes move", tag: "gotcha", hue: 2, ...R("main", 258),
-      links: [RL("main", 76, "Clock and AxisController are added as Main's children"), RL("axisCtl", 19, "AxisController._process")],
+    { title: "The palette's twelve numbers live in the shape table", tag: "invariant", hue: 3, ...R("palette", 8),
+      links: [RL("tPalette", 114, "the test"), RL("palette", 109, "color_at"), RL("sh", 252, "the shader's palette()"), RL("tPalette", 142, "a bound component previews its driven value")],
+      body: "Palette holds no colour: palette_a_r … palette_d_b are catalogue attributes, so they save with the view, resolve every frame and can each be bound with its own waveform. Palette.color_at is the shader's palette() formula, and it reads the driven value of a bound component (set_live), so the strip previews what is actually drawn." },
+    { title: "Reset camera goes where the current file has it", tag: "invariant", hue: 3, ...R("main", 325),
+      links: [RL("main", 334, "_remember_home"), RL("main", 293, "after a save"), RL("main", 307, "after a load"), RL("tMain", 30, "no file: the starting view"), RL("tMain", 180, "a save moves the reset point")],
+      body: "_remember_home runs at start, after every load and after every save, so Reset camera (Movement pane or Settings ▸ Renderer) restores the camera and speed factor of the file you are on, or the starting view while no file is current. In Orbit it re-centres." },
+    { title: "Zoom chords never reach a control, and never count as a Ctrl tap", tag: "invariant", hue: 3, ...R("console", 226),
+      links: [RL("console", 198, "zoom_key"), RL("tConsole", 143, "the chord test"), RL("main", 149, "Settings.console_zoom")],
+      body: "The console catches Cmd/Ctrl with =, +, - or 0 in _input, before the GUI, so a focused spin box cannot swallow them, and feeds the event to its Ctrl detector first so Ctrl+= disarms the tap. The level is the player's (Settings), not the view's." },
+    { title: "One frame of latency: Main resolves before the axes move", tag: "gotcha", hue: 2, ...R("main", 270),
+      links: [RL("main", 83, "Clock and AxisController are added as Main's children"), RL("axisCtl", 19, "AxisController._process")],
       body: "Godot processes parents before children. Main's _process resolves with the axis value and t the children left last frame; AxisController and Clock move afterwards. A key press reaches params (and the uniforms) one frame after it moved the axis. Invisible at 60 fps; the stepper tab shows it, and the 'same-frame' line is what a higher process_priority on Main would give." },
     { title: "Typing anywhere silences the axes, WASD, N and the Ctrl tap", tag: "gotcha", hue: 2, ...R("textFocus", 11),
-      links: [RL("axisCtl", 22, "axes"), RL("fly", 90, "WASD"), RL("main", 411, "N"), RL("main", 93, "Ctrl tap")],
+      links: [RL("axisCtl", 22, "axes"), RL("fly", 90, "WASD"), RL("main", 442, "N"), RL("main", 100, "Ctrl tap")],
       body: "So typing \"e\" into a spin box never pushes Axis A. Leave the field (Enter, Escape or a click elsewhere) and the keys come back. Unlike WASD, holding Ctrl or Cmd does not silence the axes (fly_camera.gd:88 has no counterpart in AxisController)." },
-    { title: "The native console gets its own key events", tag: "gotcha", hue: 2, ...R("console", 112),
-      links: [RL("console", 119, "forward to Main"), RL("main", 381, "_on_window_key"), RL("addendum", 193, "why the forwarding exists")],
+    { title: "The native console gets its own key events", tag: "gotcha", hue: 2, ...R("console", 234),
+      links: [RL("console", 241, "forward to Main"), RL("main", 412, "_on_window_key"), RL("addendum", 193, "why the forwarding exists")],
       body: "Main's _unhandled_input never sees keys typed into the console, so the console runs its own CtrlTap and hands every other unused key to Main through unhandled_key. Held keys still reach the global Input state, so E pushes Axis A while the console has focus (unless a field there has focus)." },
     { title: "Loading a view never unbinds", tag: "gotcha", hue: 2, ...R("table", 123),
       links: [RL("table", 108, "to_dict writes only active bindings"), RL("ws", 61, "restore")],
-      body: "A file lists only its active bindings and apply_dict sets only what is listed, so loading saves/default.json while Scale is bound to Axis A keeps the binding (and its drive on top of the loaded default). Same for axis values the file omits. Consistent with 'loading is additive', but surprising." },
+      body: "A file lists only its active bindings and apply_dict sets only what is listed, so loading saves/default.json while Scale is bound to Axis A keeps the binding (and its drive on top of the loaded default). Same for axis values the file omits, and for the 24 colour, lighting and palette ids: the committed saves predate them, so loading one keeps whatever lighting and palette you had. Consistent with 'loading is additive', but surprising." },
     { title: "A failed keymap Load… still replaces the axes", tag: "gotcha", hue: 2, ...R("keymap", 117),
-      links: [RL("keymap", 120, "current_path = path anyway"), RL("movement", 306, "the pane says Load failed"), RL("keymap", 180, "_clear_all")],
+      links: [RL("keymap", 120, "current_path = path anyway"), RL("movement", 318, "the pane says Load failed"), RL("keymap", 180, "_clear_all")],
       body: "load_file falls back to the default axis on a missing or malformed file AND points current_path at the bad file, so a later Save overwrites it with the default. Any keymap load also zeroes every axis value (the axes are rebuilt), snapping bound knobs back to their defaults." },
     { title: "Dragging a bound Julia constant", tag: "gotcha", hue: 2, ...R("marker", 60),
       links: [RL("resolver", 35, "the drive is added on top")],
       body: "The marker writes the mouse position as the table DEFAULT. If c_0..2 is bound, the next resolve adds gain × wave on top, so the ring sits off the cursor by the drive." },
-    { title: "Only julia_all counts as Julia mode", tag: "gotcha", hue: 2, ...R("params", 203),
-      links: [RL("view", 317, "box_half 20 only with julia_all"), RL("sh", 303, "NF normal unless julia_all"), RL("orbit", 156, "the orbit's CPU march")],
+    { title: "Only julia_all counts as Julia mode", tag: "gotcha", hue: 2, ...R("params", 275),
+      links: [RL("view", 319, "box_half 20 only with julia_all"), RL("sh", 352, "NF normal unless julia_all"), RL("orbit", 156, "the orbit's CPU march")],
       body: "julia_enabled() is julia_all. With only per-component toggles on there is no ring, the march keeps the ±2 cube (a hybrid may reach past it and be clipped), and colour modes 1 to 9 keep the Ice Fractal field normal." },
+    { title: "The palette window's sliders stop at the slider range", tag: "gotcha", hue: 2, ...R("pwin", 174),
+      links: [RL("shape", 263, "C rows: hard_max 16"), RL("shape", 264, "D rows wrap"), RL("pwin", 217, "the hint")],
+      body: "C's catalogue row accepts up to 16 cycles, but the window's slider stops at 4 (Palette.RANGES), so a typed 6 pins the slider at its end while the readout says 6.00. The window is always shown, but edits only show on screen in the Palette colour mode (the hint says so), and its twelve rows stay hidden until then." },
     { title: "The keymap does not check key conflicts", tag: "gotcha", hue: 2, ...R("keymap", 60),
       links: [RL("levels", 183, "level spec: 1–9 reserved")],
       body: "Binding an axis to W also flies forward; both fire. The level-sequences spec reserves 1–9 for levels, with the same caveat." },
@@ -1178,10 +1336,13 @@ const cards = {
       links: [COMMIT("782a1ef"), RL("design", 313, "spec: version 2"), RL("saveDef", 2, "default.json is version 2")],
       body: "Version 1 was a flat fractal section with the old names (scale, inner_radius, outer_radius, julia_enabled, julia_point). Version 2 splits shape / axes / fractal / camera / noise. v1 still loads, mapped without a warning; saving always writes v2, and the committed saves were rewritten once." },
     { title: "The Q panel retired", tag: "history", hue: 6, ...R("design", 294),
-      links: [COMMIT("c49807b"), COMMIT("55c1bcf"), RL("readme", 164, "README: pause menu")],
+      links: [COMMIT("c49807b"), COMMIT("55c1bcf"), RL("readme", 197, "README: pause menu")],
       body: "ControlsPanel is gone. Its shape sliders, colour, precision and Julia moved to the console; Save / Load, Camera, Noise editor and Fast Controls to the pause menu; the speed readout to the Movement pane. The pause menu's Console… button is the way in when a browser swallows the Ctrl tap." },
-    { title: "Native, then embedded, then native again", tag: "history", hue: 6, ...R("console", 10),
-      links: [COMMIT("9401782"), COMMIT("2e23f8c"), COMMIT("ab00332"), RL("addendum", 175, "addendum: why embedded"), RL("uiScale", 92, "place_beside")],
+    { title: "The Colour tab", tag: "history", hue: 6, ...R("shape", 274),
+      links: [COMMIT("58575fc"), COMMIT("e246166"), COMMIT("1cbb1a2"), COMMIT("7f7ba6b"), COMMIT("b527826"), RL("readme", 128, "README: Console")],
+      body: "The catalogue grew from 23 to 47 ids: lighting knobs and a cosine-palette colour mode (58575fc), then the console's TabContainer, with Fractacular's palette window heading a Colour tab (e246166). color_mode moved from Render to the new Colour group, after precision, which changed RESOLVED_KEYS order. Alongside: console zoom (7f7ba6b) and Reset camera (b527826)." },
+    { title: "Native, then embedded, then native again", tag: "history", hue: 6, ...R("console", 13),
+      links: [COMMIT("9401782"), COMMIT("2e23f8c"), COMMIT("ab00332"), RL("addendum", 175, "addendum: why embedded"), RL("uiScale", 134, "place_beside")],
       body: "The spec made both sub-windows native. On macOS (Godot 4.6.1, GL Compatibility) a native window overlapping the main one corrupts its picture, so 9401782 embedded both, and 2e23f8c stacked the console's panes (side by side they overflowed 1000 points). ab00332 made only the console native again with force_native, opened beside the main window; the noise editor stays embedded, and headless and the web embed everything." },
 
     { title: "Follow-ups the console spec left open", tag: "open", hue: 4, ...R("design", 410),
@@ -1204,14 +1365,14 @@ function refsIn(fn, extra) {
   return out.concat(extra || []);
 }
 stepFig.refs = refsIn(stepFig.draw);
-consoleFig.refs = refsIn(consoleFig.draw);
+consoleFig.refs = refsIn(consoleFig.draw, [61, 68, 74, 80, 86, 95, 103, 134, 144, 158, 165, 198, 205, 259].map(l => R("shape", l)).concat([289, 292, 277].map(l => R("movement", l))));
 
 VIZ.pane({
   id: "console",
   short: "Attributes & console",
   title: "Help I'm Stuck In A Fractal — attributes, bindings, axes and the console",
-  subtitle: "The Fractacular import. Every Mandelbox knob is an AttributeSpec in one AttributeTable, with a default and a Binding: value = default + gain × wave(source), where the source is the clock or a virtual axis pushed by a key pair from saves/keymap.json. Main resolves the table into FractalParams once per frame, so the renderer is unchanged. The console, its own OS window, edits the table and the keymap. The stepper runs a line-for-line port of the resolver, checked at load against the tests.",
-  commit: "98db0ffe34cd0324872d5e633a14cc68bd5727fc",
+  subtitle: "The Fractacular import. Every knob (47: the Mandelbox shape on the console's Shape tab; colour, lighting and the cosine palette on its Colour tab) is an AttributeSpec in one AttributeTable, with a default and a Binding: value = default + gain × wave(source), where the source is the clock or a virtual axis pushed by a key pair from saves/keymap.json. Main resolves the table into FractalParams once per frame, so the renderer is unchanged. The console, its own OS window, edits the table and the keymap. The stepper runs a line-for-line port of the resolver, checked at load against the tests.",
+  commit: "1cbb1a2f0c6e1ae67e248cb2cdb947661d298c67",
   pinNote: "main, unpushed: links 404 until it is pushed",
   ctx: {
     attr: { hue: 1, label: "catalogue — MandelboxShape, AttributeSpec / Table, Binding, BindingResolver" },
@@ -1231,7 +1392,7 @@ VIZ.pane({
     frameSeq,
     stepFig,
     consoleFig,
-    catTable,
+    { label: "The catalogue", rows: [[shapeCat], [colourCat]] },
     tapSeq,
     { label: "Keymap", rows: [[kmFile], [kmApi]] },
     { label: "Saved views", rows: [[viewTable, v1Table]] },
