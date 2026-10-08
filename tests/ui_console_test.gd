@@ -45,6 +45,7 @@ func run() -> void:
 	await _layout_at_default_size()
 	await _slider_click_and_drag()
 	await _movement_pane()
+	await _zoom_keys()
 
 	for action in InputMap.get_actions():
 		if String(action).begins_with("axis_"):
@@ -267,3 +268,44 @@ func _movement_pane() -> void:
 	for i in src.item_count:
 		texts.append(src.get_item_text(i))
 	check(not texts.has("Warp"), "and the Source dropdowns drop it (%s)" % [texts])
+
+
+## A Cmd (or Ctrl) chord pushed through the root, to whatever has focus.
+func _chord(keycode: Key) -> void:
+	for pressed in [true, false]:
+		var ev := ui.key_event(keycode, pressed)
+		ev.meta_pressed = true
+		ev.ctrl_pressed = true
+		root.push_input(ev, true)
+		await ui.frames(1)
+
+
+## A control's height as drawn in the embedder: its logical height through the
+## window's final transform, which carries the content scale.
+func _drawn_height(control: Control) -> float:
+	return control.size.y * console.get_final_transform().get_scale().y
+
+
+func _zoom_keys() -> void:
+	var base := UiScale.factor_for(console)
+	var label := console.inspector().row(&"box_scale").get_child(0) as Control
+	var before := _drawn_height(label)
+	var width := console.inspector().size.x
+	var spin := console.inspector().row(&"box_scale").spin_box()
+	spin.get_line_edit().grab_focus()
+	var value := spin.value
+	await _chord(KEY_EQUAL)
+	check_approx(console.zoom, 1.1, "Cmd+= zooms the console in a step, a spin box focused or not")
+	check_approx(console.content_scale_factor, base * 1.1, "through its content scale")
+	check(_drawn_height(label) > before * 1.05,
+		"so its text draws bigger (%.1f -> %.1f px)" % [before, _drawn_height(label)])
+	check(console.inspector().size.x < width,
+		"and the panes reflow into the fewer logical units the window now holds")
+	check_approx(spin.value, value, "and the focused spin box is untouched")
+	spin.get_line_edit().release_focus()
+	await _chord(KEY_MINUS)
+	await _chord(KEY_MINUS)
+	check_approx(console.zoom, 0.9, "Cmd+- zooms out a step at a time")
+	await _chord(KEY_0)
+	check_approx(console.zoom, 1.0, "Cmd+0 resets the zoom")
+	check_approx(console.content_scale_factor, base, "and the content scale")

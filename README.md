@@ -128,6 +128,9 @@ A Ctrl tap (or the pause menu's **Console…** button) opens the console, a
 separate OS window: the **Shape** pane on top, taking the full width
 and most of the height, and the **Movement** pane below it at its natural
 height (drag the bar between them to share the height differently).
+**⌘=** / **⌘−** (Ctrl elsewhere) zoom everything in the console, text and
+controls, a step at a time from 50% to 200%, and **⌘0** resets; the window keeps
+its size and the panes reflow. The zoom is remembered between runs.
 
 **Shape pane.** One row per Mandelbox knob, grouped **Box** / **Julia** /
 **Iteration rotation** / **Render**:
