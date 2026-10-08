@@ -197,8 +197,9 @@ const FOG_COLORS := {
 ## The resolution governor never drops below min_render_scale while moving.
 const RENDER_SCALE_FLOOR := 0.1
 
-## The march's step budget: three quarters coarse (N=16) and the rest fine
-## (N=32), so the default 128 is the original 96 + 32. The shader's loops are
+## The march's step budget: three quarters coarse (N = coarse_iters(), 16 at
+## the default view) and the rest fine (N=32), so the default 128 is the
+## original 96 + 32. The shader's loops are
 ## bounded for MAX_STEPS_MAX.
 const MAX_STEPS_MIN := 32
 const MAX_STEPS_MAX := 512
@@ -224,6 +225,31 @@ func hit_epsilon(t: float, near: float) -> float:
 		if t > start:
 			eps *= pow(t / start, detail_falloff)
 	return eps
+
+
+## The fewest iterations the march's coarse pass uses (the site's fixed count),
+## and the box half-size its count is worked out against.
+const COARSE_ITERS_MIN := 16
+const COARSE_BOX_HALF := 2.0
+
+
+## How many iterations the march's coarse pass needs for a camera `near` from
+## the nearest surface. Each iteration adds detail |box_scale| times finer, so
+## stopping after n leaves a smoother surface about COARSE_BOX_HALF /
+## |box_scale|^n away from the real one. The coarse pass stops at twice the hit
+## threshold, 2 × eps × near (eps = precision / detail), so it needs that gap
+## under the threshold: n = log(box / (2 eps near)) / log|box_scale|, rounded
+## up, kept in [16, 32]. 16 at the default view, so the site's picture is
+## unchanged; it rises inside about 0.3 of the surface and reaches 32 by about
+## 3e-6. A |box_scale| of 1 or less has no shrinking detail: 32. Uses the
+## unshed detail: the still frame renders at load level 0.
+func coarse_iters(near: float) -> int:
+	var s := absf(box_scale)
+	if s <= 1.0:
+		return DistanceEstimator.ITERATIONS
+	var gap := maxf(2.0 * precision / detail * maxf(near, 0.0), 1e-300)
+	var n := ceilf(log(COARSE_BOX_HALF / gap) / log(s))
+	return clampi(int(minf(n, 1e6)), COARSE_ITERS_MIN, DistanceEstimator.ITERATIONS)
 
 
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the

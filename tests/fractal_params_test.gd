@@ -139,3 +139,20 @@ func run() -> void:
 			check(lum > 0.6, "mode %d (white background) has a light fog (%s)" % [id, c])
 		else:
 			check(lum < 0.4, "mode %d has a dark fog (%s)" % [id, c])
+
+	# coarse_iters: the march's coarse pass takes enough iterations that its
+	# smoother surface sits within its own hit threshold of the real one
+	var ci := FractalParams.new()
+	check_eq(ci.coarse_iters(6.5655845), 16, "the default view (near ~6.57) keeps the site's 16")
+	check_eq(ci.coarse_iters(1000.0), 16, "far away never drops below 16")
+	check_eq(ci.coarse_iters(1e-3), 24, "1e-3 from the surface takes 24")
+	check_eq(ci.coarse_iters(1e-6), 32, "1e-6 takes all 32")
+	check_eq(ci.coarse_iters(0.0), 32, "a camera on the surface stays at 32")
+	var ci_fine := FractalParams.new()
+	ci_fine.detail = 10.0
+	check(ci_fine.coarse_iters(1e-2) > ci.coarse_iters(1e-2),
+		"Detail 10 raises the count at a given distance (%d over %d)" % [ci_fine.coarse_iters(1e-2), ci.coarse_iters(1e-2)])
+	ci.box_scale = 1.0
+	check_eq(ci.coarse_iters(6.5), 32, "|box_scale| = 1 has no shrinking detail: 32")
+	ci.box_scale = -0.8
+	check_eq(ci.coarse_iters(6.5), 32, "nor does a scale inside 1: 32")
