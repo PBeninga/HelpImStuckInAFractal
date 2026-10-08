@@ -156,3 +156,12 @@ func run() -> void:
 	check_eq(ci.coarse_iters(6.5), 32, "|box_scale| = 1 has no shrinking detail: 32")
 	ci.box_scale = -0.8
 	check_eq(ci.coarse_iters(6.5), 32, "nor does a scale inside 1: 32")
+
+	# nf_weight: the Ice Fractal shading crossfades to the true normal up close
+	check_eq(FractalParams.nf_weight(6.5655845), 1.0, "the default view lights with the Ice Fractal probe alone (exactly 1)")
+	check_eq(FractalParams.nf_weight(FractalParams.NF_FADE_FAR), 1.0, "the band's far end is 1")
+	check_eq(FractalParams.nf_weight(FractalParams.NF_FADE_NEAR), 0.0, "its near end is 0")
+	check_eq(FractalParams.nf_weight(1e-4), 0.0, "closer still is the true normal alone")
+	var mid := FractalParams.nf_weight(1.05)
+	check(mid > 0.0 and mid < 1.0, "inside the band it blends (%s)" % mid)
+	check(FractalParams.nf_weight(0.5) < FractalParams.nf_weight(1.5), "rising with the distance")

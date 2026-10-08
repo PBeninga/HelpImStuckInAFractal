@@ -252,6 +252,24 @@ func coarse_iters(near: float) -> int:
 	return clampi(int(minf(n, 1e6)), COARSE_ITERS_MIN, DistanceEstimator.ITERATIONS)
 
 
+## The shading crossfade's band, in the camera's distance to the nearest
+## surface: beyond NF_FADE_FAR the Ice Fractal colour modes light with their own
+## normal (calc_nf), inside NF_FADE_NEAR with the true one (calc_normal).
+const NF_FADE_NEAR := 0.1
+const NF_FADE_FAR := 2.0
+
+
+## How much of the Ice Fractal normal the shader's lighting uses for a camera
+## `near` from the surface: 1 (all of it) from NF_FADE_FAR out, 0 inside
+## NF_FADE_NEAR, an S-shaped blend between (smoothstep: eases in and out, so
+## the change has no visible kink). The Ice Fractal normal samples a fixed 0.01
+## from the hit point, which up close spans far more than a pixel and turns
+## the shading to noise; the true normal's sample spacing follows the hit
+## threshold instead. Exactly 1 at the default view (near ~6.57).
+static func nf_weight(near: float) -> float:
+	return smoothstep(NF_FADE_NEAR, NF_FADE_FAR, near)
+
+
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the
 ## load shedder passes a smaller budget).
 func coarse_steps(budget := 0) -> int:
