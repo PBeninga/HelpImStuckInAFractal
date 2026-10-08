@@ -32,6 +32,13 @@ func run() -> void:
 	check(fly.enabled, "fly camera is enabled in FLY mode")
 	check(main.is_mouse_captured(), "the mouse starts captured in fly mode")
 
+	# the console's zoom comes from Settings and goes back to it
+	check_approx(console.zoom, settings.console_zoom, "the console opens at the saved zoom")
+	var original_zoom: float = settings.console_zoom
+	console.step_zoom(1)
+	check_approx(settings.console_zoom, console.zoom, "a zoom change is kept in Settings")
+	console.set_zoom(original_zoom)
+
 	# A Ctrl tap while captured frees the mouse and opens the console
 	_tap_ctrl(main)
 	check(console.visible, "a Ctrl tap while captured opens the console")

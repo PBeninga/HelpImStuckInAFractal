@@ -3,7 +3,8 @@ extends "res://tests/test_case.gd"
 ## scales a native window and leaves an embedded one (and a stretched one) alone;
 ## px() converts logical units; fit_main_window() keeps a default-sized main
 ## window at its point size once; center_over() centres an embedded window in
-## its embedder; beside_position() keeps a native window off the main window.
+## its embedder; beside_position() keeps a native window off the main window;
+## fit() and follow_size() grow the main window's scale with its size.
 
 
 func run() -> void:
@@ -69,6 +70,41 @@ func run() -> void:
 	UiScale.fit_main_window(main_window, Vector2i(1280, 800))
 	check_eq(main_window.size, default_size, "the fit happens once per process")
 	main_window.free()
+
+	# --- fit: how much bigger than the design a window is, within [1, MAX_FIT] ---
+	check_approx(UiScale.fit(Vector2i(1280, 800), Vector2i(1280, 800)), 1.0, "the design size fits at 1")
+	check_approx(UiScale.fit(Vector2i(2560, 1600), Vector2i(1280, 800)), 2.0, "twice the size fits at 2")
+	check_approx(UiScale.fit(Vector2i(5120, 1600), Vector2i(1280, 800)), 2.0,
+		"an ultra-wide window fits by its height, so the design still fits")
+	check_approx(UiScale.fit(Vector2i(640, 400), Vector2i(1280, 800)), 1.0, "a small window never shrinks the UI")
+	check_approx(UiScale.fit(Vector2i(100000, 100000), Vector2i(1280, 800)), UiScale.MAX_FIT, "capped at MAX_FIT")
+	check_approx(UiScale.fit(Vector2i(1280, 800), Vector2i.ZERO), 1.0, "a degenerate base fits at 1")
+
+	# --- follow_size: the content scale is factor() * fit() of the window ---
+	UiScale.override = 2.0
+	root.gui_embed_subwindows = false
+	var big := Window.new()
+	big.size = Vector2i(5120, 3200)    # pixels: 2x the design at factor 2
+	UiScale.follow_size(big, Vector2i(1280, 800))
+	check_approx(big.content_scale_factor, 4.0, "a window twice the design's points scales by 2 * factor()")
+	check_eq(big.content_scale_mode, Window.CONTENT_SCALE_MODE_DISABLED, "follow_size() keeps the mode DISABLED")
+	big.size = Vector2i(2560, 1600)
+	UiScale.follow_size(big, Vector2i(1280, 800))   # idempotent: refits, no second connection
+	check_approx(big.content_scale_factor, 2.0, "back at the design size it is factor()")
+	check_eq(big.size_changed.get_connections().size(), 1, "follow_size() connects once")
+	big.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	big.content_scale_factor = 1.0
+	big.size = Vector2i(5120, 3200)
+	big.size_changed.emit()
+	check_approx(big.content_scale_factor, 1.0, "a stretched window is left alone")
+	big.free()
+	root.gui_embed_subwindows = embedding
+	var inner := Window.new()      # headless embeds: an embedded window is skipped
+	inner.content_scale_factor = 1.0
+	inner.size = Vector2i(5120, 3200)
+	UiScale.follow_size(inner, Vector2i(1280, 800))
+	check_approx(inner.content_scale_factor, 1.0, "an embedded window inherits its scale instead")
+	inner.free()
 
 	# --- center_over: an embedded window centres in its embedder's visible rect ---
 	UiScale.override = 0.0

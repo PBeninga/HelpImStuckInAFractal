@@ -2,7 +2,8 @@ extends "res://tests/test_case.gd"
 ## The console window builds both panes; a row edit lands in the table; the
 ## source dropdown lists the axes and updates on Keymap.changed; the readout
 ## follows set_resolved; the Movement pane adds, rebinds and removes an axis
-## through the API and the key-capture button; a Ctrl tap emits toggle_requested.
+## through the API and the key-capture button; a Ctrl tap emits toggle_requested;
+## the zoom steps, clamps, signals and follows the Cmd/Ctrl chords.
 
 
 func _ctrl(pressed: bool) -> InputEventKey:
@@ -10,6 +11,17 @@ func _ctrl(pressed: bool) -> InputEventKey:
 	ev.physical_keycode = KEY_CTRL
 	ev.pressed = pressed
 	ev.echo = false
+	return ev
+
+
+## A Cmd (macOS) / Ctrl (elsewhere) chord key-down.
+func _chord(keycode: Key) -> InputEventKey:
+	var ev := InputEventKey.new()
+	ev.keycode = keycode
+	ev.physical_keycode = keycode
+	ev.pressed = true
+	ev.meta_pressed = true
+	ev.ctrl_pressed = true
 	return ev
 
 
@@ -94,6 +106,44 @@ func run() -> void:
 	console.feed_ctrl(_ctrl(true))
 	console.feed_ctrl(_ctrl(false))
 	check(toggled[0], "a Ctrl tap in the console emits toggle_requested")
+
+	# --- zoom: steps through ZOOM_STEPS, clamps at the ends, signals ---
+	var zooms: Array = []
+	console.zoom_changed.connect(func(z: float): zooms.append(z))
+	var base := UiScale.factor_for(console)
+	console.step_zoom(1)
+	check_approx(console.zoom, 1.1, "step_zoom(1) goes to the next level")
+	check_approx(console.content_scale_factor, base * 1.1, "and scales the window's content")
+	console.step_zoom(-1)
+	console.step_zoom(-1)
+	check_approx(console.zoom, 0.9, "step_zoom(-1) goes back down")
+	console.set_zoom(1.6)
+	console.step_zoom(1)
+	check_approx(console.zoom, 1.75, "a level between steps steps to the next one up")
+	for i in 20:
+		console.step_zoom(1)
+	check_approx(console.zoom, ConsoleWindow.ZOOM_STEPS[-1], "zooming in stops at the largest level")
+	console.set_zoom(0.1)
+	check_approx(console.zoom, ConsoleWindow.ZOOM_STEPS[0], "set_zoom clamps to the smallest level")
+	check_eq(zooms.size(), 7, "each change emits zoom_changed once (%s)" % [zooms])
+	console.set_zoom(0.5)
+	check_eq(zooms.size(), 7, "setting the same level does not")
+
+	# --- the chords: Cmd/Ctrl with =, +, -, 0 (keypad too); not bare or Alt ---
+	console.set_zoom(1.0)
+	check(console.zoom_key(_chord(KEY_EQUAL)) and is_equal_approx(console.zoom, 1.1), "Cmd+= zooms in")
+	check(console.zoom_key(_chord(KEY_KP_ADD)) and is_equal_approx(console.zoom, 1.25), "Cmd+keypad + zooms in")
+	check(console.zoom_key(_chord(KEY_MINUS)) and is_equal_approx(console.zoom, 1.1), "Cmd+- zooms out")
+	check(console.zoom_key(_chord(KEY_0)) and is_equal_approx(console.zoom, 1.0), "Cmd+0 resets")
+	var bare := _chord(KEY_EQUAL)
+	bare.meta_pressed = false
+	bare.ctrl_pressed = false
+	check(not console.zoom_key(bare), "a bare = is not a zoom chord")
+	var alt := _chord(KEY_EQUAL)
+	alt.alt_pressed = true
+	check(not console.zoom_key(alt), "nor is Cmd+Alt+=")
+	check(not console.zoom_key(_chord(KEY_S)), "nor Cmd+S, which goes on to Main")
+	check_approx(console.zoom, 1.0, "none of those changed the zoom")
 
 	# clean up the runtime InputMap actions this test created
 	for id in [&"a", &"ax1", &"ax2", &"ax3"]:

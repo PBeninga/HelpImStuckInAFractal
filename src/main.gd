@@ -54,6 +54,7 @@ func _ready() -> void:
 	# own is scaled too (both calls are no-ops the second time).
 	UiScale.apply(get_window())
 	UiScale.fit_main_window(get_window(), WINDOW_SIZE)
+	UiScale.follow_size(get_window(), WINDOW_SIZE)
 	params = FractalParams.new()
 	camera = CameraState.make_default()
 
@@ -138,6 +139,9 @@ func _build_console() -> void:
 	add_child(_console)
 	_console.toggle_requested.connect(_on_console_toggle)
 	_console.unhandled_key.connect(_on_window_key)
+	# The zoom is the player's, like the sensitivity: Settings keeps it.
+	_console.set_zoom(Settings.console_zoom)
+	_console.zoom_changed.connect(func(z: float): Settings.console_zoom = z)
 
 
 func _build_axis_controller() -> void:

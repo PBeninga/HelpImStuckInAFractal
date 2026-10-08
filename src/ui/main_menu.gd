@@ -19,6 +19,7 @@ func _ready() -> void:
 	# The game starts here, so this is where a HiDPI screen first gets its scale.
 	UiScale.apply(get_window())
 	UiScale.fit_main_window(get_window(), WINDOW_SIZE)
+	UiScale.follow_size(get_window(), WINDOW_SIZE)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 

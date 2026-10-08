@@ -12,6 +12,15 @@ extends RefCounted
 ## its embedder's canvas and so already inherits the embedder's scale: it keeps
 ## factor 1 and is sized in logical units, or it would scale twice. The console
 ## sets force_native, so on the desktop it is a native window like the root.
+##
+## The main window also follows its own size (follow_size): the menus and HUD
+## are laid out for a 1280x800-point window, so a bigger window (maximised, full
+## screen, a large browser tab) multiplies its content scale by how much bigger
+## it is, and the UI grows with it instead of shrinking into the middle. It never
+## shrinks below factor(): a small window keeps readable text.
+
+## The most a big window multiplies the scale by.
+const MAX_FIT := 4.0
 
 ## Tests set this to stand in for the screen's scale; 0 means ask the display.
 static var override := 0.0
@@ -48,6 +57,39 @@ static func apply(window: Window) -> void:
 static func px(logical: Vector2i, window: Window = null) -> Vector2i:
 	var f := factor() if window == null else factor_for(window)
 	return Vector2i(roundi(logical.x * f), roundi(logical.y * f))
+
+
+## How much bigger a window of `window_px` pixels is than `base_px` (the design
+## size in pixels): the smaller of the two ratios, so the design still fits, and
+## never below 1 or above MAX_FIT.
+static func fit(window_px: Vector2i, base_px: Vector2i) -> float:
+	if base_px.x <= 0 or base_px.y <= 0:
+		return 1.0
+	var r := minf(float(window_px.x) / base_px.x, float(window_px.y) / base_px.y)
+	return clampf(r, 1.0, MAX_FIT)
+
+
+## Keep `window`'s content scale at factor() * fit() of its size against
+## `logical` (the design size in points), now and on every resize. Like apply(),
+## a stretched window is left alone, and so is an embedded one (it inherits its
+## embedder's scale). Idempotent: the root outlives the scene that asked.
+static func follow_size(window: Window, logical: Vector2i) -> void:
+	if window == null or _is_embedded(window):
+		return
+	window.set_meta(&"ui_scale_logical", logical)
+	if not window.has_meta(&"ui_scale_following"):
+		window.set_meta(&"ui_scale_following", true)
+		window.size_changed.connect(_refit.bind(window))
+	_refit(window)
+
+
+static func _refit(window: Window) -> void:
+	if window.content_scale_mode != Window.CONTENT_SCALE_MODE_DISABLED:
+		return
+	var logical: Vector2i = window.get_meta(&"ui_scale_logical", _default_window_size())
+	var f := factor() * fit(window.size, px(logical))
+	if not is_equal_approx(window.content_scale_factor, f):
+		window.content_scale_factor = f
 
 
 ## Once per process and never on the web (the canvas follows the page): if the
