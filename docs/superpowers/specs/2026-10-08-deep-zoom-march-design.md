@@ -133,8 +133,10 @@ The 50 comes from the table: hits start failing at a distance of `1e-4` with
 `ulp32 ≈ 1.2e-7` and `eps = 2.5e-5`, which is `ulp32 / (48 × eps)`; the floor
 sits at that distance with no margin, so the guard stops the camera right
 where the picture would start to break. At the default precision near the
-box that is about `1e-4`; a higher Detail setting moves it closer (the
-shader resolves finer), Julia mode's larger box moves it further out.
+box that is about `1e-4`. A higher Detail setting makes the hit threshold
+finer, so the 32-bit grid fails sooner and the floor moves further out;
+Julia mode's larger box (bigger eye coordinates, coarser grid) also moves it
+further out.
 
 - `FractalParams.zoom_floor(eye: Vector3) -> float`, unshed detail as in A.
 - `FlyCamera._physics_process`: compute the candidate position; accept it if
