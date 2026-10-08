@@ -379,11 +379,13 @@ func _push_camera() -> void:
 
 
 ## The camera's distance to the nearest surface, which the level-of-detail range
-## is measured in, and the coarse pass's iteration count that follows from it.
-## They depend on both the camera and the shape, so both pushes refresh them.
+## is measured in, and the coarse pass's iteration count and the shading
+## crossfade that follow from it. They depend on both the camera and the shape,
+## so both pushes refresh them.
 func _push_near() -> void:
 	if _material == null or _params == null or _camera == null:
 		return
 	var near := maxf(DistanceEstimator.estimate(_camera.eye(), _params), FractalParams.NEAR_FLOOR)
 	_material.set_shader_parameter("near_dist", near)
 	_material.set_shader_parameter("coarse_iters", _params.coarse_iters(near))
+	_material.set_shader_parameter("nf_weight", FractalParams.nf_weight(near))
