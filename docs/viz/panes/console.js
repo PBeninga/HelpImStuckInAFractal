@@ -41,6 +41,8 @@ const F = {
   pcurves: "src/ui/console/palette_curves.gd",
   settings: "src/settings/settings.gd",
   renderer: "src/ui/renderer_options.gd",
+  viewPane: "src/ui/console/view_pane.gd",
+  noiseWin: "src/ui/noise_window.gd",
   kfile: "saves/keymap.json",
   saveDef: "saves/default.json",
   proj: "project.godot",
@@ -64,7 +66,7 @@ const F = {
   tPalWin: "tests/palette_window_test.gd",
   tShader: "tests/shader_test.gd",
 };
-// Link helpers: R("main", 278) is { file, line }; RL adds a label for a tooltip's link list.
+// Link helpers: R("main", 245) is { file, line }; RL adds a label for a tooltip's link list.
 const R = (f, line) => ({ file: F[f], line });
 const RL = (f, line, label) => ({ file: F[f], line, label });
 const REPO = "https://github.com/Adam-G-Klein/HelpImStuckInAFractal";
@@ -278,7 +280,7 @@ const arch = {
     { id: "move", label: "MOVEMENT LAYER — KEYS, AXES, CLOCK", x: 0, y: 0, w: 480, h: 560 },
     { id: "core", label: "CATALOGUE AND THE PER-FRAME RESOLVE", x: 540, y: 0, w: 520, h: 560 },
     { id: "cons", label: "CONSUMERS — PARAMS AND THE PICTURE", x: 1120, y: 0, w: 560, h: 560 },
-    { id: "mainz", label: "MAIN — WIRING AND THE CTRL TAP", x: 0, y: 620, w: 480, h: 340 },
+    { id: "mainz", label: "MAIN — WIRING, THE CTRL TAP, THE VIEW TAB", x: 0, y: 620, w: 480, h: 340 },
     { id: "ui", label: "CONSOLE — ITS OWN OS WINDOW", x: 540, y: 620, w: 520, h: 340 },
     { id: "files", label: "SAVED VIEWS", x: 1120, y: 620, w: 560, h: 340 },
   ],
@@ -286,7 +288,7 @@ const arch = {
     // movement layer
     { id: "kfile", label: "saves/keymap.json", sub: "Axis A on E / Q, speed 1", ctx: "files", zone: "move", x: 30, y: 450, w: 180, ...R("kfile", 1),
       blurb: "The shipped keymap: one axis `a` labelled Axis A, pushed at 1 unit per second, E positive, Q negative. Keys are stored by NAME (layout-independent), `\"\"` meaning unbound. Deliberately not part of a saved view: a level loads a view and a keymap separately.",
-      links: [RL("kfile", 5, "the axis entry"), RL("readme", 207, "README: Keymap"), RL("design", 190, "spec: the keymap")] },
+      links: [RL("kfile", 5, "the axis entry"), RL("readme", 205, "README: Keymap"), RL("design", 190, "spec: the keymap")] },
     { id: "keymap", label: "Keymap", sub: "pairs · rebind API · actions", ctx: "axes", zone: "move", x: 270, y: 450, w: 180, ...R("keymap", 1),
       blurb: "Owns the Axes and one key pair per axis, and keeps two InputMap actions per axis equal to the pair. The rebind API (`add_axis`, `remove_axis`, `bind`, `set_speed`, `set_label`, `load_file`, `save_file`) each emit `changed` so the Movement pane and the Source dropdowns follow. A missing or malformed file yields the default axis.",
       links: [RL("keymap", 40, "add_axis"), RL("keymap", 60, "bind"), RL("keymap", 113, "load_file"), RL("keymap", 187, "_apply_default")] },
@@ -295,15 +297,15 @@ const arch = {
       links: [RL("keymap", 93, "_set_action"), RL("tAxes", 21, "the actions test"), RL("design", 210, "spec: InputMap")] },
     { id: "axisctl", label: "AxisController", sub: "_process: push the axes", ctx: "axes", zone: "move", x: 270, y: 60, w: 180, ...R("axisCtl", 1),
       blurb: "The only node in the movement layer that touches input. Each frame: direction = strength(pos) − strength(neg) for every axis, then `step`. Skips everything while a text field is focused in any of the main / console / noise viewports, so typing \"e\" never moves an axis.",
-      links: [RL("axisCtl", 19, "_process"), RL("axisCtl", 22, "the text-focus gate"), RL("main", 157, "Main gives it the viewports")] },
+      links: [RL("axisCtl", 19, "_process"), RL("axisCtl", 22, "the text-focus gate"), RL("main", 155, "Main gives it the viewports")] },
     { id: "textfocus", label: "TextFocus.any", sub: "a LineEdit focused anywhere?", ctx: "axes", zone: "move", x: 30, y: 190, w: 180, ...R("textFocus", 11),
       blurb: "True when a LineEdit or TextEdit holds focus in any of the given viewports. Each Window is its own viewport (embedded or not), so the axis controller, FlyCamera's WASD, the N key and both Ctrl-tap detectors ask about all of them.",
-      links: [RL("fly", 90, "FlyCamera.move_direction uses it"), RL("main", 100, "Main's Ctrl-tap guard"), RL("main", 442, "the N key")] },
+      links: [RL("fly", 90, "FlyCamera.move_direction uses it"), RL("main", 98, "Main's Ctrl-tap guard"), RL("main", 412, "the N key")] },
     { id: "axes", label: "Axes", sub: "id · label · speed · value", ctx: "axes", zone: "move", x: 270, y: 190, w: 180, ...R("axes", 1),
       blurb: "The virtual axes: an ordered list, each an id, label, push speed and an UNBOUNDED value. `step` adds direction × speed × delta; `set_value` is for loads and the 0 button; `values()` hands the resolver a {id: value} dictionary.",
       links: [RL("axes", 98, "step"), RL("axes", 107, "values"), RL("tAxes", 8, "the test")] },
-    { id: "clock", label: "Clock", sub: "t += delta; pauses", ctx: "axes", zone: "move", x: 30, y: 320, w: 150, ...R("clock", 1),
-      blurb: "`t`, seconds since the Main scene opened: the `time` source. It inherits the pausable process mode, so the pause menu stops it. Never saved; `reset()` is for tests.",
+    { id: "clock", label: "Clock", sub: "t += delta; never saved", ctx: "axes", zone: "move", x: 30, y: 320, w: 150, ...R("clock", 1),
+      blurb: "`t`, seconds since the Main scene opened: the `time` source. It has the default pausable process mode, but nothing pauses the tree any more (Escape only frees the mouse), so it runs from the moment the scene opens. Never saved; `reset()` is for tests.",
       links: [RL("clock", 10, "_process"), RL("design", 235, "spec: Clock")] },
 
     // catalogue + resolve
@@ -322,9 +324,9 @@ const arch = {
     { id: "resolver", label: "BindingResolver", sub: "resolve(table, axes, t)", ctx: "attr", zone: "core", x: 680, y: 320, w: 220, ...R("resolver", 1),
       blurb: "Pure functions, no nodes. For each spec: the default if unbound or not bindable; else raw = t, the axis value, or 0 for an axis id the keymap lacks; then default + gain × wave(raw), sanitized. The stepper tab runs a port of it.",
       links: [RL("resolver", 13, "resolve"), RL("resolver", 25, "resolve_value"), RL("resolver", 39, "waveform_value"), RL("tBind", 22, "the test")] },
-    { id: "mresolve", label: "Main._resolve_once", sub: "each _process, first", ctx: "main", zone: "core", x: 680, y: 450, w: 200, ...R("main", 277),
+    { id: "mresolve", label: "Main._resolve_once", sub: "each _process, first", ctx: "main", zone: "core", x: 680, y: 450, w: 200, ...R("main", 244),
       blurb: "Each frame: `resolve(_table, _keymap.axes().values(), _clock.t)`, then `params.apply_resolved(values)`, then the console's readouts if it is visible. About thirty scalars, so it runs every frame instead of watching the table, every axis and the clock. Main is the parent of Clock and AxisController, so it runs first and reads LAST frame's axis values (stepper tab).",
-      links: [RL("main", 270, "_process"), RL("main", 104, "once in _ready"), RL("main", 308, "and after a load"), RL("design", 348, "spec: Main's wiring")] },
+      links: [RL("main", 237, "_process"), RL("main", 102, "once in _ready"), RL("main", 275, "and after a load"), RL("design", 348, "spec: Main's wiring")] },
 
     // consumers
     { id: "params", label: "FractalParams", sub: "resolved fields · apply_resolved", ctx: "cons", zone: "cons", x: 1150, y: 60, w: 230, ...R("params", 1),
@@ -346,31 +348,35 @@ const arch = {
     { id: "pwin", label: "PaletteWindow", sub: "Colour tab: sliders · curves · strip", ctx: "ui", zone: "ui", x: 830, y: 900, w: 210, ...R("pwin", 1),
       blurb: "Fractacular's Colour window, now the header of the Colour tab's inspector: twelve sliders, the three cosine curves and the gradient strip, plus Reset. It owns no colour: sliders write `Palette.set_component` (so the table) and everything redraws from the model. A hint shows until the Colour mode is Palette.",
       links: [RL("pwin", 206, "a slider writes the table"), RL("pwin", 114, "set_resolved → set_live"), RL("pwin", 217, "the hint"), RL("tPalWin", 2, "the test")] },
-    { id: "mreset", label: "Main.reset_camera", sub: "back to the current file's camera", ctx: "main", zone: "mainz", x: 250, y: 900, w: 210, ...R("main", 325),
-      blurb: "The Movement pane's Reset camera button (and the Settings menu's Renderer tab) put the camera and its speed factor back where the current file has them: `_remember_home` runs at start, after a load and after a save. In Orbit it re-centres.",
-      links: [RL("main", 334, "_remember_home"), RL("main", 307, "after a load"), RL("main", 191, "the Renderer tab's button"), RL("tMain", 165, "the test")] },
+    { id: "mreset", label: "Main.reset_camera", sub: "back to the current file's camera", ctx: "main", zone: "mainz", x: 250, y: 900, w: 210, ...R("main", 292),
+      blurb: "The Movement pane's Reset camera button (and the one in the View tab's Renderer options) put the camera and its speed factor back where the current file has them: `_remember_home` runs at start, after a load and after a save. In Orbit it re-centres.",
+      links: [RL("main", 301, "_remember_home"), RL("main", 274, "after a load"), RL("main", 187, "the View tab's Renderer button"), RL("tMain", 166, "the test")] },
+
+    { id: "viewpane", label: "ViewPane", sub: "files · camera · renderer · menu", ctx: "ui", zone: "mainz", x: 30, y: 900, w: 200, ...R("viewPane", 1),
+      blurb: "The console's third tab, everything the old pause menu held that is not a shape knob: Save view… / Load view… with the file name and a status line, the Camera mode, the mouse sensitivity, Noise editor…, the Renderer options (detail, march steps, Fast Controls, Reset renderer defaults, Reset camera) and Back to Menu. It only emits signals; Main wires them in `_build_view_pane`.",
+      links: [RL("viewPane", 14, "its signals"), RL("main", 183, "_build_view_pane"), RL("viewPane", 101, "RendererOptions"), RL("tMain", 140, "the test")] },
 
     // Main wiring
-    { id: "mready", label: "Main._ready", sub: "builds table, keymap, console", ctx: "main", zone: "mainz", x: 30, y: 680, w: 200, ...R("main", 57),
+    { id: "mready", label: "Main._ready", sub: "builds table, keymap, console", ctx: "main", zone: "mainz", x: 30, y: 680, w: 200, ...R("main", 54),
       blurb: "Builds, in order: the AttributeTable from MandelboxShape, the Keymap (loads saves/keymap.json), view, governor, cameras, the marker (given the table), then the Clock, the ConsoleWindow and the AxisController as children of Main, then file panels, pause menu and noise window. Ends with one resolve.",
-      links: [RL("main", 67, "the table"), RL("main", 69, "the keymap"), RL("main", 83, "clock, console, axis controller"), RL("main", 157, "AxisController.setup(keymap, viewports)")] },
-    { id: "mdispatch", label: "Main._unhandled_input", sub: "Ctrl tap first, then the rest", ctx: "main", zone: "mainz", x: 250, y: 680, w: 210, ...R("main", 423),
-      blurb: "The one dispatcher: the Ctrl tap, Escape, ⌘P, N, the Julia marker drag, click-to-capture, then the active camera. Keys the focused console does not use arrive here too, through `unhandled_key`.",
-      links: [RL("main", 425, "1. the Ctrl tap"), RL("main", 466, "3. click to capture"), RL("main", 412, "_on_window_key")] },
-    { id: "ctrltap", label: "CtrlTap", sub: "arm on Ctrl down, fire on up", ctx: "main", zone: "mainz", x: 30, y: 810, w: 200, ...R("ctrlTap", 1),
+      links: [RL("main", 64, "the table"), RL("main", 66, "the keymap"), RL("main", 80, "clock, console, axis controller"), RL("main", 155, "AxisController.setup(keymap, viewports)")] },
+    { id: "mdispatch", label: "Main._unhandled_input", sub: "Ctrl tap first, then the rest", ctx: "main", zone: "mainz", x: 250, y: 680, w: 210, ...R("main", 390),
+      blurb: "The one dispatcher: the Ctrl tap, Escape (frees the mouse, nothing else), ⌘P, N, the Julia marker drag, click-to-capture, then the active camera. Keys the focused console does not use arrive here too, through `unhandled_key`.",
+      links: [RL("main", 392, "1. the Ctrl tap"), RL("main", 436, "3. click to capture"), RL("main", 379, "_on_window_key")] },
+    { id: "ctrltap", label: "CtrlTap", sub: "arm on Ctrl down, fire on up", ctx: "main", zone: "mainz", x: 30, y: 790, w: 200, ...R("ctrlTap", 1),
       blurb: "The arm/disarm detector, shared: a bare non-echo Ctrl down arms (unless a text field is focused), any other key down disarms, a Ctrl up while armed fires. So Ctrl+S and Ctrl+P never toggle the console. Main runs one; the console runs its own.",
       links: [RL("ctrlTap", 21, "feed"), RL("tMain", 59, "Ctrl+S / Ctrl+P test")] },
-    { id: "mtoggle", label: "Main._on_console_toggle", sub: "the capture rule", ctx: "main", zone: "mainz", x: 250, y: 810, w: 210, ...R("main", 397),
-      blurb: "Mouse captured: free it and make sure the console is open. Mouse free: toggle the console, and recapture when that closed it. Capture is FLY ∧ not paused ∧ not `_free_requested` ∧ noise editor closed: the console's visibility no longer gates it.",
-      links: [RL("main", 381, "_update_mouse"), RL("tMain", 50, "the test")] },
+    { id: "mtoggle", label: "Main._on_console_toggle", sub: "the capture rule", ctx: "main", zone: "mainz", x: 250, y: 790, w: 210, ...R("main", 364),
+      blurb: "Mouse captured: free it and make sure the console is open. Mouse free: toggle the console, and recapture when that closed it. Capture is FLY ∧ not `_free_requested` ∧ noise editor closed: neither the console's visibility nor a pause gates it (nothing pauses).",
+      links: [RL("main", 348, "_update_mouse"), RL("tMain", 50, "the test")] },
 
     // console UI
-    { id: "console", label: "ConsoleWindow", sub: "force_native · two tabs · zoom", ctx: "ui", zone: "ui", x: 570, y: 680, w: 200, ...R("console", 1),
-      blurb: "A Window with `force_native`: on the desktop its own OS window, opened BESIDE the main window (a native window overlapping it corrupts the main picture on macOS); headless and the web embed it. A VSplit: a TabContainer on top (Shape, and Colour with the palette window), the Movement pane below. Runs its own Ctrl-tap detector and hands other keys to Main. Cmd+= / Cmd+- / Cmd+0 zoom the whole window through its content scale, caught in `_input` before any control; Main keeps the level in `Settings.console_zoom`.",
-      links: [RL("console", 59, "force_native"), RL("console", 156, "open: place_beside"), RL("console", 72, "the tabs"), RL("console", 198, "zoom_key"), RL("main", 149, "zoom ↔ Settings"), RL("tConsole", 121, "zoom test")] },
+    { id: "console", label: "ConsoleWindow", sub: "force_native · three tabs · zoom", ctx: "ui", zone: "ui", x: 570, y: 680, w: 200, ...R("console", 1),
+      blurb: "A Window with `force_native`: on the desktop its own OS window, opened BESIDE the main window (a native window overlapping it corrupts the main picture on macOS); headless and the web embed it. A VSplit: a TabContainer on top (Shape; Colour with the palette window; View, the old pause menu), the Movement pane below. Runs its own Ctrl-tap detector and hands other keys to Main. Cmd+= / Cmd+- / Cmd+0 zoom the whole window through its content scale, caught in `_input` before any control; Main keeps the level in `Settings.console_zoom`.",
+      links: [RL("console", 62, "force_native"), RL("console", 167, "open: place_beside"), RL("console", 75, "the tabs"), RL("console", 209, "zoom_key"), RL("main", 147, "zoom ↔ Settings"), RL("tConsole", 123, "zoom test")] },
     { id: "inspector", label: "AttributeInspector", sub: "one per tab: headings + rows", ctx: "ui", zone: "ui", x: 830, y: 800, w: 210, ...R("inspector", 1),
       blurb: "A ScrollContainer of group headings and one AttributeRow per spec, built once from the table. There are two over the one table: the Shape tab limited to SHAPE_GROUPS, and the Colour tab limited to COLOUR_GROUPS with the palette window as a header that scrolls with the rows. Owns no state: forwards the Source list and each frame's resolved values to the rows; both stay in step through the table's `changed`.",
-      links: [RL("inspector", 59, "_populate"), RL("console", 83, "Shape tab"), RL("console", 94, "Colour tab"), RL("inspector", 91, "set_resolved"), RL("tConsole", 48, "one row per spec across the tabs")] },
+      links: [RL("inspector", 59, "_populate"), RL("console", 86, "Shape tab"), RL("console", 97, "Colour tab"), RL("inspector", 91, "set_resolved"), RL("tConsole", 48, "one row per spec across the tabs")] },
     { id: "movement", label: "MovementPane", sub: "axis lines · clock · keymap files", ctx: "ui", zone: "ui", x: 570, y: 800, w: 200, ...R("movement", 1),
       blurb: "One line per axis (label, id, live value, 0, speed, two key-capture buttons, ✕), Add axis, the clock and speed-factor readouts beside a Reset camera button, the load-shed level, and Save / Save as… / Load… for the keymap. A view over Keymap: writes through the rebind API, rebuilds on a structural `changed`.",
       links: [RL("movement", 149, "_build_line"), RL("movement", 262, "_on_keymap_changed"), RL("movement", 285, "readouts")] },
@@ -382,9 +388,9 @@ const arch = {
       links: [RL("keycap", 38, "_input"), RL("keycap", 47, "_capture")] },
 
     // saved views
-    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "main", zone: "files", x: 1440, y: 680, w: 230, ...R("main", 286),
-      blurb: "The pause menu's Save view… / Load view… and ⌘S land here. After a load Main resolves at once so the picture follows this frame.",
-      links: [RL("main", 297, "load_view_from"), RL("main", 308, "resolve after a load")] },
+    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "main", zone: "files", x: 1440, y: 680, w: 230, ...R("main", 253),
+      blurb: "The console View tab's Save view… / Load view… and ⌘S land here. After a load Main resolves at once so the picture follows this frame.",
+      links: [RL("main", 264, "load_view_from"), RL("main", 275, "resolve after a load")] },
     { id: "ws", label: "Workspace", sub: "view JSON v2 · v1 migration", ctx: "files", zone: "files", x: 1440, y: 790, w: 230, ...R("ws", 1),
       blurb: "A view, version 2: `shape` (the table's defaults and ACTIVE bindings), `axes` (every axis value), `fractal` (preferences), `camera`, `noise`. The clock and the keymap are not saved. A version-1 file is migrated to the new ids without a warning.",
       links: [RL("ws", 31, "capture"), RL("ws", 56, "restore"), RL("ws", 75, "axis values: Axes.set_value"), RL("ws", 181, "_migrate_v1")] },
@@ -407,7 +413,7 @@ const arch = {
       blurb: "A focused text field in any viewport silences every axis for the frame." },
     { from: "shape", to: "spec", kind: "call", label: "make", ...R("shape", 60),
       blurb: "Each knob is one `AttributeSpec.make({...})` dictionary." },
-    { from: "shape", to: "table", kind: "call", label: "specs()", ...R("main", 67), bow: 0,
+    { from: "shape", to: "table", kind: "call", label: "specs()", ...R("main", 64), bow: 0,
       blurb: "Main builds `AttributeTable.new(MandelboxShape.specs())`." },
     { from: "table", to: "spec", kind: "call", label: "sanitize", ...R("table", 56), bow: 0.3,
       blurb: "`set_default` sanitizes through the spec, so a typed or dragged default obeys the same clamp / wrap as a driven value." },
@@ -417,16 +423,16 @@ const arch = {
       blurb: "For each spec: `table.get_default(id)` and `table.binding(id)`." },
     { from: "resolver", to: "spec", kind: "call", label: "sanitize", ...R("resolver", 36), bow: 0.3,
       blurb: "The driven value goes through the spec's `sanitize`." },
-    { from: "mresolve", to: "resolver", kind: "call", label: "resolve()", ...R("main", 278), bow: 0,
+    { from: "mresolve", to: "resolver", kind: "call", label: "resolve()", ...R("main", 245), bow: 0,
       blurb: "`BindingResolver.resolve(_table, _keymap.axes().values(), _clock.t)`." },
-    { from: "mresolve", to: "axes", kind: "data", label: "values()", ...R("main", 278), bow: -0.2,
+    { from: "mresolve", to: "axes", kind: "data", label: "values()", ...R("main", 245), bow: -0.2,
       blurb: "The axis values as AxisController left them at the END of the previous frame (Main processes before its children)." },
-    { from: "mresolve", to: "clock", kind: "data", label: "t", ...R("main", 278), bow: 0.2,
+    { from: "mresolve", to: "clock", kind: "data", label: "t", ...R("main", 245), bow: 0.2,
       blurb: "The clock as it stood after the previous frame." },
-    { from: "mresolve", to: "params", kind: "call", label: "apply_resolved", ...R("main", 279), bow: 0.4,
+    { from: "mresolve", to: "params", kind: "call", label: "apply_resolved", ...R("main", 246), bow: 0.4,
       blurb: "Writes every resolved field, emits `changed` at most once." },
-    { from: "mresolve", to: "console", kind: "call", label: "set_resolved", ...R("main", 281), bow: -0.2,
-      blurb: "Only while the console is visible: the bound rows' `→ value` readouts follow.", links: [RL("console", 147, "set_resolved")] },
+    { from: "mresolve", to: "console", kind: "call", label: "set_resolved", ...R("main", 248), bow: -0.2,
+      blurb: "Only while the console is visible: the bound rows' `→ value` readouts follow.", links: [RL("console", 158, "set_resolved")] },
     { from: "params", to: "view", kind: "signal", label: "changed → uniforms", ...R("view", 74), bow: 0,
       blurb: "`_on_params_changed` → `_push_params` + `request_frame`." },
     { from: "params", to: "gov", kind: "signal", label: "_dirty", ...R("gov", 46), bow: -0.6,
@@ -435,23 +441,23 @@ const arch = {
       blurb: "The ring shows with `julia_all` and redraws at the new point." },
     { from: "marker", to: "table", kind: "call", label: "set_default c_0..2", ...R("marker", 61), bow: 0.2,
       blurb: "The drag lands in the table, so the next resolve keeps it." },
-    { from: "mready", to: "keymap", kind: "call", label: "load_file()", ...R("main", 69), bow: 0.3,
+    { from: "mready", to: "keymap", kind: "call", label: "load_file()", ...R("main", 66), bow: 0.3,
       blurb: "`Keymap.new()` then `load_file()`: saves/keymap.json, or the shipped default with a warning." },
-    { from: "mready", to: "console", kind: "call", label: "setup", ...R("main", 143), bow: -0.2,
+    { from: "mready", to: "console", kind: "call", label: "setup", ...R("main", 141), bow: -0.2,
       blurb: "`setup(table, keymap, clock, group_tooltips, speed source)`." },
-    { from: "mdispatch", to: "ctrltap", kind: "call", label: "feed", ...R("main", 425), bow: 0.3,
+    { from: "mdispatch", to: "ctrltap", kind: "call", label: "feed", ...R("main", 392), bow: 0.3,
       blurb: "Step 1 of the dispatcher." },
-    { from: "mdispatch", to: "mtoggle", kind: "call", label: "a tap", ...R("main", 426), bow: 0,
+    { from: "mdispatch", to: "mtoggle", kind: "call", label: "a tap", ...R("main", 393), bow: 0,
       blurb: "A fired tap runs the capture rule." },
-    { from: "mtoggle", to: "console", kind: "call", label: "open / toggle", ...R("main", 401), bow: 0.4,
-      blurb: "Captured: `open()` if hidden. Free: `toggle()`.", links: [RL("main", 403, "toggle")] },
-    { from: "console", to: "mtoggle", kind: "signal", label: "toggle_requested", ...R("main", 146), bow: 0.4,
-      blurb: "The console's own detector fired: the native window received the Ctrl keys, so Main never saw them.", links: [RL("console", 219, "emit")] },
-    { from: "console", to: "mdispatch", kind: "signal", label: "unhandled_key", ...R("main", 147), bow: -0.6,
-      blurb: "Escape, N, ⌘S, ⌘P… pressed while the console has focus run through Main's dispatch.", links: [RL("console", 241, "the forward")] },
-    { from: "console", to: "inspector", kind: "call", label: "setup", ...R("console", 83), bow: 0,
-      blurb: "`_inspector.setup(table, group_tooltips)`; on every Keymap `changed`, `set_sources(axes)`.", links: [RL("console", 245, "_refresh_sources")] },
-    { from: "console", to: "movement", kind: "call", label: "setup", ...R("console", 99), bow: 0 },
+    { from: "mtoggle", to: "console", kind: "call", label: "open / toggle", ...R("main", 368), bow: 0.4,
+      blurb: "Captured: `open()` if hidden. Free: `toggle()`.", links: [RL("main", 370, "toggle")] },
+    { from: "console", to: "mtoggle", kind: "signal", label: "toggle_requested", ...R("main", 144), bow: 0.4,
+      blurb: "The console's own detector fired: the native window received the Ctrl keys, so Main never saw them.", links: [RL("console", 230, "emit")] },
+    { from: "console", to: "mdispatch", kind: "signal", label: "unhandled_key", ...R("main", 145), bow: -0.6,
+      blurb: "Escape, N, ⌘S, ⌘P… pressed while the console has focus run through Main's dispatch.", links: [RL("console", 252, "the forward")] },
+    { from: "console", to: "inspector", kind: "call", label: "setup", ...R("console", 86), bow: 0,
+      blurb: "`_inspector.setup(table, group_tooltips)`; on every Keymap `changed`, `set_sources(axes)`.", links: [RL("console", 256, "_refresh_sources")] },
+    { from: "console", to: "movement", kind: "call", label: "setup", ...R("console", 105), bow: 0 },
     { from: "inspector", to: "row", kind: "call", label: "one per spec", ...R("inspector", 79), bow: 0 },
     { from: "row", to: "table", kind: "call", label: "edits", ...R("row", 334), bow: 1.2,
       blurb: "Slider / spin / check / option → `set_default`; source / gain / wave / period edit the Binding and `notify_binding_changed`.", links: [RL("row", 368, "binding edits")] },
@@ -459,7 +465,7 @@ const arch = {
       blurb: "Each row connects `changed` to `refresh`, guarded by `_updating` so its own edit does not echo." },
     { from: "movement", to: "keymap", kind: "call", label: "rebind API", ...R("movement", 258), bow: -1.6,
       blurb: "Add axis, bind, set_speed, set_label, remove_axis, save_file, load_file.", links: [RL("movement", 225, "add_axis"), RL("movement", 205, "remove_axis")] },
-    { from: "keymap", to: "console", kind: "signal", label: "changed", ...R("console", 105), bow: -0.3,
+    { from: "keymap", to: "console", kind: "signal", label: "changed", ...R("console", 111), bow: -0.3,
       blurb: "The Source dropdowns relist the axes; the Movement pane rebuilds on add / remove (movement_pane.gd:110)." },
     { from: "movement", to: "keycap", kind: "call", label: "two per axis", ...R("movement", 189), bow: 0,
       blurb: "Positive and negative; `key_captured` → `Keymap.bind(id, pos.key(), neg.key())`." },
@@ -467,12 +473,16 @@ const arch = {
       blurb: "A slider writes one component through the palette into the table; each frame the console's `set_resolved` hands the resolved values to `set_live`, so the strip follows a bound channel.", links: [RL("pwin", 116, "set_live")] },
     { from: "palette", to: "table", kind: "call", label: "the twelve ids", ...R("palette", 127), bow: 0.2,
       blurb: "`set_component` is `set_default` on `palette_<v>_<ch>`; `get_component` reads the default; `_on_table_changed` re-emits `changed` for color_mode and the twelve.", links: [RL("palette", 202, "_on_table_changed")] },
-    { from: "inspector", to: "pwin", kind: "call", label: "Colour tab header", ...R("console", 94), bow: 0,
+    { from: "inspector", to: "pwin", kind: "call", label: "Colour tab header", ...R("console", 97), bow: 0,
       blurb: "The Colour tab is a second AttributeInspector limited to COLOUR_GROUPS, with the palette window as its header row." },
-    { from: "movement", to: "mreset", kind: "signal", label: "reset_camera_requested", ...R("main", 151), bow: 0,
-      blurb: "The button's signal, relayed by the console (console_window.gd:100).", links: [RL("movement", 74, "the button")] },
-    { from: "msave", to: "ws", kind: "call", label: "save / load", ...R("main", 288), bow: 0,
-      blurb: "`Workspace.save_file(path, _table, _keymap.axes(), params, camera, noise)`.", links: [RL("main", 299, "load_file")] },
+    { from: "console", to: "viewpane", kind: "call", label: "View tab", ...R("console", 99), bow: -2,
+      blurb: "`ViewPane.new()` is the TabContainer's third child; Main fetches it with `view_pane()` and wires save / load / noise / menu / sensitivity.", links: [RL("main", 184, "Main takes it")] },
+    { from: "viewpane", to: "mreset", kind: "signal", ...R("main", 187), bow: 0,
+      blurb: "The Renderer options' Reset camera button." },
+    { from: "movement", to: "mreset", kind: "signal", label: "reset_camera_requested", ...R("main", 149), bow: 0,
+      blurb: "The button's signal, relayed by the console (console_window.gd:106).", links: [RL("movement", 74, "the button")] },
+    { from: "msave", to: "ws", kind: "call", label: "save / load", ...R("main", 255), bow: 0,
+      blurb: "`Workspace.save_file(path, _table, _keymap.axes(), params, camera, noise)`.", links: [RL("main", 266, "load_file")] },
     { from: "ws", to: "saves", kind: "data", label: "JSON", ...R("ws", 108), bow: 0 },
     { from: "ws", to: "table", kind: "call", label: "to_dict / apply_dict", ...R("ws", 61), bow: 1.0,
       blurb: "Capture writes `table.to_dict()` (active bindings only); restore runs `apply_dict`, which sets the listed defaults and bindings and leaves the rest.", links: [RL("ws", 40, "capture")] },
@@ -491,7 +501,7 @@ const frameSeq = {
     { id: "ctl", col: 1, ctx: "axes", name: "AxisController", sub: "child of Main", ...R("axisCtl", 1) },
     { id: "axes", col: 2, ctx: "axes", name: "Axes", sub: "Axis A value", ...R("axes", 1) },
     { id: "clock", col: 3, ctx: "axes", name: "Clock", sub: "child of Main", ...R("clock", 1) },
-    { id: "main", col: 4, ctx: "main", name: "Main", sub: "_process (the parent)", ...R("main", 270) },
+    { id: "main", col: 4, ctx: "main", name: "Main", sub: "_process (the parent)", ...R("main", 237) },
     { id: "res", col: 5, ctx: "attr", name: "BindingResolver", sub: "static, pure", ...R("resolver", 1) },
     { id: "spec", col: 6, ctx: "attr", name: "AttributeSpec", sub: "sanitize", ...R("spec", 113) },
     { id: "params", col: 7, ctx: "cons", name: "FractalParams", sub: "resolved fields", ...R("params", 1) },
@@ -501,13 +511,13 @@ const frameSeq = {
   ],
   rows: [
     { sec: "FRAME N · Main._process: the parent runs before its children" },
-    { from: "main", to: "main", kind: "call", label: "_process → _resolve_once()", ...R("main", 270),
-      blurb: "Every frame, not only on change: about thirty scalars.", links: [RL("main", 274, "why every frame")] },
-    { from: "main", to: "axes", kind: "data", label: "_keymap.axes().values()", tick: "what frame N−1 pushed", ...R("main", 278),
+    { from: "main", to: "main", kind: "call", label: "_process → _resolve_once()", ...R("main", 237),
+      blurb: "Every frame, not only on change: about thirty scalars.", links: [RL("main", 241, "why every frame")] },
+    { from: "main", to: "axes", kind: "data", label: "_keymap.axes().values()", tick: "what frame N−1 pushed", ...R("main", 245),
       blurb: "A {id: value} dictionary of every axis.", links: [RL("axes", 107, "values")] },
-    { from: "main", to: "clock", kind: "data", label: "_clock.t", tick: "frame N−1's t", ...R("main", 278),
+    { from: "main", to: "clock", kind: "data", label: "_clock.t", tick: "frame N−1's t", ...R("main", 245),
       blurb: "Clock has not run its own `_process` yet this frame." },
-    { from: "main", to: "res", kind: "call", label: "resolve(table, values, t)", ...R("main", 278),
+    { from: "main", to: "res", kind: "call", label: "resolve(table, values, t)", ...R("main", 245),
       blurb: "One dictionary out: catalogue id → value.", links: [RL("resolver", 13, "resolve")] },
     { from: "res", to: "res", kind: "call", label: "resolve_value(spec, default, binding)", ...R("resolver", 16),
       blurb: "Once per spec, in catalogue order." },
@@ -519,7 +529,7 @@ const frameSeq = {
       links: [RL("resolver", 39, "waveform_value")] },
     { from: "res", to: "spec", kind: "call", label: "sanitize(value)", ...R("resolver", 36), toRole: "wrapf into [min, max) for angles, else clampf to the hard range; INT rounds; ENUM falls back.",
       blurb: "The same rule a typed value goes through.", links: [RL("spec", 113, "sanitize")] },
-    { from: "main", to: "params", kind: "call", label: "apply_resolved(values)", ...R("main", 279),
+    { from: "main", to: "params", kind: "call", label: "apply_resolved(values)", ...R("main", 246),
       links: [RL("params", 254, "apply_resolved")] },
     { from: "params", to: "params", kind: "call", label: "get(k) != v → set, setters muted", ...R("params", 261),
       blurb: "`_suppress` stops each setter's `emit_changed`; `dirty` remembers whether anything moved.", links: [RL("params", 256, "_suppress = true")] },
@@ -529,15 +539,15 @@ const frameSeq = {
       blurb: "This frame counts as 'changing': continuous rendering and the adaptive scale." },
     { from: "params", to: "params", kind: "call", label: "nothing differed: no signal at all", ...R("params", 265),
       blurb: "An axis at rest, or no active binding: the resolve costs the scalars and nothing else.", links: [RL("tParams", 74, "the no-emit test")] },
-    { from: "main", to: "console", kind: "call", label: "set_resolved(values)", ...R("main", 281),
-      blurb: "Only while the console is visible.", links: [RL("console", 147, "set_resolved")] },
+    { from: "main", to: "console", kind: "call", label: "set_resolved(values)", ...R("main", 248),
+      blurb: "Only while the console is visible.", links: [RL("console", 158, "set_resolved")] },
     { from: "console", to: "console", kind: "call", label: "each bound row: \"→ value\"", ...R("row", 109),
-      blurb: "Both tabs' inspectors forward to every row (a row with an active binding shows the value in use this frame), and the palette window hands the values to `Palette.set_live`, so the strip and curves follow a bound channel.", links: [RL("console", 147, "both tabs and the palette window"), RL("inspector", 91, "inspector.set_resolved"), RL("pwin", 114, "PaletteWindow.set_resolved")] },
+      blurb: "Both tabs' inspectors forward to every row (a row with an active binding shows the value in use this frame), and the palette window hands the values to `Palette.set_live`, so the strip and curves follow a bound channel.", links: [RL("console", 158, "both tabs and the palette window"), RL("inspector", 91, "inspector.set_resolved"), RL("pwin", 114, "PaletteWindow.set_resolved")] },
     { sec: "LATER IN FRAME N · the children of Main, in tree order" },
     { from: "gov", to: "gov", kind: "call", label: "_process: changing = _dirty", ...R("gov", 69),
       blurb: "Sees the `changed` from this frame's resolve." },
     { from: "clock", to: "clock", kind: "call", label: "t += delta", ...R("clock", 11),
-      blurb: "Paused with the tree (default process mode)." },
+      blurb: "Nothing pauses the tree any more, so it always runs." },
     { from: "ctl", to: "ctl", kind: "call", label: "TextFocus.any(viewports)?", tick: "typing: skip the whole frame", ...R("axisCtl", 22) },
     { from: "ctl", to: "input", kind: "data", label: "strength(pos) − strength(neg)", ...R("axisCtl", 25),
       blurb: "E alone: +1. Ctrl or Cmd held does not silence it (unlike WASD)." },
@@ -545,7 +555,7 @@ const frameSeq = {
     { from: "axes", to: "axes", kind: "call", label: "value += direction × speed × delta", tick: "1 × 1.0 × 1/60 = 0.0167", ...R("axes", 102),
       blurb: "Unbounded; emits `changed` (the Movement pane polls its readouts in `_process` instead).", links: [RL("kfile", 7, "speed 1.0")] },
     { sec: "FRAME N+1" },
-    { from: "main", to: "axes", kind: "data", label: "values(): now sees the pushed value", ...R("main", 278),
+    { from: "main", to: "axes", kind: "data", label: "values(): now sees the pushed value", ...R("main", 245),
       blurb: "The key press of frame N reaches params, the uniforms and the readout here." },
   ],
   fragments: [
@@ -561,52 +571,57 @@ const tapSeq = {
   type: "seq",
   tab: "Ctrl tap and the mouse",
   title: "The Ctrl tap, two detectors and the mouse",
-  note: "Ctrl is also a chord key (⌘S, Ctrl+P), so a tap fires on RELEASE and only if no other key went down in between. A native console window gets its own key events, so it runs its own detector and forwards the keys it does not use to Main. Capture no longer depends on the console being open: a click in the view recaptures and leaves it open, so its readouts stay in sight while flying.",
+  note: "Ctrl is also a chord key (⌘S, Ctrl+P), so a tap fires on RELEASE and only if no other key went down in between. A native console window gets its own key events, so it runs its own detector and forwards the keys it does not use to Main. Capture no longer depends on the console being open: a click in the view recaptures and leaves it open, so its readouts stay in sight while flying. Escape only frees the mouse: it never pauses (there is no pause any more) and never closes the console.",
   laneWidth: 210, headWidth: 180,
   participants: [
     { id: "kb", col: 0, ctx: "axes", name: "player", sub: "keyboard · mouse" },
-    { id: "disp", col: 1, ctx: "main", name: "Main._unhandled_input", sub: "the dispatcher", ...R("main", 423) },
-    { id: "tapM", col: 2, ctx: "main", name: "CtrlTap", sub: "Main's", ...R("main", 42) },
-    { id: "tog", col: 3, ctx: "main", name: "Main._on_console_toggle", sub: "the capture rule", ...R("main", 397) },
+    { id: "disp", col: 1, ctx: "main", name: "Main._unhandled_input", sub: "the dispatcher", ...R("main", 390) },
+    { id: "tapM", col: 2, ctx: "main", name: "CtrlTap", sub: "Main's", ...R("main", 43) },
+    { id: "tog", col: 3, ctx: "main", name: "Main._on_console_toggle", sub: "the capture rule", ...R("main", 364) },
     { id: "con", col: 4, ctx: "ui", name: "ConsoleWindow", sub: "native OS window", ...R("console", 1) },
-    { id: "tapC", col: 5, ctx: "ui", name: "CtrlTap", sub: "the console's", ...R("console", 52) },
-    { id: "mouse", col: 6, ctx: "axes", name: "Input.mouse_mode", sub: "CAPTURED / VISIBLE", ...R("main", 385) },
+    { id: "tapC", col: 5, ctx: "ui", name: "CtrlTap", sub: "the console's", ...R("console", 55) },
+    { id: "mouse", col: 6, ctx: "axes", name: "Input.mouse_mode", sub: "CAPTURED / VISIBLE", ...R("main", 352) },
   ],
   rows: [
     { sec: "THE MAIN WINDOW HAS FOCUS · Main's own detector" },
-    { from: "kb", to: "disp", kind: "call", label: "Ctrl down (not an echo)", ...R("main", 425) },
+    { from: "kb", to: "disp", kind: "call", label: "Ctrl down (not an echo)", ...R("main", 392) },
     { from: "disp", to: "tapM", kind: "call", label: "feed(event): arm", tick: "unless a text field is focused", ...R("ctrlTap", 27),
-      blurb: "`_armed = not _typing()`: the typing guard asks TextFocus about every viewport.", links: [RL("main", 100, "the guard")] },
-    { from: "kb", to: "disp", kind: "call", label: "S down (Ctrl+S)", tick: "any other key while armed", ...R("main", 425) },
+      blurb: "`_armed = not _typing()`: the typing guard asks TextFocus about every viewport.", links: [RL("main", 98, "the guard")] },
+    { from: "kb", to: "disp", kind: "call", label: "S down (Ctrl+S)", tick: "any other key while armed", ...R("main", 392) },
     { from: "disp", to: "tapM", kind: "call", label: "feed: disarm", ...R("ctrlTap", 32),
       blurb: "So Ctrl+S saves and never toggles; Ctrl+P is disarmed before the screenshot consumes its P.", links: [RL("tMain", 65, "the Ctrl+P test")] },
-    { from: "kb", to: "disp", kind: "call", label: "Ctrl up", ...R("main", 425) },
+    { from: "kb", to: "disp", kind: "call", label: "Ctrl up", ...R("main", 392) },
     { from: "disp", to: "tapM", kind: "call", label: "feed: armed → fire (true)", ...R("ctrlTap", 28) },
-    { from: "disp", to: "tog", kind: "call", label: "_on_console_toggle()", ...R("main", 426) },
-    { from: "tog", to: "tog", kind: "call", label: "_free_requested = true", ...R("main", 399),
+    { from: "disp", to: "tog", kind: "call", label: "_on_console_toggle()", ...R("main", 393) },
+    { from: "tog", to: "tog", kind: "call", label: "_free_requested = true", ...R("main", 366),
       blurb: "Flying: the tap frees the mouse." },
-    { from: "tog", to: "con", kind: "call", label: "open() if hidden", ...R("main", 401), blurb: "open() places the native window beside the main one (UiScale.place_beside), never over it.",
-      links: [RL("console", 157, "place_beside"), RL("uiScale", 160, "beside_position")] },
-    { from: "tog", to: "con", kind: "call", label: "toggle()", ...R("main", 403) },
-    { from: "tog", to: "tog", kind: "call", label: "now hidden → _free_requested = false", ...R("main", 405) },
-    { from: "tog", to: "mouse", kind: "call", label: "_update_mouse()", tick: "FLY ∧ ¬paused ∧ ¬_free_requested ∧ ¬noise", ...R("main", 406),
-      links: [RL("main", 382, "the rule")] },
+    { from: "tog", to: "con", kind: "call", label: "open() if hidden", ...R("main", 368), blurb: "open() places the native window beside the main one (UiScale.place_beside), never over it.",
+      links: [RL("console", 168, "place_beside"), RL("uiScale", 160, "beside_position")] },
+    { from: "tog", to: "con", kind: "call", label: "toggle()", ...R("main", 370) },
+    { from: "tog", to: "tog", kind: "call", label: "now hidden → _free_requested = false", ...R("main", 372) },
+    { from: "tog", to: "mouse", kind: "call", label: "_update_mouse()", tick: "FLY ∧ ¬_free_requested ∧ ¬noise", ...R("main", 373),
+      links: [RL("main", 349, "the rule")] },
     { sec: "THE CONSOLE HAS FOCUS · the native window gets the keys" },
-    { from: "kb", to: "con", kind: "call", label: "Ctrl down … Ctrl up", ...R("console", 234),
+    { from: "kb", to: "con", kind: "call", label: "Ctrl down … Ctrl up", ...R("console", 245),
       blurb: "Only while visible." },
-    { from: "con", to: "tapC", kind: "call", label: "feed_ctrl(event)", ...R("console", 218),
-      links: [RL("console", 103, "its typing guard: its own viewport")] },
-    { from: "con", to: "tog", kind: "signal", label: "toggle_requested", ...R("main", 146),
-      blurb: "Main runs the same rule as for its own tap.", links: [RL("console", 219, "emit")] },
-    { from: "kb", to: "con", kind: "call", label: "Escape · N · ⌘S · ⌘P", ...R("console", 241),
+    { from: "con", to: "tapC", kind: "call", label: "feed_ctrl(event)", ...R("console", 229),
+      links: [RL("console", 109, "its typing guard: its own viewport")] },
+    { from: "con", to: "tog", kind: "signal", label: "toggle_requested", ...R("main", 144),
+      blurb: "Main runs the same rule as for its own tap.", links: [RL("console", 230, "emit")] },
+    { from: "kb", to: "con", kind: "call", label: "Escape · N · ⌘S · ⌘P", ...R("console", 252),
       blurb: "Any key except Ctrl that the console's controls left unhandled." },
-    { from: "con", to: "disp", kind: "signal", label: "unhandled_key → _on_window_key", ...R("main", 147),
-      blurb: "Runs Main's whole dispatch, plus ⌘S quick-save.", links: [RL("main", 412, "_on_window_key")] },
+    { from: "con", to: "disp", kind: "signal", label: "unhandled_key → _on_window_key", ...R("main", 145),
+      blurb: "Runs Main's whole dispatch, plus ⌘S quick-save.", links: [RL("main", 379, "_on_window_key")] },
     { sec: "A CLICK IN THE VIEW" },
-    { from: "kb", to: "disp", kind: "call", label: "left click · FLY · mouse free", ...R("main", 466),
+    { from: "kb", to: "disp", kind: "call", label: "left click · FLY · mouse free", ...R("main", 436),
       blurb: "A click on the console is the console's own and never gets here.", links: [RL("tMain", 118, "the real-click test")] },
-    { from: "disp", to: "mouse", kind: "call", label: "_free_requested = false · _update_mouse()", tick: "the console stays open", ...R("main", 470),
-      links: [RL("main", 473, "_update_mouse"), RL("tMain", 104, "the test")] },
+    { from: "disp", to: "mouse", kind: "call", label: "_free_requested = false · _update_mouse()", tick: "the console stays open", ...R("main", 440),
+      links: [RL("main", 443, "_update_mouse"), RL("tMain", 104, "the test")] },
+    { sec: "ESCAPE · frees the mouse, nothing else" },
+    { from: "kb", to: "disp", kind: "call", label: "Escape (the cancel action)", tick: "from either window", ...R("main", 399),
+      blurb: "Pressed in the main window it lands here directly; pressed in the focused console it arrives through unhandled_key like the other unused keys.", links: [RL("proj", 63, "cancel = Escape"), RL("console", 252, "the console's forward")] },
+    { from: "disp", to: "mouse", kind: "call", label: "_free_requested = true · _update_mouse()", tick: "no pause; the console stays open", ...R("main", 400),
+      links: [RL("tMain", 240, "the test"), RL("tMain", 249, "never closes the console")] },
   ],
   fragments: [
     { type: "alt", rows: [8, 11], cols: [3, 5], guard1: "mouse captured", divRow: 10, guard2: "mouse free" },
@@ -614,9 +629,9 @@ const tapSeq = {
 };
 
 // ================================================================== 3. the stepper
-// simulate: the frames of Main._process → Clock._process → AxisController._process (main.gd:270-281,
+// simulate: the frames of Main._process → Clock._process → AxisController._process (main.gd:237-248,
 // clock.gd:10-11, axis_controller.gd:19-28), from the key held in each frame. Frame 0 is Main._ready's
-// resolve (main.gd:104). Each frame READS the axis and t frame n−1 left and WRITES params, t and the axis.
+// resolve (main.gd:102). Each frame READS the axis and t frame n−1 left and WRITES params, t and the axis.
 // `alt` is a hypothetical: the value the same frame would write if the axes moved before the resolve.
 const STEP_IDS = ["box_scale", "fold_limit", "iter_rot_xy", "c_0"];
 const STEP_DIALS = {
@@ -662,7 +677,7 @@ const stepFig = {
     // ---- the stage boxes: frame N's steps in run order, each showing this frame's number
     const BW = 208, BG = 10, BH = 76, BY0 = 16;
     const STAGES = [
-      { n: "1", name: "raw", f: "axis(N−1) | t(N−1) | 0", c: C_RAW, tip: { ...R("resolver", 28), blurb: "Main reads `_keymap.axes().values()` and `_clock.t` as the previous frame left them. `time` reads t, a known axis id its value, an unknown id 0.", links: [RL("main", 278, "the call"), RL("resolver", 33, "unknown axis → 0")] } },
+      { n: "1", name: "raw", f: "axis(N−1) | t(N−1) | 0", c: C_RAW, tip: { ...R("resolver", 28), blurb: "Main reads `_keymap.axes().values()` and `_clock.t` as the previous frame left them. `time` reads t, a known axis id its value, an unknown id 0.", links: [RL("main", 245, "the call"), RL("resolver", 33, "unknown axis → 0")] } },
       { n: "2", name: "wave", f: "raw | sin 2πr/p | tri", c: C_RAW, tip: { ...R("resolver", 39), blurb: "Linear passes raw through (period unused). Sine is sin(2π·raw/p). Triangle is 1 − 4·|fposmod(raw/p + ¼, 1) − ½|: 0 at 0, +1 at p/4, 0 at p/2, −1 at 3p/4.", links: [RL("resolver", 43, "sine"), RL("resolver", 46, "triangle")] } },
       { n: "3", name: "drive", f: "default + gain × wave", c: C_PRE, tip: { ...R("resolver", 35), blurb: "The table default plus the binding's gain times the wave. Gain is the key's sensitivity: with Linear and speed 1, gain 0.5 moves the knob half a unit per second of E.", links: [RL("binding", 12, "gain default 1")] } },
       { n: "4", name: "sanitize", f: "wrap [min,max) | clamp hard", c: C_PAR, tip: { ...R("spec", 113), blurb: "Angles (`wrap`) fold into [min, max) with wrapf; every other FLOAT clamps to the HARD range, which may be wider than the slider (box_scale: slider −5…3, hard ±6; constants: slider ±4, hard ±16).", links: [RL("spec", 118, "wrapf"), RL("spec", 119, "clampf")] } },
@@ -680,8 +695,8 @@ const stepFig = {
       return api.text(x + 10, BY0 + 62, "", "mono", { style: `font-size:11.5px;fill:${st.c};${noPtr}` });
     });
     api.el("line", { x1: 20 + 5 * (BW + BG) - BG / 2, y1: BY0 - 4, x2: 20 + 5 * (BW + BG) - BG / 2, y2: BY0 + BH + 4, style: "stroke:var(--muted);stroke-width:1.2;stroke-dasharray:3 3" });
-    api.text(20, BY0 + BH + 16, "Main._process: the resolve (main.gd:277-281)", "muted", { style: small });
-    api.text(20 + 5 * (BW + BG), BY0 + BH + 16, "then Main's children (main.gd:134-158)", "muted", { style: small });
+    api.text(20, BY0 + BH + 16, "Main._process: the resolve (main.gd:244-248)", "muted", { style: small });
+    api.text(20 + 5 * (BW + BG), BY0 + BH + 16, "then Main's children (main.gd:132-156)", "muted", { style: small });
 
     // ---- the two charts
     const GX = 70, NCOL = 240, COLW = 4, CW = NCOL * COLW;
@@ -722,7 +737,7 @@ const stepFig = {
     let s0 = 0;
     for (let i = 0; i < NCOL; i++) {
       const hit = api.el("rect", { x: GX + i * COLW, y: A.y, width: COLW, height: EY + 14 - A.y, style: "fill:transparent;cursor:pointer" });
-      api.tip(hit, { title: "a frame", ...R("main", 277), links: [RL("resolver", 25, "resolve_value"), RL("axes", 102, "Axes.step")], live() {
+      api.tip(hit, { title: "a frame", ...R("main", 244), links: [RL("resolver", 25, "resolve_value"), RL("axes", 102, "Axes.step")], live() {
         const f = frames[s0 + i];
         if (!f || s0 + i > S.k) return { title: "no frame yet", blurb: "Step ▶ adds frames." };
         return { title: `frame ${f.n}${f.n === 0 ? " (Main._ready's resolve)" : ` · ${KEYNAME(f.key)}`}`, sub: "click to open this frame",
@@ -746,7 +761,7 @@ const stepFig = {
     const readL = box(142, 112, "READS — what frame N−1 left", C_RAW);
     const writeL = box(266, 94, "WRITES", C_PAR);
     const calcL = [0, 1, 2, 3, 4].map(i => api.text(RX, 384 + i * 19, "", "mono", { style: "font-size:11.5px" }));
-    api.tip(api.el("rect", { x: RX, y: 142, width: RW, height: 112, style: "fill:transparent" }), { title: "what the resolve reads", ...R("main", 278),
+    api.tip(api.el("rect", { x: RX, y: 142, width: RW, height: 112, style: "fill:transparent" }), { title: "what the resolve reads", ...R("main", 245),
       blurb: "Axis values and t as the children left them at the end of the previous frame; the table default and binding as the console last edited them.", links: [RL("table", 46, "get_default"), RL("table", 69, "binding")] });
     api.tip(api.el("rect", { x: RX, y: 266, width: RW, height: 94, style: "fill:transparent" }), { title: "what the frame writes", ...R("params", 254),
       blurb: "params (once, through apply_resolved), then the clock and the axis for the next frame.", links: [RL("clock", 11, "t += delta"), RL("axes", 102, "the axis")] });
@@ -935,8 +950,8 @@ const consoleFig = {
   type: "figure",
   tab: "The console window",
   title: "The console window, widget by widget",
-  note: "A sketch of the window at about its default 1000 × 700 points: two tabs (Shape, Colour) stacked above the Movement pane in a VSplitContainer (side by side, the panes' minimum widths overflowed the window). Left, the Shape tab, with Scale bound to Axis A and E held half a second, as ui_console_test checks it (→ −1.59). Right, the same window on its Colour tab: the palette window above the Colour, Lighting and Palette rows. Hover any widget for the line that builds it and what an edit does.",
-  w: 1700, h: 820,
+  note: "A sketch of the window at about its default 1000 × 700 points: three tabs (Shape, Colour, View) stacked above the Movement pane in a VSplitContainer (side by side, the panes' minimum widths overflowed the window). Left, the Shape tab, with Scale bound to Axis A and E held half a second, as ui_console_test checks it (→ −1.59). Middle, the same window on its Colour tab: the palette window above the Colour, Lighting and Palette rows. Right, its View tab, which replaced the pause menu. Hover any widget for the line that builds it and what an edit does.",
+  w: 2130, h: 820,
   draw(api) {
     const X0 = 30, Y0 = 30, WW = 1000, TB = 28, CH = 740;
     const C_UI = api.hue(2), C_OK = api.hue(3), C_ATTR = api.hue(1);
@@ -947,19 +962,19 @@ const consoleFig = {
       return r;
     };
     // window chrome
-    const winRect = rr(X0, Y0, WW, TB + CH, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "ConsoleWindow", ...R("console", 55),
+    const winRect = rr(X0, Y0, WW, TB + CH, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "ConsoleWindow", ...R("console", 58),
       blurb: "Title \"Console\", sized `UiScale.px(DEFAULT_SIZE)` (1000 × 700 points), minimum 700 × 400, resizable, hidden at start. `force_native` must be set while hidden. Opened BESIDE the main window by `place_beside`; on the web and headless it is embedded. Cmd+= / Cmd+- step the zoom through ZOOM_STEPS (0.5 … 2) and Cmd+0 resets it: the content scale grows, the window keeps its size and the panes reflow. The level is the player's, kept in Settings.console_zoom.",
-      links: [RL("console", 37, "DEFAULT_SIZE"), RL("console", 58, "hidden before force_native"), RL("console", 156, "open"), RL("console", 40, "ZOOM_STEPS"), RL("console", 226, "zoom chords caught in _input"), RL("settings", 29, "Settings.console_zoom")] });
-    rr(X0, Y0, WW, TB, `fill:var(--surface);stroke:var(--muted);stroke-width:1`, { title: "the window's own title bar", ...R("console", 57),
-      blurb: "A native OS window: drag it anywhere, onto another monitor. Its ✕ calls `hide_console`.", links: [RL("console", 66, "close_requested")] }, "Console", "ink", "font-weight:600");
+      links: [RL("console", 39, "DEFAULT_SIZE"), RL("console", 61, "hidden before force_native"), RL("console", 167, "open"), RL("console", 42, "ZOOM_STEPS"), RL("console", 237, "zoom chords caught in _input"), RL("settings", 29, "Settings.console_zoom")] });
+    rr(X0, Y0, WW, TB, `fill:var(--surface);stroke:var(--muted);stroke-width:1`, { title: "the window's own title bar", ...R("console", 60),
+      blurb: "A native OS window: drag it anywhere, onto another monitor. Its ✕ calls `hide_console`.", links: [RL("console", 69, "close_requested")] }, "Console", "ink", "font-weight:600");
     // columns of a wide row (attribute_row.gd: label 140, spin 92, option 92, small spin 76)
     const LX = X0 + 12, VX = LX + 146, SPX = X0 + 524, BX0 = X0 + 624, SRC = 92, GN = 76, WV = 92, PD = 76;
     let y = Y0 + TB + 6;
     const tabBar = (x0, active) => {
-      ["Shape", "Colour"].forEach((name, i) => {
+      ["Shape", "Colour", "View"].forEach((name, i) => {
         rr(x0 + i * 74, y, 70, 22, i === active ? `fill:var(--surface);stroke:${C_UI};stroke-width:1.4` : "fill:var(--fig-bg);stroke:var(--hairline);stroke-width:1",
-          { title: `the ${name} tab`, ...R("console", 72), blurb: i === 0 ? "An AttributeInspector limited to SHAPE_GROUPS: Box, Julia, Iteration rotation, Render." : "An AttributeInspector limited to COLOUR_GROUPS (Colour, Lighting, Palette), with the palette window as its header.",
-            links: [RL("console", i === 0 ? 83 : 94, "setup"), RL("shape", 274, "SHAPE_GROUPS / COLOUR_GROUPS")] }, name, "ink", "font-size:11.5px");
+          { title: `the ${name} tab`, ...R("console", 75), blurb: ["An AttributeInspector limited to SHAPE_GROUPS: Box, Julia, Iteration rotation, Render.", "An AttributeInspector limited to COLOUR_GROUPS (Colour, Lighting, Palette), with the palette window as its header.", "The ViewPane: files, camera mode, mouse sensitivity, Noise editor, Renderer options and Back to Menu (the old pause menu)."][i],
+            links: [RL("console", [86, 97, 99][i], "built here"), RL("shape", 274, "SHAPE_GROUPS / COLOUR_GROUPS")] }, name, "ink", "font-size:11.5px");
       });
     };
     tabBar(LX, 0);
@@ -998,7 +1013,7 @@ const consoleFig = {
     heading("BOX", "the fold-and-scale step repeated at every pixel …");
     label("Scale", 61); slider((-2.09 + 5) / 8); spin("-2.09"); binding("Axis A", "1.00", "Linear", "4.00", true);
     const ro = api.text(VX, y + 42, "→ -1.59", "mono", { style: `font-size:11px;fill:${C_OK};cursor:pointer` });
-    api.tip(ro, { title: "the readout", ...R("row", 101), blurb: "Visible while the binding is active: the value in use this frame (default + gain × wave(source)), fed by Main through `set_resolved` each frame the console is open. −2.09 + 1 × 0.5 = −1.59.", links: [RL("main", 281, "Main feeds it"), RL("tUiConsole", 169, "the test")] });
+    api.tip(ro, { title: "the readout", ...R("row", 101), blurb: "Visible while the binding is active: the value in use this frame (default + gain × wave(source)), fed by Main through `set_resolved` each frame the console is open. −2.09 + 1 × 0.5 = −1.59.", links: [RL("main", 248, "Main feeds it"), RL("tUiConsole", 169, "the test")] });
     y += 50;
     floatRow("Fold limit", 68, 1 / 3, "1");
     floatRow("Min radius", 74, 0.35, "0.7");
@@ -1027,8 +1042,8 @@ const consoleFig = {
     rr(X0 + WW - 12, Y0 + TB + 6, 6, y - Y0 - TB - 12, "fill:var(--hairline);stroke:none", { title: "the Shape list scrolls", ...R("inspector", 47),
       blurb: "A ScrollContainer with horizontal scrolling off; the wheel over a label, slider or unfocused spin box scrolls without changing a value.", links: [RL("tUiConsole", 94, "the wheel test")] });
     const dragY = y + 4;
-    rr(X0 + 4, dragY - 3, WW - 8, 6, "fill:var(--hairline);stroke:none", { title: "the VSplitContainer dragger", ...R("console", 68),
-      blurb: "Drag to share the height differently (kept for the session only). The inspector expands; the Movement pane keeps its natural height.", links: [RL("console", 98, "Movement: SIZE_FILL"), RL("addendum", 201, "why stacked")] });
+    rr(X0 + 4, dragY - 3, WW - 8, 6, "fill:var(--hairline);stroke:none", { title: "the VSplitContainer dragger", ...R("console", 71),
+      blurb: "Drag to share the height differently (kept for the session only). The inspector expands; the Movement pane keeps its natural height.", links: [RL("console", 104, "Movement: SIZE_FILL"), RL("addendum", 201, "why stacked")] });
     y = dragY + 10;
     // Movement pane
     const mh = api.text(LX, y + 14, "MOVEMENT", "", { style: `${caps};font-size:12px;fill:${C_ATTR}` });
@@ -1036,7 +1051,7 @@ const consoleFig = {
     y += 24;
     let mx = LX;
     const mw = (w, lbl, t) => { rr(mx, y + 3, w, 24, null, t, lbl); mx += w + 4; };
-    mw(90, "Axis A", { title: "label (LineEdit)", ...R("movement", 153), blurb: "Rename on Enter or focus loss: `Keymap.set_label`; the Source dropdowns relist. While it has focus, every axis key, WASD, N and the Ctrl tap are silenced.", links: [RL("movement", 237, "_on_label_submitted"), RL("tMain", 200, "WASD silenced")] });
+    mw(90, "Axis A", { title: "label (LineEdit)", ...R("movement", 153), blurb: "Rename on Enter or focus loss: `Keymap.set_label`; the Source dropdowns relist. While it has focus, every axis key, WASD, N and the Ctrl tap are silenced.", links: [RL("movement", 237, "_on_label_submitted"), RL("tMain", 197, "WASD silenced")] });
     api.text(mx + 4, y + 19, "a", "muted", { style: "font-size:12px" }); mx += 44;
     const vt = api.text(mx, y + 19, "0.500", "mono", { style: "font-size:12px;cursor:pointer" });
     api.tip(vt, { title: "the live value", ...R("movement", 167), blurb: "Unbounded; refreshed every `_process` (\"%.3f\").", links: [RL("movement", 287, "the readout")] });
@@ -1055,8 +1070,8 @@ const consoleFig = {
     api.text(LX, y + 14, "speed x1.00", "mono", { style: "font-size:12px;" + noPtr });
     api.tip(api.el("rect", { x: LX, y: y, width: 84, height: 18, style: "fill:transparent;cursor:pointer" }), { title: "the fly speed factor", ...R("movement", 292), blurb: "Moved here from the Q panel; the mouse wheel changes it." });
     mx = LX + 96;
-    rr(mx, y - 2, 104, 22, null, { title: "Reset camera", ...R("movement", 72), blurb: "Emits reset_camera_requested, relayed by the console to Main.reset_camera: the camera and its speed factor go back to where the current file has them (the starting view when none is current; a save or a load moves that point). The Settings menu's Renderer tab has the same button.",
-      links: [RL("console", 100, "relayed"), RL("main", 325, "Main.reset_camera"), RL("main", 334, "_remember_home"), RL("renderer", 57, "the Renderer tab's button"), RL("tMain", 165, "the test")] }, "Reset camera");
+    rr(mx, y - 2, 104, 22, null, { title: "Reset camera", ...R("movement", 72), blurb: "Emits reset_camera_requested, relayed by the console to Main.reset_camera: the camera and its speed factor go back to where the current file has them (the starting view when none is current; a save or a load moves that point). The View tab's Renderer options have the same button.",
+      links: [RL("console", 106, "relayed"), RL("main", 292, "Main.reset_camera"), RL("main", 301, "_remember_home"), RL("renderer", 57, "the View tab's Renderer button"), RL("tMain", 166, "the test")] }, "Reset camera");
     y += 24;
     ro2("load shed 2/4", 277, "the load-shed level", "Shown only while the governor sheds quality (level > 0).", true);
     y += 6;
@@ -1069,8 +1084,8 @@ const consoleFig = {
     // ---- the Colour tab, on the right
     const CX = X0 + WW + 30, CW = 600, C_R = api.hue(5), C_G = api.hue(3), C_B = api.hue(1);
     const CH_COL = [C_R, C_G, C_B];
-    const cRect = rr(CX, Y0, CW, 100, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "the same window on its Colour tab", ...R("console", 85),
-      blurb: "One Palette over the shape table, one PaletteWindow over that palette, as the header of a second AttributeInspector.", links: [RL("console", 94, "the Colour inspector")] });
+    const cRect = rr(CX, Y0, CW, 100, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "the same window on its Colour tab", ...R("console", 88),
+      blurb: "One Palette over the shape table, one PaletteWindow over that palette, as the header of a second AttributeInspector.", links: [RL("console", 97, "the Colour inspector")] });
     rr(CX, Y0, CW, TB, "fill:var(--surface);stroke:var(--muted);stroke-width:1", null, "Console", "ink", "font-weight:600");
     y = Y0 + TB + 6;
     tabBar(CX + 12, 1);
@@ -1138,6 +1153,54 @@ const consoleFig = {
     cHead("PALETTE", "the twelve numbers of the cosine palette …");
     cNote("A red … D blue: twelve rows, Palette mode only, each with its own Source / Gain / Wave / Period", 259, "the twelve palette rows", "The same numbers as the sliders above, as catalogue rows, so each channel can pulse, ripple or cycle on its own binding.");
     cRect.setAttribute("height", y + 12 - Y0);
+    const colourBottom = y;
+
+    // ---- the View tab, on the far right
+    const VX0 = CX + CW + 30, VW = 410, vl = VX0 + 16;
+    const vRect = rr(VX0, Y0, VW, 100, "fill:var(--fig-bg);stroke:var(--muted);stroke-width:1.4", { title: "the same window on its View tab", ...R("viewPane", 1),
+      blurb: "Everything the old pause menu held that is not a shape knob. It only emits signals; Main wires them.", links: [RL("main", 183, "_build_view_pane"), COMMIT("5ebb10a")] });
+    rr(VX0, Y0, VW, TB, "fill:var(--surface);stroke:var(--muted);stroke-width:1", null, "Console", "ink", "font-weight:600");
+    y = Y0 + TB + 6;
+    tabBar(VX0 + 12, 2);
+    y += 34;
+    const vHead = text => { api.text(vl, y + 12, text, "", { style: `${caps};font-size:12px;fill:${C_ATTR}` }); y += 22; };
+    const vBtn = (x, w, lbl, file, line, title, blurb, links) => rr(x, y, w, 22, null, { title, file: F[file], line, blurb, links }, lbl);
+    vHead("FILE");
+    vBtn(vl, 96, "Save view…", "viewPane", 52, "Save view…", "save_requested → WorkspaceFiles.prompt_save; Main saves through Workspace and the saved file becomes the Reset camera point. ⌘S overwrites the current file without a panel.", [RL("main", 189, "wired"), RL("main", 253, "save_view_to")]);
+    vBtn(vl + 104, 96, "Load view…", "viewPane", 54, "Load view…", "load_requested → prompt_load; Main loads, resolves at once and reports here.", [RL("main", 190, "wired")]);
+    const fl = api.text(vl + 212, y + 15, "default.json", "mono", { style: "font-size:11.5px;cursor:pointer" });
+    api.tip(fl, { title: "the current file", ...R("viewPane", 127), blurb: "show_file(display_name), an em dash when no file is current; Main calls it on WorkspaceFiles.current_changed.", links: [RL("main", 217, "Main updates it")] });
+    y += 28;
+    const st = api.text(vl, y + 12, "Loaded default.json", "muted", { style: `${small};cursor:pointer` });
+    api.tip(st, { title: "the status line", ...R("viewPane", 132), blurb: "Main._report writes every save / load / screenshot message here (it was the pause menu's).", links: [RL("main", 322, "_report")] });
+    y += 24;
+    vHead("CAMERA");
+    api.text(vl, y + 15, "Camera", "ink", { style: "font-size:12px;" + noPtr });
+    vBtn(vl + 70, 80, "Fly ▾", "viewPane", 70, "Camera mode", "Writes params.camera_mode; Main._apply_mode switches the camera.", [RL("viewPane", 148, "_on_camera_selected"), RL("tMain", 186, "the test")]);
+    y += 28;
+    api.text(vl, y + 15, "Mouse sensitivity", "ink", { style: "font-size:12px;" + noPtr });
+    vBtn(vl + 130, 180, "──●──────  0.100", "viewPane", 81, "mouse sensitivity", "The player's, kept by the Settings autoload: sensitivity_changed → Settings.mouse_sensitivity, and Settings.changed → set_sensitivity. A loaded view never overrides it.", [RL("main", 192, "→ Settings"), RL("main", 205, "← Settings"), RL("tMain", 212, "the test")]);
+    y += 28;
+    vBtn(vl, 110, "Noise editor…", "viewPane", 95, "Noise editor…", "Opens the noise-field editor (also N). The mouse is already free while you use the console.", [RL("main", 196, "_open_noise"), RL("tMain", 232, "the test")]);
+    y += 30;
+    vHead("RENDERER");
+    const rrow = (lbl, line) => {
+      api.text(vl, y + 14, lbl, "ink", { style: "font-size:11.5px;" + noPtr });
+      rr(vl + 150, y + 7, 200, 4, "fill:var(--hairline);stroke:none", { title: lbl, file: F.renderer, line, blurb: "A RendererOptions slider: it writes one FractalParams field, saved with the view (not a catalogue knob, so it cannot be bound).", links: [RL("renderer", 93, "_write"), RL("tMain", 297, "the test")] });
+      y += 22;
+    };
+    rrow("Detail", 35); rrow("Full-detail range", 37); rrow("Detail falloff", 39); rrow("Max march steps", 41); rrow("Min resolution", 43);
+    rr(vl, y + 2, 16, 16, null, { title: "Fast Controls", ...R("renderer", 46), blurb: "Let the resolution governor drop the render scale while you move." });
+    api.text(vl + 24, y + 15, "Fast Controls", "ink", { style: "font-size:11.5px;" + noPtr });
+    y += 26;
+    vBtn(vl, 170, "Reset renderer defaults", "renderer", 54, "Reset renderer defaults", "RendererOptions.reset_defaults: the level-of-detail, step budget, minimum scale and Fast Controls defaults.", [RL("renderer", 81, "reset_defaults")]);
+    vBtn(vl + 178, 110, "Reset camera", "renderer", 57, "Reset camera", "The same as the Movement pane's: Main.reset_camera, back to the current file's camera.", [RL("main", 187, "wired"), RL("main", 292, "Main.reset_camera")]);
+    y += 34;
+    api.el("line", { x1: vl, y1: y, x2: VX0 + VW - 16, y2: y, style: "stroke:var(--hairline)" });
+    y += 8;
+    vBtn(vl, 110, "Back to Menu", "viewPane", 105, "Back to Menu", "menu_requested → Main.back_to_menu: change_scene_to_file to the title menu. Unsaved changes are lost.", [RL("main", 201, "back_to_menu"), RL("tMain", 324, "the test")]);
+    y += 34;
+    vRect.setAttribute("height", y - Y0);
 
     // notes under the Colour tab
     const notes = [
@@ -1146,7 +1209,7 @@ const consoleFig = {
       ["Native, beside, never over", "A separate OS window opened right of the main window, else left of it, else on another screen. On the web and headless it is embedded."],
       ["Keys it does not use go to Main", "Escape, N, ⌘S, ⌘P go through `unhandled_key`; the Ctrl tap has its own detector; Cmd+= / - / 0 zoom."],
     ];
-    let ny = y + 34;
+    let ny = colourBottom + 34;
     notes.forEach(([h, b], k) => {
       const nx = CX + (k % 2) * 305, yy = ny + Math.floor(k / 2) * 92;
       api.text(nx, yy, h, "ink", { style: "font-weight:600;font-size:12px" });
@@ -1202,7 +1265,7 @@ const kmFile = {
   rows: [
     { cells: ["version", "1", "Written as Keymap.VERSION. Load never reads it: it only checks that `axes` is an array."], tip: { ...R("keymap", 13), links: [RL("keymap", 139, "the only shape check")] } },
     { cells: ["axes[].id", "\"a\"", "The binding source id. A missing or duplicate id is skipped with a warning."], tip: { ...R("kfile", 5), links: [RL("keymap", 148, "skip")] } },
-    { cells: ["label", "\"Axis A\"", "Shown in every Source dropdown and the Movement pane."], tip: { ...R("kfile", 6), links: [RL("console", 250, "into set_sources")] } },
+    { cells: ["label", "\"Axis A\"", "Shown in every Source dropdown and the Movement pane."], tip: { ...R("kfile", 6), links: [RL("console", 261, "into set_sources")] } },
     { cells: ["speed", "1.0", "Units per second while a key is held."], tip: { ...R("kfile", 7), links: [RL("axes", 102, "step")] } },
     { cells: ["positive", "\"E\"", "OS.find_keycode_from_string; \"\" is unbound. Registered as `axis_a_pos`."], tip: { ...R("kfile", 8), links: [RL("keymap", 192, "_key_from_name"), RL("keymap", 78, "pos_action")] } },
     { cells: ["negative", "\"Q\"", "Registered as `axis_a_neg`."], tip: { ...R("kfile", 9), links: [RL("keymap", 82, "neg_action")] } },
@@ -1221,10 +1284,10 @@ const kmApi = {
     { cells: ["bind(id, positive, negative)", "Repoints the pair; either may be KEY_NONE. The actions' events are erased and re-added.", "key capture buttons"], tip: { ...R("keymap", 60), links: [RL("movement", 258, "_on_key_captured"), RL("tAxes", 30, "the test")] } },
     { cells: ["set_speed(id, units_per_second)", "", "the speed spin"], tip: { ...R("keymap", 68), links: [RL("movement", 249, "the spin")] } },
     { cells: ["set_label(id, text)", "", "the label field"], tip: { ...R("keymap", 73), links: [RL("movement", 241, "the field")] } },
-    { cells: ["load_file(path = \"\") → {ok, warnings}", "Missing or malformed: the default axis, and current_path still becomes `path`.", "Main._ready; Load…"], tip: { ...R("keymap", 113), links: [RL("main", 69, "_ready"), RL("movement", 317, "Load…")] } },
+    { cells: ["load_file(path = \"\") → {ok, warnings}", "Missing or malformed: the default axis, and current_path still becomes `path`.", "Main._ready; Load…"], tip: { ...R("keymap", 113), links: [RL("main", 66, "_ready"), RL("movement", 317, "Load…")] } },
     { cells: ["save_file(path = \"\") → Error", "To `path`, else current_path, else the default file. Keys by name.", "Save; Save as…"], tip: { ...R("keymap", 159), links: [RL("movement", 303, "Save"), RL("movement", 308, "Save as…")] } },
     { cells: ["pos_action(id) / neg_action(id)", "\"axis_<id>_pos\" / \"axis_<id>_neg\"", "AxisController; tests"], tip: { ...R("keymap", 78), links: [RL("axisCtl", 25, "AxisController"), RL("tMain", 88, "hold(&\"axis_a_pos\")")] } },
-    { cells: ["axes() → Axes", "The values, for the resolver and saves.", "Main; Workspace"], tip: { ...R("keymap", 23), links: [RL("main", 278, "the resolve"), RL("main", 288, "save")] } },
+    { cells: ["axes() → Axes", "The values, for the resolver and saves.", "Main; Workspace"], tip: { ...R("keymap", 23), links: [RL("main", 245, "the resolve"), RL("main", 255, "save")] } },
   ],
 };
 
@@ -1239,9 +1302,9 @@ const viewTable = {
     { cells: ["shape.defaults", "table.to_dict(): every catalogue id", "apply_dict → set_default (sanitized); an unknown id warns."], tip: { ...R("ws", 40), links: [RL("table", 115, "apply_dict"), RL("tWs", 79, "unknown id test")] } },
     { cells: ["shape.bindings", "only ACTIVE bindings", "set_binding(Binding.from_dict) for the listed ids; a binding the file does not list is left as it is."], tip: { ...R("table", 108), links: [RL("table", 123, "apply_dict bindings"), RL("binding", 40, "from_dict")] } },
     { cells: ["axes", "every axis value by id", "set_value for ids the keymap has; an unknown axis id is dropped with a warning."], tip: { ...R("ws", 41), links: [RL("ws", 66, "restore"), RL("ws", 71, "the warning")] } },
-    { cells: ["fractal", "fast_controls, camera_mode, mouse_sensitivity, detail, detail_range, detail_falloff, max_steps, min_render_scale", "_parse_fractal per key; Main then puts mouse_sensitivity back to the player's Settings value."], tip: { ...R("ws", 23), links: [RL("ws", 214, "_parse_fractal"), RL("main", 301, "sensitivity reset")] } },
+    { cells: ["fractal", "fast_controls, camera_mode, mouse_sensitivity, detail, detail_range, detail_falloff, max_steps, min_render_scale", "_parse_fractal per key; Main then puts mouse_sensitivity back to the player's Settings value."], tip: { ...R("ws", 23), links: [RL("ws", 214, "_parse_fractal"), RL("main", 268, "sensitivity reset")] } },
     { cells: ["camera", "eye, forward, up (7 significant digits), speed_factor", "looking_at(eye + forward, up); a degenerate orientation warns."], tip: { ...R("ws", 43), links: [RL("ws", 231, "_restore_camera")] } },
-    { cells: ["noise", "the noise graph, when wired", "NoiseWindow.apply_dict, after the shape."], tip: { ...R("ws", 50), links: [RL("main", 311, "apply_dict")] } },
+    { cells: ["noise", "the noise graph, when wired", "NoiseWindow.apply_dict, after the shape."], tip: { ...R("ws", 50), links: [RL("main", 278, "apply_dict")] } },
     { cells: ["(not saved)", "the clock, the keymap", "A level loads a view and a keymap separately."], tip: { ...R("ws", 5), links: [RL("design", 345, "spec: why")] } },
   ],
 };
@@ -1276,7 +1339,7 @@ const cards = {
       links: [RL("tAttr", 16, "attribute_test"), RL("tUiConsole", 169, "the −1.59 readout")],
       body: portOk ? "At load the stepper's port of resolve_value, waveform_value and sanitize is run against every expected value in binding_test.gd (time, axis, missing axis, the three waveforms, clamp, wrap, INT rounding) and attribute_test.gd's sanitize checks, at the tests' 1e−4 tolerance. A failure turns this card orange and lands in the red error box."
         : `Fix the port, never the tests: ${PORT.fails.join("; ")}` },
-    { title: "The table is canonical; params is a per-frame projection", tag: "invariant", hue: 3, ...R("main", 277),
+    { title: "The table is canonical; params is a per-frame projection", tag: "invariant", hue: 3, ...R("main", 244),
       links: [RL("params", 3, "FractalParams header"), RL("marker", 57, "the marker writes the table"), RL("design", 174, "spec")],
       body: "Rows in both tabs, the palette window's sliders (through Palette), the Julia marker and a load all write the AttributeTable. Main resolves it into FractalParams every frame; nothing else writes the shape fields (the marker's mirror writes the same table defaults). An edit that bypassed the table would be overwritten by the next resolve." },
     { title: "apply_resolved emits once, and only on a difference", tag: "invariant", hue: 3, ...R("params", 254),
@@ -1295,20 +1358,23 @@ const cards = {
     { title: "The palette's twelve numbers live in the shape table", tag: "invariant", hue: 3, ...R("palette", 8),
       links: [RL("tPalette", 114, "the test"), RL("palette", 109, "color_at"), RL("sh", 252, "the shader's palette()"), RL("tPalette", 142, "a bound component previews its driven value")],
       body: "Palette holds no colour: palette_a_r … palette_d_b are catalogue attributes, so they save with the view, resolve every frame and can each be bound with its own waveform. Palette.color_at is the shader's palette() formula, and it reads the driven value of a bound component (set_live), so the strip previews what is actually drawn." },
-    { title: "Reset camera goes where the current file has it", tag: "invariant", hue: 3, ...R("main", 325),
-      links: [RL("main", 334, "_remember_home"), RL("main", 293, "after a save"), RL("main", 307, "after a load"), RL("tMain", 30, "no file: the starting view"), RL("tMain", 180, "a save moves the reset point")],
-      body: "_remember_home runs at start, after every load and after every save, so Reset camera (Movement pane or Settings ▸ Renderer) restores the camera and speed factor of the file you are on, or the starting view while no file is current. In Orbit it re-centres." },
-    { title: "Zoom chords never reach a control, and never count as a Ctrl tap", tag: "invariant", hue: 3, ...R("console", 226),
-      links: [RL("console", 198, "zoom_key"), RL("tConsole", 143, "the chord test"), RL("main", 149, "Settings.console_zoom")],
+    { title: "Reset camera goes where the current file has it", tag: "invariant", hue: 3, ...R("main", 292),
+      links: [RL("main", 301, "_remember_home"), RL("main", 260, "after a save"), RL("main", 274, "after a load"), RL("tMain", 30, "no file: the starting view"), RL("tMain", 177, "a save moves the reset point")],
+      body: "_remember_home runs at start, after every load and after every save, so Reset camera (Movement pane or the View tab's Renderer options) restores the camera and speed factor of the file you are on, or the starting view while no file is current. In Orbit it re-centres." },
+    { title: "Zoom chords never reach a control, and never count as a Ctrl tap", tag: "invariant", hue: 3, ...R("console", 237),
+      links: [RL("console", 209, "zoom_key"), RL("tConsole", 145, "the chord test"), RL("main", 147, "Settings.console_zoom")],
       body: "The console catches Cmd/Ctrl with =, +, - or 0 in _input, before the GUI, so a focused spin box cannot swallow them, and feeds the event to its Ctrl detector first so Ctrl+= disarms the tap. The level is the player's (Settings), not the view's." },
-    { title: "One frame of latency: Main resolves before the axes move", tag: "gotcha", hue: 2, ...R("main", 270),
-      links: [RL("main", 83, "Clock and AxisController are added as Main's children"), RL("axisCtl", 19, "AxisController._process")],
+    { title: "Escape frees the mouse and touches nothing else", tag: "invariant", hue: 3, ...R("main", 399),
+      links: [RL("console", 252, "the focused console forwards it"), RL("noiseWin", 115, "the focused noise window closes instead"), RL("tMain", 240, "the test"), RL("tMain", 249, "Escape never closes the console")],
+      body: "`cancel` sets _free_requested and recaptures nothing: no pause, the console stays open, a click in the view recaptures. With the console focused, Escape is one of the keys it hands to Main, so it frees the mouse there too. Only the focused noise window treats Escape as close." },
+    { title: "One frame of latency: Main resolves before the axes move", tag: "gotcha", hue: 2, ...R("main", 237),
+      links: [RL("main", 80, "Clock and AxisController are added as Main's children"), RL("axisCtl", 19, "AxisController._process")],
       body: "Godot processes parents before children. Main's _process resolves with the axis value and t the children left last frame; AxisController and Clock move afterwards. A key press reaches params (and the uniforms) one frame after it moved the axis. Invisible at 60 fps; the stepper tab shows it, and the 'same-frame' line is what a higher process_priority on Main would give." },
     { title: "Typing anywhere silences the axes, WASD, N and the Ctrl tap", tag: "gotcha", hue: 2, ...R("textFocus", 11),
-      links: [RL("axisCtl", 22, "axes"), RL("fly", 90, "WASD"), RL("main", 442, "N"), RL("main", 100, "Ctrl tap")],
+      links: [RL("axisCtl", 22, "axes"), RL("fly", 90, "WASD"), RL("main", 412, "N"), RL("main", 98, "Ctrl tap")],
       body: "So typing \"e\" into a spin box never pushes Axis A. Leave the field (Enter, Escape or a click elsewhere) and the keys come back. Unlike WASD, holding Ctrl or Cmd does not silence the axes (fly_camera.gd:88 has no counterpart in AxisController)." },
-    { title: "The native console gets its own key events", tag: "gotcha", hue: 2, ...R("console", 234),
-      links: [RL("console", 241, "forward to Main"), RL("main", 412, "_on_window_key"), RL("addendum", 193, "why the forwarding exists")],
+    { title: "The native console gets its own key events", tag: "gotcha", hue: 2, ...R("console", 245),
+      links: [RL("console", 252, "forward to Main"), RL("main", 379, "_on_window_key"), RL("addendum", 193, "why the forwarding exists")],
       body: "Main's _unhandled_input never sees keys typed into the console, so the console runs its own CtrlTap and hands every other unused key to Main through unhandled_key. Held keys still reach the global Input state, so E pushes Axis A while the console has focus (unless a field there has focus)." },
     { title: "Loading a view never unbinds", tag: "gotcha", hue: 2, ...R("table", 123),
       links: [RL("table", 108, "to_dict writes only active bindings"), RL("ws", 61, "restore")],
@@ -1336,12 +1402,15 @@ const cards = {
       links: [COMMIT("782a1ef"), RL("design", 313, "spec: version 2"), RL("saveDef", 2, "default.json is version 2")],
       body: "Version 1 was a flat fractal section with the old names (scale, inner_radius, outer_radius, julia_enabled, julia_point). Version 2 splits shape / axes / fractal / camera / noise. v1 still loads, mapped without a warning; saving always writes v2, and the committed saves were rewritten once." },
     { title: "The Q panel retired", tag: "history", hue: 6, ...R("design", 294),
-      links: [COMMIT("c49807b"), COMMIT("55c1bcf"), RL("readme", 197, "README: pause menu")],
-      body: "ControlsPanel is gone. Its shape sliders, colour, precision and Julia moved to the console; Save / Load, Camera, Noise editor and Fast Controls to the pause menu; the speed readout to the Movement pane. The pause menu's Console… button is the way in when a browser swallows the Ctrl tap." },
+      links: [COMMIT("c49807b"), COMMIT("55c1bcf"), RL("readme", 197, "README: View tab")],
+      body: "ControlsPanel is gone. Its shape sliders, colour, precision and Julia moved to the console; Save / Load, Camera, Noise editor and Fast Controls went to a pause menu (with a Console… button for browsers that swallow the Ctrl tap); the speed readout to the Movement pane. The pause menu itself is gone since 5ebb10a: see the next card." },
+    { title: "The pause menu moved into the console", tag: "history", hue: 6, ...R("viewPane", 1),
+      links: [COMMIT("5ebb10a"), RL("main", 183, "_build_view_pane"), RL("main", 399, "Escape: cancel"), RL("proj", 63, "the action renamed pause → cancel"), RL("readme", 197, "README: View tab")],
+      body: "PauseMenu is deleted. Escape (the action renamed pause → cancel) only frees the mouse: nothing pauses the tree, and the console and noise window stay as they are. Save / Load view with the file name and status, the Camera mode, the mouse sensitivity, the Noise editor button, the Renderer options (with Fast Controls and Reset camera) and Back to Menu are the console's View tab; the title menu's Settings lost its Renderer tab, which only the pause menu could enable. With nothing paused, the governor no longer needs PROCESS_MODE_ALWAYS and the clock never stops." },
     { title: "The Colour tab", tag: "history", hue: 6, ...R("shape", 274),
       links: [COMMIT("58575fc"), COMMIT("e246166"), COMMIT("1cbb1a2"), COMMIT("7f7ba6b"), COMMIT("b527826"), RL("readme", 128, "README: Console")],
       body: "The catalogue grew from 23 to 47 ids: lighting knobs and a cosine-palette colour mode (58575fc), then the console's TabContainer, with Fractacular's palette window heading a Colour tab (e246166). color_mode moved from Render to the new Colour group, after precision, which changed RESOLVED_KEYS order. Alongside: console zoom (7f7ba6b) and Reset camera (b527826)." },
-    { title: "Native, then embedded, then native again", tag: "history", hue: 6, ...R("console", 13),
+    { title: "Native, then embedded, then native again", tag: "history", hue: 6, ...R("console", 15),
       links: [COMMIT("9401782"), COMMIT("2e23f8c"), COMMIT("ab00332"), RL("addendum", 175, "addendum: why embedded"), RL("uiScale", 134, "place_beside")],
       body: "The spec made both sub-windows native. On macOS (Godot 4.6.1, GL Compatibility) a native window overlapping the main one corrupts its picture, so 9401782 embedded both, and 2e23f8c stacked the console's panes (side by side they overflowed 1000 points). ab00332 made only the console native again with force_native, opened beside the main window; the noise editor stays embedded, and headless and the web embed everything." },
 
@@ -1365,14 +1434,14 @@ function refsIn(fn, extra) {
   return out.concat(extra || []);
 }
 stepFig.refs = refsIn(stepFig.draw);
-consoleFig.refs = refsIn(consoleFig.draw, [61, 68, 74, 80, 86, 95, 103, 134, 144, 158, 165, 198, 205, 259].map(l => R("shape", l)).concat([289, 292, 277].map(l => R("movement", l))));
+consoleFig.refs = refsIn(consoleFig.draw, [52, 54, 70, 81, 95, 105].map(l => R("viewPane", l)).concat([35, 37, 39, 41, 43, 54, 57].map(l => R("renderer", l))).concat([61, 68, 74, 80, 86, 95, 103, 134, 144, 158, 165, 198, 205, 259].map(l => R("shape", l)).concat([289, 292, 277].map(l => R("movement", l)))));
 
 VIZ.pane({
   id: "console",
   short: "Attributes & console",
   title: "Help I'm Stuck In A Fractal — attributes, bindings, axes and the console",
   subtitle: "The Fractacular import. Every knob (47: the Mandelbox shape on the console's Shape tab; colour, lighting and the cosine palette on its Colour tab) is an AttributeSpec in one AttributeTable, with a default and a Binding: value = default + gain × wave(source), where the source is the clock or a virtual axis pushed by a key pair from saves/keymap.json. Main resolves the table into FractalParams once per frame, so the renderer is unchanged. The console, its own OS window, edits the table and the keymap. The stepper runs a line-for-line port of the resolver, checked at load against the tests.",
-  commit: "1cbb1a2f0c6e1ae67e248cb2cdb947661d298c67",
+  commit: "3190cd5565293d27d3d8f5077c9a81f6b5b68d51",
   pinNote: "main, unpushed: links 404 until it is pushed",
   ctx: {
     attr: { hue: 1, label: "catalogue — MandelboxShape, AttributeSpec / Table, Binding, BindingResolver" },
