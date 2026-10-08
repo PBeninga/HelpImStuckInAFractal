@@ -14,11 +14,11 @@ const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg of
 ## nearest-surface distance, so flying alongside a wall while looking down a
 ## long corridor cannot carry you sideways through the wall.
 const NEAR_CAP := 10.0
-## Sprint ("sprint", Shift) starts at SPRINT_MULTIPLIER, doubles every
-## SPRINT_DOUBLING seconds held, and stops growing at SPRINT_MAX. Released, the
-## boost halves every BOOST_HALVING seconds back down to 1.
+## Sprint ("sprint", Shift) starts at SPRINT_MULTIPLIER, climbs by SPRINT_RATE
+## every second held, and stops growing at SPRINT_MAX. Released, the boost
+## halves every BOOST_HALVING seconds back down to 1.
 const SPRINT_MULTIPLIER := 4.0
-const SPRINT_DOUBLING := 1.0
+const SPRINT_RATE := 100.0
 const SPRINT_MAX := 1000.0
 const BOOST_HALVING := 0.5
 
@@ -140,13 +140,13 @@ func boost() -> float:
 
 ## Advance the sprint boost by `delta` seconds. Not moving: back to 1 at once,
 ## so letting go of the move keys stops dead and the next start is gentle.
-## Sprinting: at least SPRINT_MULTIPLIER, doubling every SPRINT_DOUBLING s up to
-## SPRINT_MAX. Moving without Shift: halving every BOOST_HALVING s down to 1.
+## Sprinting: at least SPRINT_MULTIPLIER, climbing by SPRINT_RATE per second up
+## to SPRINT_MAX. Moving without Shift: halving every BOOST_HALVING s down to 1.
 func step_boost(delta: float, moving: bool, sprinting: bool) -> void:
 	if not moving:
 		_boost = 1.0
 	elif sprinting:
-		_boost = minf(maxf(_boost, SPRINT_MULTIPLIER) * pow(2.0, delta / SPRINT_DOUBLING), SPRINT_MAX)
+		_boost = minf(maxf(_boost, SPRINT_MULTIPLIER) + SPRINT_RATE * delta, SPRINT_MAX)
 	else:
 		_boost = maxf(_boost * pow(0.5, delta / BOOST_HALVING), 1.0)
 

@@ -103,7 +103,7 @@ still frame always renders at full quality. The console's Movement pane shows
 | **Escape** | free the mouse (click the view to recapture). Nothing else: no pause, and the console stays as it is. While the noise editor has the keyboard, Escape closes it |
 | **W / A / S / D** | move forward / left / back / right |
 | **Space / Backspace** | move up / down (world-relative to the camera's own up) |
-| **Shift** (hold) | sprint — ×4 at once, then doubling every second held, up to ×1000. Let go of Shift and it eases back down (halving every half second); let go of every move key and you stop dead |
+| **Shift** (hold) | sprint — ×4 at once, then climbing steadily by +100 every second held, up to ×1000. Let go of Shift and it eases back down (halving every half second); let go of every move key and you stop dead |
 | **R** | show / hide the centre-ray probe: a white dot painted on the surface straight ahead, where the speed is measured to (remembered between runs) |
 | mouse move | mouse-look while captured (yaw about world +Z, pitch about the camera's right; no roll) |
 | mouse wheel | adjust the speed factor (×1.25 per tick up, ÷1.25 down; clamped 0.01–100) |
