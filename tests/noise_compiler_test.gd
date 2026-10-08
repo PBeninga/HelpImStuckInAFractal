@@ -1,7 +1,8 @@
 extends "res://tests/test_case.gd"
 ## NoiseCompiler: every node compiles, the default graph is the inert stub, a
 ## wired graph grows the right uniforms, the three functions do what the spec
-## says, and live-vs-baked is classified correctly.
+## says, live-vs-baked is classified correctly, and displaces() tells a graph
+## that moves the surface from one that only tints it.
 
 
 func _resolver() -> Callable:
@@ -73,6 +74,19 @@ func run() -> void:
 	check(u.has("n_%s_seed" % vn), "…one per FLOAT param")
 	check(not u.has("n_%s_octaves" % vn), "an INT param is baked, not a uniform")
 	check(u.has("n_output_0_amplitude"), "the Output's amplitude is a live uniform")
+
+	# ---------------------------------------------- displaces(): is the surface moved?
+	check(not NoiseCompiler.displaces(null), "no graph displaces nothing")
+	check(not NoiseCompiler.displaces(def), "the default (unwired) graph does not displace")
+	check(NoiseCompiler.displaces(g), "a graph wired to Displace displaces")
+	g.node(g.output_id()).table.set_value(&"amplitude", 0.0)
+	check(not NoiseCompiler.displaces(g), "…unless its Amplitude is 0, which leaves the shape untouched")
+	g.node(g.output_id()).table.set_value(&"amplitude", 0.05)
+	var tint_only := NoiseGraph.new(resolver)
+	var tvn := tint_only.add_node(&"value_noise", Vector2(200, 40))
+	tint_only.connect_ports(tint_only.position_id(), 0, tvn, 0)
+	tint_only.connect_ports(tvn, 0, tint_only.output_id(), 1)   # Tint
+	check(not NoiseCompiler.displaces(tint_only), "a Tint-only graph colours but does not displace")
 	check(u.has("n_output_0_step_scale"), "…and its step scale")
 	check(u.has("n_output_0_tint_color"), "…and its tint colour (a vec3)")
 	check(String(result["code"]).contains("n_output_0_amplitude"),
