@@ -27,6 +27,14 @@ func run() -> void:
 	var fly: FlyCamera = main.get_node("FlyCamera")
 	var console: ConsoleWindow = main.console()
 
+	# With no file current, Reset camera goes back to the built-in starting view
+	main.camera.transform = main.camera.transform.translated(Vector3(1, 2, 3))
+	main.camera.speed_factor = 3.0
+	main.reset_camera()
+	check(main.camera.transform.is_equal_approx(CameraState.make_default().transform),
+		"with no file, Reset camera restores the starting view")
+	check_approx(main.camera.speed_factor, 1.0, "and the starting speed factor")
+
 	# console hidden by default, fly camera active, mouse captured
 	check(not console.visible, "the console starts hidden")
 	check(fly.enabled, "fly camera is enabled in FLY mode")
@@ -153,6 +161,29 @@ func run() -> void:
 	check(pause.status_label.text.begins_with("Loaded"), "the pause menu reports the load: %s" % pause.status_label.text)
 	main.load_view_from("user://no_such_view.json")
 	check_eq(files.current_path, tmp, "a failed load does not change the current file")
+
+	# Reset camera goes back to the current file's camera and speed factor, from
+	# the console's Movement pane and from the Settings menu's Renderer tab
+	var file_view: Transform3D = main.camera.transform
+	main.camera.transform = file_view.translated(Vector3(0.5, -1, 2))
+	main.camera.speed_factor = 7.0
+	console.movement_pane().reset_camera_button.pressed.emit()
+	check(main.camera.transform.is_equal_approx(file_view), "the console's Reset camera restores the file's camera")
+	check_approx(main.camera.speed_factor, 2.0, "and its speed factor")
+	main.pause()
+	pause.settings_button.pressed.emit()
+	main.camera.transform = file_view.rotated(Vector3(0, 0, 1), 0.3)
+	pause.settings_menu.renderer.reset_camera_button.pressed.emit()
+	check(main.camera.transform.is_equal_approx(file_view), "the Settings menu's Reset camera does too")
+	check(paused and pause.settings_menu.visible, "and Settings stays open")
+	main.resume()
+	# a save makes the saved camera the new reset point
+	main.camera.transform = file_view.translated(Vector3(0, 0, 1))
+	var resaved: Transform3D = main.camera.transform
+	main.save_view_to(tmp)
+	main.camera.transform = file_view
+	main.reset_camera()
+	check(main.camera.transform.is_equal_approx(resaved), "after a save, Reset camera goes to the saved camera")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 
 	# the pause menu's Camera row switches mode

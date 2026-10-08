@@ -53,7 +53,8 @@ reach the game; pausing tucks the windows away and resuming brings them back.
   loading a saved view does not change it.
 - **Renderer** tunes how the open view is rendered, and is saved with the view
   (so it is only enabled from the pause menu). While it is showing, the pause
-  dim lightens so each change can be seen behind the menu.
+  dim lightens so each change can be seen behind the menu. Its **Reset camera**
+  button puts the camera back where the current save file has it (below).
 
 | Renderer option | what it does |
 |---|---|
@@ -154,8 +155,8 @@ waveform(source)`, shown as a live readout while a binding is active.
 **Movement pane.** One line per virtual axis — an editable label, its id, the
 live value, a **0** button, the push **speed**, two key-capture buttons (click,
 then press a key) and a remove button — plus **Add axis**, the clock readout,
-the fly camera's speed factor, and **Save** / **Save as…** / **Load…** for the
-keymap file. Key pairs push an axis at its speed; a Shape row bound to that axis
+the fly camera's speed factor beside a **Reset camera** button, and **Save** /
+**Save as…** / **Load…** for the keymap file. Key pairs push an axis at its speed; a Shape row bound to that axis
 reads the value, so the row's gain is the key's sensitivity.
 
 **⌘S** (Ctrl+S elsewhere) saves the view over the current file without a panel;
@@ -204,7 +205,10 @@ A save is a small JSON file, **version 2**:
 - **`axes`** — every virtual axis value by id.
 - **`fractal`** — the non-shape preferences: `fast_controls`, `camera_mode`
   (`"fly"`/`"orbit"`) and `mouse_sensitivity`.
-- **`camera`** — the eye, forward and up vectors and the speed factor.
+- **`camera`** — the eye, forward and up vectors and the speed factor. **Reset
+  camera** (in the console's Movement pane and the Settings menu's Renderer tab)
+  puts the camera and speed factor back to these, as the current file was last
+  loaded or saved; with no file current it goes to the starting view.
 - **`noise`** — the noise graph, when one is wired (additive; see below).
 
 Loading skips anything it does not recognise or cannot read, with a warning, and

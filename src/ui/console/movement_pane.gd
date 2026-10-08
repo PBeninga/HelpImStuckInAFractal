@@ -2,9 +2,13 @@ class_name MovementPane
 extends VBoxContainer
 ## The Movement pane: one line per virtual axis (editable label, id, live value,
 ## a "0" button, speed, two key-capture buttons and a remove button), an "Add
-## axis" button, the clock readout and the fly camera's speed-factor readout,
-## and a Save / Save as… / Load… strip for the keymap file. It is a view over
-## Keymap: it writes through the rebind API and refreshes on `Keymap.changed`.
+## axis" button, the clock readout and the fly camera's speed-factor readout
+## beside a Reset camera button, and a Save / Save as… / Load… strip for the
+## keymap file. It is a view over Keymap: it writes through the rebind API and
+## refreshes on `Keymap.changed`.
+
+## The Reset camera button was pressed; Main owns the camera and does the reset.
+signal reset_camera_requested
 
 const KEYMAP_FILTER := "keymap*.json ; Keymaps"
 
@@ -18,6 +22,7 @@ var _list: VBoxContainer
 var _add_button: Button
 var _clock_label: Label
 var _speed_label: Label
+var reset_camera_button: Button
 ## The governor's load-shed level, shown only while it is above 0.
 var shed_label: Label
 var _shed_level := 0
@@ -59,9 +64,16 @@ func _ready() -> void:
 	_clock_label = Label.new()
 	_clock_label.tooltip_text = "The global clock, in seconds. Attributes bound to the Time source read this value."
 	add_child(_clock_label)
+	var speed_row := HBoxContainer.new()
+	speed_row.add_theme_constant_override("separation", 12)
 	_speed_label = Label.new()
 	_speed_label.tooltip_text = "The fly camera's speed factor (the mouse wheel changes it)."
-	add_child(_speed_label)
+	speed_row.add_child(_speed_label)
+	reset_camera_button = _flat_button("Reset camera",
+		"Put the camera's position, view and speed factor back where the current save file has them (the starting view when no file is loaded).")
+	reset_camera_button.pressed.connect(reset_camera_requested.emit)
+	speed_row.add_child(reset_camera_button)
+	add_child(speed_row)
 	shed_label = Label.new()
 	shed_label.tooltip_text = "The resolution governor is shedding quality to hold the frame rate: level / top. Hidden at level 0."
 	add_child(shed_label)
