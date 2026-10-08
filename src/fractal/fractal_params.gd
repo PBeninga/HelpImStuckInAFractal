@@ -10,6 +10,8 @@ extends Resource
 ## pixel cone).
 
 enum CameraMode { FLY, ORBIT }
+## Which fractal de() draws: the `shape` catalogue row.
+enum Shape { MANDELBOX, KIFS, KLEINIAN }
 
 ## Colour-mode ids in the dropdown's order (ids match the site).
 ## Palette (20) is this project's own, past the site's range.
@@ -22,16 +24,22 @@ const COLOR_MODE_NAMES: Array[String] = [
 
 ## The resolved shape fields, in catalogue order. apply_resolved writes these.
 const RESOLVED_KEYS: Array[StringName] = [
-	&"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order", &"w",
-	&"julia_all", &"julia_0", &"julia_1", &"julia_2", &"julia_3",
-	&"c_0", &"c_1", &"c_2", &"c_3",
-	&"iter_rot_xy", &"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw",
-	&"precision",
-	&"color_mode", &"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
-	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess",
-	&"light_yaw", &"light_pitch", &"exposure", &"saturation",
-	&"palette_a_r", &"palette_a_g", &"palette_a_b", &"palette_b_r", &"palette_b_g", &"palette_b_b",
-	&"palette_c_r", &"palette_c_g", &"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
+	&"shape", &"w", &"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order",
+	&"fold_shape", &"hybrid_mix", &"hybrid_every", &"scale_drift", &"julia_all", &"julia_0",
+	&"julia_1", &"julia_2", &"julia_3", &"c_0", &"c_1", &"c_2", &"c_3", &"iter_rot_xy",
+	&"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw", &"kifs_scale",
+	&"kifs_fold", &"kifs_poly_k", &"kifs_twist", &"kifs_offset_0", &"kifs_offset_1",
+	&"kifs_offset_2", &"kifs_offset_3", &"kifs_rot1_xy", &"kifs_rot1_xz", &"kifs_rot1_xw",
+	&"kifs_rot1_yz", &"kifs_rot1_yw", &"kifs_rot1_zw", &"kifs_rot2_xy", &"kifs_rot2_xz",
+	&"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw", &"kleinian_box_0",
+	&"kleinian_box_1", &"kleinian_box_2", &"kleinian_box_3", &"kleinian_radius",
+	&"kleinian_shift_0", &"kleinian_shift_1", &"kleinian_shift_2", &"kleinian_shift_3",
+	&"kleinian_thickness", &"kleinian_view_distance", &"precision", &"color_mode",
+	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
+	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess", &"light_yaw",
+	&"light_pitch", &"exposure", &"saturation", &"palette_a_r", &"palette_a_g", &"palette_a_b",
+	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
+	&"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
 
 ## The colour, lighting and palette fields after color_mode: each is pushed to
@@ -47,6 +55,10 @@ const LOOK_KEYS: Array[StringName] = [
 # While true the shape setters do not emit; apply_resolved emits once at the end.
 var _suppress := false
 
+# --- Fractal: which shape de() draws (see Shape) ---
+@export var shape: int = Shape.MANDELBOX:
+	set(v): shape = v; _emit()
+
 # --- Box ---
 @export var box_scale: float = -2.09:
 	set(v): box_scale = v; _emit()
@@ -60,6 +72,14 @@ var _suppress := false
 	set(v): fold_order = v; _emit()
 @export var w: float = 0.0:
 	set(v): w = v; _emit()
+@export var fold_shape: int = 0:
+	set(v): fold_shape = v; _emit()
+@export var hybrid_mix: float = 0.0:
+	set(v): hybrid_mix = v; _emit()
+@export var hybrid_every: int = 2:
+	set(v): hybrid_every = v; _emit()
+@export var scale_drift: float = 0.0:
+	set(v): scale_drift = v; _emit()
 
 # --- Julia ---
 @export var julia_all: bool = false:
@@ -94,6 +114,72 @@ var _suppress := false
 	set(v): iter_rot_yw = v; _emit()
 @export var iter_rot_zw: float = 0.0:
 	set(v): iter_rot_zw = v; _emit()
+
+# --- KIFS (see KifsShape) ---
+@export var kifs_scale: float = 3.0:
+	set(v): kifs_scale = v; _emit()
+@export var kifs_fold: int = 0:
+	set(v): kifs_fold = v; _emit()
+@export var kifs_poly_k: float = 5.0:
+	set(v): kifs_poly_k = v; _emit()
+@export var kifs_twist: float = 0.0:
+	set(v): kifs_twist = v; _emit()
+@export var kifs_offset_0: float = 1.0:
+	set(v): kifs_offset_0 = v; _emit()
+@export var kifs_offset_1: float = 1.0:
+	set(v): kifs_offset_1 = v; _emit()
+@export var kifs_offset_2: float = 1.0:
+	set(v): kifs_offset_2 = v; _emit()
+@export var kifs_offset_3: float = 0.0:
+	set(v): kifs_offset_3 = v; _emit()
+@export var kifs_rot1_xy: float = 0.0:
+	set(v): kifs_rot1_xy = v; _emit()
+@export var kifs_rot1_xz: float = 0.0:
+	set(v): kifs_rot1_xz = v; _emit()
+@export var kifs_rot1_xw: float = 0.0:
+	set(v): kifs_rot1_xw = v; _emit()
+@export var kifs_rot1_yz: float = 0.0:
+	set(v): kifs_rot1_yz = v; _emit()
+@export var kifs_rot1_yw: float = 0.0:
+	set(v): kifs_rot1_yw = v; _emit()
+@export var kifs_rot1_zw: float = 0.0:
+	set(v): kifs_rot1_zw = v; _emit()
+@export var kifs_rot2_xy: float = 0.0:
+	set(v): kifs_rot2_xy = v; _emit()
+@export var kifs_rot2_xz: float = 0.0:
+	set(v): kifs_rot2_xz = v; _emit()
+@export var kifs_rot2_xw: float = 0.0:
+	set(v): kifs_rot2_xw = v; _emit()
+@export var kifs_rot2_yz: float = 0.0:
+	set(v): kifs_rot2_yz = v; _emit()
+@export var kifs_rot2_yw: float = 0.0:
+	set(v): kifs_rot2_yw = v; _emit()
+@export var kifs_rot2_zw: float = 0.0:
+	set(v): kifs_rot2_zw = v; _emit()
+
+# --- Kleinian (see KleinianShape) ---
+@export var kleinian_box_0: float = 0.92436:
+	set(v): kleinian_box_0 = v; _emit()
+@export var kleinian_box_1: float = 0.90756:
+	set(v): kleinian_box_1 = v; _emit()
+@export var kleinian_box_2: float = 0.92436:
+	set(v): kleinian_box_2 = v; _emit()
+@export var kleinian_box_3: float = 0.92436:
+	set(v): kleinian_box_3 = v; _emit()
+@export var kleinian_radius: float = 1.0:
+	set(v): kleinian_radius = v; _emit()
+@export var kleinian_shift_0: float = 0.0:
+	set(v): kleinian_shift_0 = v; _emit()
+@export var kleinian_shift_1: float = 0.0:
+	set(v): kleinian_shift_1 = v; _emit()
+@export var kleinian_shift_2: float = 0.0:
+	set(v): kleinian_shift_2 = v; _emit()
+@export var kleinian_shift_3: float = 0.0:
+	set(v): kleinian_shift_3 = v; _emit()
+@export var kleinian_thickness: float = 0.01:
+	set(v): kleinian_thickness = v; _emit()
+@export var kleinian_view_distance: float = 10.0:
+	set(v): kleinian_view_distance = v; _emit()
 
 # --- Render ---
 @export var precision: float = 0.000025:
@@ -174,7 +260,9 @@ const DETAIL_MAX := 10.0
 const DETAIL_RANGE_MIN := 1.0
 const DETAIL_RANGE_MAX := 1000.0
 const DETAIL_FALLOFF_MAX := 3.0
-const NEAR_FLOOR := 1e-6   # the near distance never reaches 0 (a camera on the surface)
+const NEAR_FLOOR := 1e-6
+## The Kleinian's bounding cube: effectively none (see bound_half()).
+const KLEINIAN_BOUND := 1.0e4   # the near distance never reaches 0 (a camera on the surface)
 
 ## Per colour-mode id, in the dropdown's order.
 const FOG_COLORS := {
@@ -271,6 +359,35 @@ func julia_point() -> Vector3:
 	return Vector3(c_0, c_1, c_2)
 
 
-## Whether the master Julia toggle is on (drives the on-screen marker).
+## Whether the Julia marker shows: the master toggle, on the Mandelbox only
+## (the other shapes have no Julia constant).
 func julia_enabled() -> bool:
-	return julia_all
+	return julia_all and shape == Shape.MANDELBOX
+
+
+## Half the side of the origin-centred cube the rays march in (and the orbit
+## camera aims into): the Mandelbox's 2, or 20 for its Julia sets, which reach
+## further, and more with a hybrid fold, whose interval [lo, hi] lets the shape
+## grow to about hi (measured: 3.2 at mix 0.5, 5.6 at 0.75, 13 at 0.9; capped
+## at 20); for the KIFS a margin over its offset, which its attractor lies
+## within; for the Kleinian, which fills space, a cube too large to matter
+## (view_distance() ends its rays instead).
+func bound_half() -> float:
+	match shape:
+		Shape.KIFS:
+			var o := sqrt(kifs_offset_0 * kifs_offset_0 + kifs_offset_1 * kifs_offset_1
+				+ kifs_offset_2 * kifs_offset_2 + kifs_offset_3 * kifs_offset_3)
+			return maxf(2.0, 1.5 * o)
+		Shape.KLEINIAN:
+			return KLEINIAN_BOUND
+	var half := 20.0 if julia_all else 2.0
+	if hybrid_mix > 0.0:
+		var hi := (fold_limit + hybrid_mix) / maxf(1.0 - hybrid_mix, 1e-6)
+		half = maxf(half, minf(1.0 + hi, 20.0))
+	return half
+
+
+## How far from the eye a ray may go before it stops, or 0 for no limit: the
+## Kleinian's View distance, so its endless corridors end in a soft horizon.
+func view_distance() -> float:
+	return kleinian_view_distance if shape == Shape.KLEINIAN else 0.0

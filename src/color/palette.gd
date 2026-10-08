@@ -7,7 +7,7 @@ extends RefCounted
 ## with A, B, C and D as RGB vectors, so twelve numbers describe a whole
 ## gradient. Ported from Fractacular's Palette, with one difference: the twelve
 ## numbers are not held here. Each is a catalogue attribute in the shape table
-## (`palette_a_r` … `palette_d_b`, see MandelboxShape), so each can be bound to
+## (`palette_a_r` … `palette_d_b`, see ShapeCatalogue), so each can be bound to
 ## an axis or the clock with its own gain and waveform, and is saved with the
 ## view like any other knob. This class is the twelve-number view of those
 ## attributes that the Colour window's sliders, curve plot and strip need.
@@ -94,7 +94,7 @@ var d: Vector3:
 ## table (a window built bare in a test) it is a private one over the shape
 ## catalogue's defaults.
 func _init(shape_table: AttributeTable = null) -> void:
-	_table = shape_table if shape_table != null else AttributeTable.new(MandelboxShape.specs())
+	_table = shape_table if shape_table != null else AttributeTable.new(ShapeCatalogue.specs())
 	_table.changed.connect(_on_table_changed)
 
 

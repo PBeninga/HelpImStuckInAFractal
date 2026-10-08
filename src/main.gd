@@ -65,7 +65,7 @@ func _ready() -> void:
 	camera = CameraState.make_default()
 	_remember_home()
 
-	_table = AttributeTable.new(MandelboxShape.specs())
+	_table = AttributeTable.new(ShapeCatalogue.specs())
 	_keymap = Keymap.new()
 	_keymap.load_file()   # saves/keymap.json, or the shipped default
 
@@ -146,7 +146,7 @@ func _build_clock() -> void:
 func _build_console() -> void:
 	_console = ConsoleWindow.new()
 	_console.name = "ConsoleWindow"
-	_console.setup(_table, _keymap, _clock, MandelboxShape.group_tooltips(),
+	_console.setup(_table, _keymap, _clock, ShapeCatalogue.group_tooltips(),
 		func() -> float: return camera.speed_factor)
 	add_child(_console)
 	_console.toggle_requested.connect(_on_console_toggle)

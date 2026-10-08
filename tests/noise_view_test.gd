@@ -14,7 +14,7 @@ func _base_uniforms() -> Array:
 		"aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
 		"coarse_steps", "fine_steps", "fog_dist", "fog_color",
 		"probe_on", "probe_point", "probe_radius"]
-	for id in MandelboxShape.catalogue_ids():
+	for id in ShapeCatalogue.catalogue_ids():
 		out.append(String(id))
 	return out
 

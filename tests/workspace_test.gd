@@ -7,7 +7,7 @@ const TMP := "user://workspace_test.json"
 
 
 func _table() -> AttributeTable:
-	return AttributeTable.new(MandelboxShape.specs())
+	return AttributeTable.new(ShapeCatalogue.specs())
 
 
 func run() -> void:
@@ -157,6 +157,23 @@ func run() -> void:
 				continue
 			var r := Workspace.load_file("res://saves/" + f, _table(), Axes.new(), FractalParams.new(), CameraState.make_default())
 			check(r["ok"] and r["warnings"].is_empty(), "saves/%s loads with no warnings %s" % [f, r["warnings"]])
+
+	# --- the fractal: saved and restored; a file without one is a Mandelbox ---
+	var kt := _table()
+	kt.set_default(&"shape", FractalParams.Shape.KIFS)
+	kt.set_default(&"kifs_scale", 2.2)
+	check_eq(Workspace.save_file(TMP, kt, Axes.new(), FractalParams.new(), CameraState.make_default()), OK, "a KIFS view saves")
+	var back := _table()
+	check(Workspace.load_file(TMP, back, Axes.new(), FractalParams.new(), CameraState.make_default())["ok"], "and loads")
+	check_eq(back.get_default(&"shape"), FractalParams.Shape.KIFS, "as a KIFS")
+	check_approx(back.get_default(&"kifs_scale"), 2.2, "with its scale")
+	var old_view := _table()
+	old_view.set_default(&"shape", FractalParams.Shape.KLEINIAN)
+	var ow := Workspace.restore({"version": 2, "shape": {"defaults": {"box_scale": -1.5}, "bindings": {}}},
+		old_view, Axes.new(), FractalParams.new(), CameraState.make_default())
+	check(ow.is_empty(), "a view from before the fractal row loads without warnings %s" % [ow])
+	check_eq(old_view.get_default(&"shape"), FractalParams.Shape.MANDELBOX, "as the Mandelbox it was, whatever was showing")
+	check_approx(old_view.get_default(&"box_scale"), -1.5, "with its own values")
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TMP))
 

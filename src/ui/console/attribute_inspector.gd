@@ -14,6 +14,9 @@ const SCROLLBAR_ALLOWANCE := 16.0
 var _scroll: ScrollContainer
 var _list: VBoxContainer
 var _rows: Dictionary = {}
+## Each group heading and the specs under it: a heading hides while every one
+## of its rows does (another shape's group, say).
+var _headings: Array = []   # of [Label, Array[AttributeSpec]]
 var _table: AttributeTable
 var _group_tooltips: Dictionary = {}
 var _groups: Array = []
@@ -60,6 +63,7 @@ func _populate() -> void:
 	if _table == null:
 		return
 	_rows.clear()
+	_headings.clear()
 	for c in _list.get_children():
 		_list.remove_child(c)
 		if c != _header:
@@ -74,11 +78,41 @@ func _populate() -> void:
 		if spec.group != last_group:
 			last_group = spec.group
 			if spec.group != "":
-				_list.add_child(_make_heading(spec.group, String(_group_tooltips.get(spec.group, spec.group))))
+				var heading := _make_heading(spec.group, String(_group_tooltips.get(spec.group, spec.group)))
+				_list.add_child(heading)
+				_headings.append([heading, []])
+		if spec.group != "" and not _headings.is_empty():
+			(_headings[-1][1] as Array).append(spec)
 		var row := AttributeRow.new()
 		row.setup(spec, _table)
 		_list.add_child(row)
 		_rows[spec.id] = row
+	if not _table.changed.is_connected(_on_table_changed):
+		_table.changed.connect(_on_table_changed)
+	_refresh_headings()
+
+
+func _on_table_changed(_id: StringName) -> void:
+	_refresh_headings()
+
+
+func _refresh_headings() -> void:
+	var values := _table.defaults()
+	for entry in _headings:
+		var shown := false
+		for spec in entry[1]:
+			if (spec as AttributeSpec).is_shown(values):
+				shown = true
+				break
+		(entry[0] as Label).visible = shown
+
+
+## The heading Label of `group`, or null (for tests).
+func heading(group: String) -> Label:
+	for entry in _headings:
+		if (entry[0] as Label).text == group.to_upper():
+			return entry[0]
+	return null
 
 
 ## The axes available as binding sources: Array of {id, label}.
