@@ -24,16 +24,22 @@ const COLOR_MODE_NAMES: Array[String] = [
 
 ## The resolved shape fields, in catalogue order. apply_resolved writes these.
 const RESOLVED_KEYS: Array[StringName] = [
-	&"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order", &"w",
-	&"julia_all", &"julia_0", &"julia_1", &"julia_2", &"julia_3",
-	&"c_0", &"c_1", &"c_2", &"c_3",
-	&"iter_rot_xy", &"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw",
-	&"precision",
-	&"color_mode", &"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
-	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess",
-	&"light_yaw", &"light_pitch", &"exposure", &"saturation",
-	&"palette_a_r", &"palette_a_g", &"palette_a_b", &"palette_b_r", &"palette_b_g", &"palette_b_b",
-	&"palette_c_r", &"palette_c_g", &"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
+	&"shape", &"w", &"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order",
+	&"fold_shape", &"hybrid_mix", &"hybrid_every", &"scale_drift", &"julia_all", &"julia_0",
+	&"julia_1", &"julia_2", &"julia_3", &"c_0", &"c_1", &"c_2", &"c_3", &"iter_rot_xy",
+	&"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw", &"kifs_scale",
+	&"kifs_fold", &"kifs_poly_k", &"kifs_twist", &"kifs_offset_0", &"kifs_offset_1",
+	&"kifs_offset_2", &"kifs_offset_3", &"kifs_rot1_xy", &"kifs_rot1_xz", &"kifs_rot1_xw",
+	&"kifs_rot1_yz", &"kifs_rot1_yw", &"kifs_rot1_zw", &"kifs_rot2_xy", &"kifs_rot2_xz",
+	&"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw", &"kleinian_box_0",
+	&"kleinian_box_1", &"kleinian_box_2", &"kleinian_box_3", &"kleinian_radius",
+	&"kleinian_shift_0", &"kleinian_shift_1", &"kleinian_shift_2", &"kleinian_shift_3",
+	&"kleinian_thickness", &"kleinian_view_distance", &"precision", &"color_mode",
+	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
+	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess", &"light_yaw",
+	&"light_pitch", &"exposure", &"saturation", &"palette_a_r", &"palette_a_g", &"palette_a_b",
+	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
+	&"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
 
 ## The colour, lighting and palette fields after color_mode: each is pushed to

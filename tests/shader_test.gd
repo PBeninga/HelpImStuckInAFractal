@@ -22,7 +22,7 @@ func run() -> void:
 	check(names.size() > 0, "shader compiles (uniform list non-empty)")
 
 	var catalogue: Array = []
-	for id in MandelboxShape.catalogue_ids():
+	for id in ShapeCatalogue.catalogue_ids():
 		catalogue.append(String(id))
 
 	var expected := RENDERER_UNIFORMS.duplicate()
@@ -39,9 +39,9 @@ func run() -> void:
 	shape_uniforms.sort()
 	var want := catalogue.duplicate()
 	want.sort()
-	check_eq(shape_uniforms, want, "the shader's shape uniforms equal MandelboxShape.catalogue_ids()")
+	check_eq(shape_uniforms, want, "the shader's shape uniforms equal ShapeCatalogue.catalogue_ids()")
 
-	var table := AttributeTable.new(MandelboxShape.specs())
+	var table := AttributeTable.new(ShapeCatalogue.specs())
 	var re := RegEx.create_from_string("uniform (?:float|int) (\\w+) = (-?[0-9.]+);")
 	var with_default := 0
 	for m in re.search_all(sh.code):

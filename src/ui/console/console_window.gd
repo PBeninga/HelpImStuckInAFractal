@@ -83,7 +83,7 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.add_child(_inspector)
-	_inspector.setup(table, group_tooltips, MandelboxShape.SHAPE_GROUPS)
+	_inspector.setup(table, group_tooltips, ShapeCatalogue.SHAPE_GROUPS)
 
 	_palette = Palette.new(table)
 	_palette_window = PaletteWindow.new()
@@ -94,7 +94,7 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_colour_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_colour_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.add_child(_colour_inspector)
-	_colour_inspector.setup(table, group_tooltips, MandelboxShape.COLOUR_GROUPS, _palette_window)
+	_colour_inspector.setup(table, group_tooltips, ShapeCatalogue.COLOUR_GROUPS, _palette_window)
 
 	_view = ViewPane.new()
 	_tabs.add_child(_view)

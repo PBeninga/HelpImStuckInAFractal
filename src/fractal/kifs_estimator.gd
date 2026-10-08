@@ -25,7 +25,7 @@ enum FoldSet { COORDINATE, DIAGONAL, POLYFOLD }
 static func estimate_at(px: float, py: float, pz: float, params: FractalParams) -> float:
 	var s := params.kifs_scale
 	var fold_set := params.kifs_fold
-	var sector := TAU / float(maxi(roundi(params.kifs_poly_k), 2))
+	var sector := TAU / float(maxi(int(floor(params.kifs_poly_k + 0.5)), 2))
 	var twist := deg_to_rad(params.kifs_twist)
 	var o := [params.kifs_offset_0, params.kifs_offset_1, params.kifs_offset_2, params.kifs_offset_3]
 	var r1 := _angles(params, "rot1")

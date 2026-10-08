@@ -290,33 +290,14 @@ func _on_camera_changed() -> void:
 func _push_params() -> void:
 	if _material == null or _params == null:
 		return
-	_material.set_shader_parameter("box_scale", _params.box_scale)
-	_material.set_shader_parameter("fold_limit", _params.fold_limit)
-	_material.set_shader_parameter("min_radius", _params.min_radius)
-	_material.set_shader_parameter("fixed_radius", _params.fixed_radius)
-	_material.set_shader_parameter("fold_order", _params.fold_order)
-	_material.set_shader_parameter("w", _params.w)
-	_material.set_shader_parameter("julia_all", _params.julia_all)
-	_material.set_shader_parameter("julia_0", _params.julia_0)
-	_material.set_shader_parameter("julia_1", _params.julia_1)
-	_material.set_shader_parameter("julia_2", _params.julia_2)
-	_material.set_shader_parameter("julia_3", _params.julia_3)
-	_material.set_shader_parameter("c_0", _params.c_0)
-	_material.set_shader_parameter("c_1", _params.c_1)
-	_material.set_shader_parameter("c_2", _params.c_2)
-	_material.set_shader_parameter("c_3", _params.c_3)
-	_material.set_shader_parameter("iter_rot_xy", _params.iter_rot_xy)
-	_material.set_shader_parameter("iter_rot_xz", _params.iter_rot_xz)
-	_material.set_shader_parameter("iter_rot_xw", _params.iter_rot_xw)
-	_material.set_shader_parameter("iter_rot_yz", _params.iter_rot_yz)
-	_material.set_shader_parameter("iter_rot_yw", _params.iter_rot_yw)
-	_material.set_shader_parameter("iter_rot_zw", _params.iter_rot_zw)
+	# Every catalogue id is a uniform of the same name, pushed as it is; the
+	# precision folds in the detail and the load shedder's factor.
+	for key in FractalParams.RESOLVED_KEYS:
+		if key != &"precision":
+			_material.set_shader_parameter(key, _params.get(key))
 	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _shed["detail"]))
-	_material.set_shader_parameter("color_mode", _params.color_mode)
-	for key in FractalParams.LOOK_KEYS:
-		_material.set_shader_parameter(key, _params.get(key))
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
-	_material.set_shader_parameter("box_half", 20.0 if _params.julia_enabled() else 2.0)
+	_material.set_shader_parameter("box_half", _params.bound_half())
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
 	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _shed["steps"])))
