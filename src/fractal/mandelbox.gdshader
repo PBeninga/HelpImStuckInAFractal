@@ -52,8 +52,39 @@ uniform float iter_rot_yz;
 uniform float iter_rot_yw;
 uniform float iter_rot_zw;
 
-uniform int color_mode;
 uniform float precision;
+
+uniform int color_mode;
+uniform int palette_source = 0;   // 0 steps, 1 radius, 2 normal
+uniform float palette_frequency = 1.0;
+uniform float palette_offset = 0.0;
+uniform float palette_occlusion = 0.5;
+
+// Lighting. The defaults are the site's constants, so the picture is unchanged
+// until one is moved.
+uniform float light_ambient = 0.1;
+uniform float light_diffuse = 0.5;
+uniform float light_specular = 1.0;
+uniform float light_shininess = 160.0;
+uniform float light_yaw = 0.0;      // degrees about cam_up
+uniform float light_pitch = 0.0;    // degrees about cam_right
+uniform float exposure = 1.0;
+uniform float saturation = 1.0;
+
+// The Palette mode's cosine palette A + B cos(2pi (C t + D)), one float per
+// vector and channel so each is a catalogue id of its own.
+uniform float palette_a_r = 0.5;
+uniform float palette_a_g = 0.5;
+uniform float palette_a_b = 0.5;
+uniform float palette_b_r = 0.5;
+uniform float palette_b_g = 0.5;
+uniform float palette_b_b = 0.5;
+uniform float palette_c_r = 1.0;
+uniform float palette_c_g = 1.0;
+uniform float palette_c_b = 1.0;
+uniform float palette_d_r = 0.0;
+uniform float palette_d_g = 0.33;
+uniform float palette_d_b = 0.67;
 
 // NOISE:BEGIN
 float noise_displace(vec3 p) { return 0.0; }
@@ -218,6 +249,24 @@ vec3 hue(float q) {
 	return vec3(1.0, 0.0, x);
 }
 
+// Inigo Quilez's cosine palette. Palette.color_at() is the same formula, so the
+// Colour window's strip previews exactly this.
+vec3 palette(float t) {
+	vec3 a = vec3(palette_a_r, palette_a_g, palette_a_b);
+	vec3 b = vec3(palette_b_r, palette_b_g, palette_b_b);
+	vec3 c = vec3(palette_c_r, palette_c_g, palette_c_b);
+	vec3 d = vec3(palette_d_r, palette_d_g, palette_d_b);
+	return clamp(a + b * cos(6.283185307179586 * (c * t + d)), 0.0, 1.0);
+}
+
+// Rotate v by `deg` degrees about the unit axis k (Rodrigues).
+vec3 rotate_about(vec3 v, vec3 k, float deg) {
+	float r = radians(deg);
+	float c = cos(r);
+	float s = sin(r);
+	return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c);
+}
+
 // Ray vs axis-aligned cube of half-size `half_size`, centred at the origin.
 // Returns vec2(t_enter, t_exit); a miss has t_exit < max(t_enter, 0).
 vec2 box_intersect(vec3 ro, vec3 rd, float half_size) {
@@ -307,8 +356,11 @@ void fragment() {
 			}
 
 			vec3 ldir = normalize(2.0 * eh - h);
-			float lgt = abs(dot(n, ldir));
-			lgt = 0.5 * lgt + pow(lgt, 160.0) + 0.1;
+			if (light_yaw != 0.0 || light_pitch != 0.0) {
+				ldir = rotate_about(rotate_about(ldir, cam_up, light_yaw), cam_right, light_pitch);
+			}
+			float nl = abs(dot(n, ldir));
+			float lgt = light_diffuse * nl + light_specular * pow(nl, light_shininess) + light_ambient;
 			vec3 base = vec3(lgt) * (-n * 0.25 + 0.75) + vec3(0.0, 0.0, 0.2);
 
 				vec3 col;
@@ -347,9 +399,21 @@ void fragment() {
 				vec3 nv = vec3(dot(n, cam_right), dot(n, cam_up), dot(n, -cam_forward));
 				float lv = pow(max(0.0, nv.z), 4.0);
 				col = (0.75 - ce) * 2.0 * vec3(lv, lv * lv, lv * ce);
+			} else if (color_mode == 20) {
+				float src = ce;
+				if (palette_source == 1) { src = dot(h, h) / 4.0; }
+				else if (palette_source == 2) { src = n.z * 0.5 + 0.5; }
+				float pt = fract(src * palette_frequency + palette_offset);
+				col = palette(pt) * (lgt + 0.5) * mix(1.0, inv, palette_occlusion);
 			} else {
 				col = vec3(inv);
 			}
+				// Each guarded, so at the defaults the site's modes stay bit-for-bit.
+				if (exposure != 1.0) { col *= exposure; }
+				if (saturation != 1.0) {
+					float luma = dot(col, vec3(0.299, 0.587, 0.114));
+					col = mix(vec3(luma), col, saturation);
+				}
 				COLOR = vec4(mix(noise_tint(col, v), fog_color, fog_amount(total)), 1.0);
 			}
 		}

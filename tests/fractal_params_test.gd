@@ -38,9 +38,26 @@ func run() -> void:
 	check_eq(p.julia_enabled(), true, "julia_enabled() true when julia_all is on")
 	p.julia_all = false
 
-	# the thirteen colour ids, in dropdown order
-	check_eq(p.COLOR_MODE_IDS, [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14], "colour id order")
-	check_eq(p.COLOR_MODE_NAMES.size(), 13, "thirteen colour names")
+	# the site's thirteen colour ids in dropdown order, then Palette
+	check_eq(p.COLOR_MODE_IDS, [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14, 20], "colour id order")
+	check_eq(p.COLOR_MODE_NAMES.size(), 14, "fourteen colour names")
+	check_eq(p.COLOR_MODE_NAMES[-1], "Palette", "the last is Palette")
+	check_eq(p.COLOR_MODE_IDS[-1], Palette.MODE_ID, "with the Palette's mode id")
+
+	# every resolved key is a catalogue id, and its field opens on the catalogue default
+	var shape_table := AttributeTable.new(MandelboxShape.specs())
+	check_eq(FractalParams.RESOLVED_KEYS, MandelboxShape.catalogue_ids(), "RESOLVED_KEYS are the catalogue ids, in order")
+	for k in FractalParams.RESOLVED_KEYS:
+		var want: Variant = shape_table.get_default(k)
+		if want is float:
+			check_approx(float(p.get(k)), want, "field '%s' opens on the catalogue default" % k, 1e-9)
+		else:
+			check_eq(p.get(k), want, "field '%s' opens on the catalogue default" % k)
+	for k in FractalParams.LOOK_KEYS:
+		check(FractalParams.RESOLVED_KEYS.has(k), "look key '%s' is resolved" % k)
+	check(not FractalParams.LOOK_KEYS.has(&"color_mode"), "color_mode is pushed on its own, not as a look key")
+	check_eq(FractalParams.LOOK_KEYS.size() + FractalParams.RESOLVED_KEYS.find(&"color_mode") + 1,
+		FractalParams.RESOLVED_KEYS.size(), "the look keys are everything after color_mode")
 
 	# --- apply_resolved emits once, only on a difference ---
 	var fires := [0]

@@ -12,10 +12,12 @@ extends Resource
 enum CameraMode { FLY, ORBIT }
 
 ## Colour-mode ids in the dropdown's order (ids match the site).
-const COLOR_MODE_IDS: Array[int] = [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14]
+## Palette (20) is this project's own, past the site's range.
+const COLOR_MODE_IDS: Array[int] = [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14, 20]
 const COLOR_MODE_NAMES: Array[String] = [
 	"Grayscale", "Ice Fractal", "Borg", "Rainbow", "Rainbow 2", "Rainbow 3",
 	"Rainbow Metal", "Blue", "Blue 2", "Pink-Blue", "Ice Box", "Ice Box 2", "Gold",
+	"Palette",
 ]
 
 ## The resolved shape fields, in catalogue order. apply_resolved writes these.
@@ -24,7 +26,22 @@ const RESOLVED_KEYS: Array[StringName] = [
 	&"julia_all", &"julia_0", &"julia_1", &"julia_2", &"julia_3",
 	&"c_0", &"c_1", &"c_2", &"c_3",
 	&"iter_rot_xy", &"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw",
-	&"color_mode", &"precision",
+	&"precision",
+	&"color_mode", &"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
+	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess",
+	&"light_yaw", &"light_pitch", &"exposure", &"saturation",
+	&"palette_a_r", &"palette_a_g", &"palette_a_b", &"palette_b_r", &"palette_b_g", &"palette_b_b",
+	&"palette_c_r", &"palette_c_g", &"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
+]
+
+## The colour, lighting and palette fields after color_mode: each is pushed to
+## the shader uniform of the same name as it is.
+const LOOK_KEYS: Array[StringName] = [
+	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
+	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess",
+	&"light_yaw", &"light_pitch", &"exposure", &"saturation",
+	&"palette_a_r", &"palette_a_g", &"palette_a_b", &"palette_b_r", &"palette_b_g", &"palette_b_b",
+	&"palette_c_r", &"palette_c_g", &"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
 
 # While true the shape setters do not emit; apply_resolved emits once at the end.
@@ -79,10 +96,64 @@ var _suppress := false
 	set(v): iter_rot_zw = v; _emit()
 
 # --- Render ---
-@export var color_mode: int = 1:
-	set(v): color_mode = v; _emit()
 @export var precision: float = 0.000025:
 	set(v): precision = v; _emit()
+
+# --- Colour ---
+@export var color_mode: int = 1:
+	set(v): color_mode = v; _emit()
+@export var palette_source: int = 0:
+	set(v): palette_source = v; _emit()
+@export var palette_frequency: float = 1.0:
+	set(v): palette_frequency = v; _emit()
+@export var palette_offset: float = 0.0:
+	set(v): palette_offset = v; _emit()
+@export var palette_occlusion: float = 0.5:
+	set(v): palette_occlusion = v; _emit()
+
+# --- Lighting (the defaults are the site's constants) ---
+@export var light_ambient: float = 0.1:
+	set(v): light_ambient = v; _emit()
+@export var light_diffuse: float = 0.5:
+	set(v): light_diffuse = v; _emit()
+@export var light_specular: float = 1.0:
+	set(v): light_specular = v; _emit()
+@export var light_shininess: float = 160.0:
+	set(v): light_shininess = v; _emit()
+@export var light_yaw: float = 0.0:
+	set(v): light_yaw = v; _emit()
+@export var light_pitch: float = 0.0:
+	set(v): light_pitch = v; _emit()
+@export var exposure: float = 1.0:
+	set(v): exposure = v; _emit()
+@export var saturation: float = 1.0:
+	set(v): saturation = v; _emit()
+
+# --- Palette: A + B cos(2π (C t + D)), per channel (see Palette) ---
+@export var palette_a_r: float = 0.5:
+	set(v): palette_a_r = v; _emit()
+@export var palette_a_g: float = 0.5:
+	set(v): palette_a_g = v; _emit()
+@export var palette_a_b: float = 0.5:
+	set(v): palette_a_b = v; _emit()
+@export var palette_b_r: float = 0.5:
+	set(v): palette_b_r = v; _emit()
+@export var palette_b_g: float = 0.5:
+	set(v): palette_b_g = v; _emit()
+@export var palette_b_b: float = 0.5:
+	set(v): palette_b_b = v; _emit()
+@export var palette_c_r: float = 1.0:
+	set(v): palette_c_r = v; _emit()
+@export var palette_c_g: float = 1.0:
+	set(v): palette_c_g = v; _emit()
+@export var palette_c_b: float = 1.0:
+	set(v): palette_c_b = v; _emit()
+@export var palette_d_r: float = 0.0:
+	set(v): palette_d_r = v; _emit()
+@export var palette_d_g: float = 0.33:
+	set(v): palette_d_g = v; _emit()
+@export var palette_d_b: float = 0.67:
+	set(v): palette_d_b = v; _emit()
 
 # --- preferences (edited directly, not resolved) ---
 @export var fast_controls: bool = true:
@@ -120,6 +191,7 @@ const FOG_COLORS := {
 	16: Vector3(0.12, 0.26, 0.34),   # Ice Box
 	9: Vector3(0.12, 0.26, 0.34),    # Ice Box 2
 	14: Vector3(0.28, 0.20, 0.06),   # Gold
+	20: Vector3(0.18, 0.18, 0.22),   # Palette (any palette: a neutral dusk)
 }
 
 ## The resolution governor never drops below min_render_scale while moving.
