@@ -1,11 +1,15 @@
 class_name DistanceEstimator
 extends RefCounted
-## CPU copy of the shader's Mandelbox distance estimator, N = 32 (the
-## high-precision variant) unless a smaller iteration count is asked for, as the
-## shader's coarse pass does (FractalParams.coarse_iters). Mirrors
-## mandelbox.gdshader's mb_step in 64-bit scalars (zx, zy, zz, zw): box fold, sphere fold, optional 4D iteration
-## rotation, scale and add, carrying the running derivative dz. Must give the
-## same numbers as the shader's `de(p, iters)`.
+## CPU copy of the shader's distance estimators, N = 32 (the high-precision
+## variant) unless a smaller iteration count is asked for, as the shader's
+## coarse pass does (FractalParams.coarse_iters): estimate_at() dispatches on
+## params.shape to the Mandelbox core below, KifsEstimator or
+## KleinianEstimator. The Mandelbox core mirrors mandelbox.gdshader's mb_step
+## in 64-bit scalars (zx, zy, zz, zw): the fold (box, cylinder or octahedral,
+## optionally mixed toward the Menger fold), the sphere fold, optional 4D
+## iteration rotation, scale (drifting with the iteration) and add, carrying
+## the running derivative dz. Must give the same numbers as the shader's
+## `de(p, iters)`.
 ##
 ## The orbit runs in scalar `float` locals (GDScript floats are 64-bit) rather
 ## than Vector math, because Vector components are 32-bit in a standard build
@@ -26,7 +30,22 @@ static func estimate(p: Vector3, params: FractalParams) -> float:
 ## `iters` is clamped to [0, ITERATIONS]; the default is the shader's `de(p, 32)`.
 static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
 		iters: int = ITERATIONS) -> float:
+	match params.shape:
+		FractalParams.Shape.KIFS:
+			return KifsEstimator.estimate_at(px, py, pz, params)
+		FractalParams.Shape.KLEINIAN:
+			return KleinianEstimator.estimate_at(px, py, pz, params)
+	return mandelbox_at(px, py, pz, params, iters)
+
+
+## The Mandelbox estimate, whatever params.shape says.
+static func mandelbox_at(px: float, py: float, pz: float, params: FractalParams,
+		iters: int = ITERATIONS) -> float:
 	var scale := params.box_scale
+	var drift := params.scale_drift
+	var fold_shape := params.fold_shape
+	var mix := params.hybrid_mix
+	var every := maxi(params.hybrid_every, 1)
 	var mr2 := params.min_radius * params.min_radius
 	var fr2 := params.fixed_radius * params.fixed_radius
 	var fold := params.fold_limit
@@ -59,23 +78,99 @@ static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
 
 	var z := [z0[0], z0[1], z0[2], z0[3]]
 	var dz := 1.0
-	for _i in clampi(iters, 0, ITERATIONS):
+	for i in clampi(iters, 0, ITERATIONS):
+		var hybrid := mix > 0.0 and i % every == every - 1
 		if fold_order == 0:
-			_box_fold(z, fold)
+			_fold(z, fold, fold_shape, hybrid, mix)
 			dz = _sphere_fold(z, dz, mr2, fr2)
 		else:
 			dz = _sphere_fold(z, dz, mr2, fr2)
-			_box_fold(z, fold)
+			_fold(z, fold, fold_shape, hybrid, mix)
 		if rotating:
 			for p in 6:
 				_rot_plane(z, PLANES[p][0], PLANES[p][1], cosv[p], sinv[p])
-		z[0] = scale * z[0] + c[0]
-		z[1] = scale * z[1] + c[1]
-		z[2] = scale * z[2] + c[2]
-		z[3] = scale * z[3] + c[3]
-		dz = dz * absf(scale) + 1.0
+		var s := scale + drift * i
+		z[0] = s * z[0] + c[0]
+		z[1] = s * z[1] + c[1]
+		z[2] = s * z[2] + c[2]
+		z[3] = s * z[3] + c[3]
+		dz = dz * absf(s) + 1.0
 	var r2: float = z[0] * z[0] + z[1] * z[1] + z[2] * z[2] + z[3] * z[3]
 	return sqrt(r2) / absf(dz)
+
+
+
+## The fold step: the chosen fold, then (on a hybrid iteration) a mix of its
+## result toward the Menger fold of the same input. Every fold is a reflection
+## through a convex set's boundary or a sort, so each is 1-Lipschitz and so is
+## the mix: the running derivative needs no factor.
+static func _fold(z: Array, fold: float, fold_shape: int, hybrid: bool, mix: float) -> void:
+	var m := [0.0, 0.0, 0.0, 0.0]
+	if hybrid:
+		m = [z[0], z[1], z[2], z[3]]
+		menger_fold(m)
+	if fold_shape == MandelboxShape.FoldShape.CYLINDER:
+		_cylinder_fold(z, fold)
+	elif fold_shape == MandelboxShape.FoldShape.OCTAHEDRAL:
+		_octahedral_fold(z, fold)
+	else:
+		_box_fold(z, fold)
+	if hybrid:
+		for k in 4:
+			z[k] = z[k] + (m[k] - z[k]) * mix
+
+
+## KIFS's coordinate fold: fold into the positive orthant, then sort x >= y >= z.
+static func menger_fold(z: Array) -> void:
+	for k in 4:
+		z[k] = absf(z[k])
+	if z[0] < z[1]:
+		var t: float = z[0]; z[0] = z[1]; z[1] = t
+	if z[0] < z[2]:
+		var t: float = z[0]; z[0] = z[2]; z[2] = t
+	if z[1] < z[2]:
+		var t: float = z[1]; z[1] = z[2]; z[2] = t
+
+
+## Reflect the xy pair through the circle of radius `fold` (r -> 2 fold - r
+## outside it, the box fold's rule applied to the radius); z and w get the
+## plain box fold.
+static func _cylinder_fold(z: Array, fold: float) -> void:
+	var r := sqrt(z[0] * z[0] + z[1] * z[1])
+	if r > fold:
+		var f := (2.0 * fold - r) / r
+		z[0] *= f
+		z[1] *= f
+	z[2] = clampf(z[2], -fold, fold) * 2.0 - z[2]
+	z[3] = clampf(z[3], -fold, fold) * 2.0 - z[3]
+
+
+## Reflect xyz through the octahedron |x| + |y| + |z| <= fold: twice the
+## nearest point of the octahedron, minus the point. (The box fold is the same
+## rule for the cube.) The nearest point soft-thresholds every |component| by
+## the theta that lands it on the surface. w gets the plain box fold.
+static func _octahedral_fold(z: Array, fold: float) -> void:
+	var lim := maxf(fold, 0.0)
+	var ax := absf(z[0])
+	var ay := absf(z[1])
+	var az := absf(z[2])
+	if ax + ay + az > lim:
+		# u: the three magnitudes, largest first.
+		var u1 := maxf(ax, maxf(ay, az))
+		var u3 := minf(ax, minf(ay, az))
+		var u2 := ax + ay + az - u1 - u3
+		var theta := u1 - lim
+		var t2 := (u1 + u2 - lim) / 2.0
+		if u2 > t2:
+			theta = t2
+			var t3 := (u1 + u2 + u3 - lim) / 3.0
+			if u3 > t3:
+				theta = t3
+		for k in 3:
+			var a := absf(z[k])
+			var pk := signf(z[k]) * maxf(a - theta, 0.0)
+			z[k] = 2.0 * pk - z[k]
+	z[3] = clampf(z[3], -fold, fold) * 2.0 - z[3]
 
 
 static func _box_fold(z: Array, fold: float) -> void:

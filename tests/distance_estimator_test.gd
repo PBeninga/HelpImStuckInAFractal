@@ -109,3 +109,41 @@ func run() -> void:
 	check(d16 > 0.0 and is_finite(d16) and absf(d16 - full) > 1e-9,
 		"16 iterations describe a slightly different surface (%s vs %s)" % [d16, full])
 	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d, 99), full, "a count past 32 is clamped to 32")
+
+	# ======================= the fold options =======================
+	# Captured from estimate_at once; the defaults above pin that each option
+	# at its default changes nothing.
+	var cyl := FractalParams.new(); cyl.fold_shape = MandelboxShape.FoldShape.CYLINDER
+	_de(1.2, -0.3, 0.8, cyl, 5.257641803377495e-3, "cylinder (1.2,-0.3,0.8)")
+	_de(0.1, 0.9, 1.5, cyl, 2.4790616547414094e-3, "cylinder (0.1,0.9,1.5)")
+	var oct := FractalParams.new(); oct.fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
+	_de(1.2, -0.3, 0.8, oct, 0.1732051220721598, "octahedral (1.2,-0.3,0.8)")
+	_de(0.5, 0.5, 0.5, oct, 4.1206878808877995e-2, "octahedral (0.5,0.5,0.5)")
+	var hyb := FractalParams.new(); hyb.hybrid_mix = 0.5
+	_de(0.1, 0.9, 1.5, hyb, 1.936421936062572e-9, "hybrid 0.5 every 2nd (0.1,0.9,1.5)")
+	var drift := FractalParams.new(); drift.scale_drift = 0.02
+	_de(0.1, 0.9, 1.5, drift, 1.279908397497517e-4, "scale drift 0.02 (0.1,0.9,1.5)")
+	_de(3, 0, 0, drift, 1.0000000119298762, "scale drift 0.02 (3,0,0)")
+	for pair in [[cyl, "cylinder fold"], [oct, "octahedral fold"], [hyb, "hybrid mix"], [drift, "scale drift"]]:
+		check(absf(DistanceEstimator.estimate(Vector3(0.1, 0.9, 1.5), pair[0])
+				- DistanceEstimator.estimate(Vector3(0.1, 0.9, 1.5), d)) > 1e-7,
+			"the %s changes the distance" % pair[1])
+	# the hybrid's period only matters while the mix is on
+	var every3 := FractalParams.new(); every3.hybrid_every = 3
+	check_eq(DistanceEstimator.estimate(Vector3(1.2, -0.3, 0.8), every3), base,
+		"Hybrid every alone (mix 0) changes nothing")
+	# the folds keep the box fold's symmetry D(p) == D(-p)
+	for q in [Vector3(0.7, 0.3, 0.9), Vector3(1.2, -0.3, 0.8)]:
+		for f in [cyl, oct]:
+			check_approx(DistanceEstimator.estimate(q, f), DistanceEstimator.estimate(-q, f),
+				"fold %d: D(p) == D(-p) at %s" % [f.fold_shape, q], 1e-9)
+
+	# --- dispatch: the shape row picks the estimator ---
+	var as_kifs := FractalParams.new(); as_kifs.shape = FractalParams.Shape.KIFS
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, as_kifs),
+		KifsEstimator.estimate_at(1.2, -0.3, 0.8, as_kifs), "shape KIFS dispatches to KifsEstimator")
+	var as_kl := FractalParams.new(); as_kl.shape = FractalParams.Shape.KLEINIAN
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, as_kl),
+		KleinianEstimator.estimate_at(1.2, -0.3, 0.8, as_kl), "shape Kleinian dispatches to KleinianEstimator")
+	check_eq(DistanceEstimator.mandelbox_at(1.2, -0.3, 0.8, as_kifs), DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d),
+		"mandelbox_at ignores the shape row")
