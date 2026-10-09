@@ -16,6 +16,9 @@ extends RefCounted
 ## alone — except the fractal (`shape`), which a file from before there was a
 ## choice lacks, and which then loads as the Mandelbox it was saved from. A version-1 file (the old flat "fractal" section) is migrated to the
 ## new ids without a warning. Saving always writes version 2.
+##
+## The camera's eye is written at full precision (64-bit, every digit: a deep view
+## needs them); `forward` and `up` keep 7 significant figures.
 
 const VERSION := 2
 
@@ -42,7 +45,7 @@ static func capture(table: AttributeTable, axes: Axes, params: FractalParams, ca
 		"axes": axes.values_by_string(),
 		"fractal": fractal,
 		"camera": {
-			"eye": _vec_to_array(camera.eye()),
+			"eye": _eye_to_array(camera),
 			"forward": _vec_to_array(camera.forward()),
 			"up": _vec_to_array(camera.up()),
 			"speed_factor": camera.speed_factor,
@@ -110,7 +113,7 @@ static func save_file(path: String, table: AttributeTable, axes: Axes, params: F
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(capture(table, axes, params, camera, noise), "\t", false))
+	file.store_string(JSON.stringify(capture(table, axes, params, camera, noise), "\t", false, true))
 	file.close()
 	return OK
 
@@ -234,7 +237,7 @@ static func _parse_fractal(key: String, raw: Variant) -> Variant:
 
 
 static func _restore_camera(cam: Dictionary, camera: CameraState, warnings: Array) -> void:
-	var eye: Variant = _array_to_vec(cam.get("eye", null))
+	var eye: Variant = _array_to_doubles(cam.get("eye", null))
 	var forward: Variant = _array_to_vec(cam.get("forward", null))
 	var up: Variant = _array_to_vec(cam.get("up", null))
 	if eye != null and forward != null and up != null:
@@ -243,7 +246,10 @@ static func _restore_camera(cam: Dictionary, camera: CameraState, warnings: Arra
 		if f.is_zero_approx() or u.is_zero_approx() or absf(f.dot(u)) > 0.999:
 			warnings.append("Malformed camera orientation ignored")
 		else:
-			camera.transform = Transform3D(Basis.IDENTITY, eye).looking_at(eye + f, u)
+			var e: PackedFloat64Array = eye
+			camera.set_eye64(e[0], e[1], e[2])
+			var o := camera.eye()   # the rounded shadow: assigning it keeps the doubles
+			camera.transform = Transform3D(Basis.IDENTITY, o).looking_at(o + f, u)
 	elif cam.has("eye") or cam.has("forward") or cam.has("up"):
 		warnings.append("Malformed camera position ignored")
 	if cam.has("speed_factor"):
@@ -252,6 +258,12 @@ static func _restore_camera(cam: Dictionary, camera: CameraState, warnings: Arra
 			camera.speed_factor = float(s)
 		else:
 			warnings.append("Malformed camera speed_factor ignored")
+
+
+## The 64-bit eye at full precision (no _tidy: a deep view needs every digit).
+static func _eye_to_array(camera: CameraState) -> Array:
+	var e := camera.eye64()
+	return [e[0], e[1], e[2]]
 
 
 static func _vec_to_array(v: Vector3) -> Array:
@@ -264,6 +276,16 @@ static func _tidy(x: float) -> float:
 	var decimals := 7 - int(ceil(log(absf(x)) / log(10.0)))
 	var p := pow(10.0, decimals)
 	return roundf(x * p) / p
+
+
+## Three numbers as 64-bit floats, or null when malformed.
+static func _array_to_doubles(raw: Variant) -> Variant:
+	if not (raw is Array) or raw.size() != 3:
+		return null
+	for v in raw:
+		if not (v is float or v is int):
+			return null
+	return PackedFloat64Array([float(raw[0]), float(raw[1]), float(raw[2])])
 
 
 static func _array_to_vec(raw: Variant) -> Variant:

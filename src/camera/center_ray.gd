@@ -46,7 +46,10 @@ func hit() -> bool:
 ## The world point the ray hit. Only meaningful while hit() is true.
 func point() -> Vector3:
 	_update()
-	return _camera.eye() + _camera.forward() * (_distance if _hit else 0.0)
+	var e := _camera.eye64()
+	var f := _camera.forward()
+	var t := _distance if _hit else 0.0
+	return Vector3(e[0] + f.x * t, e[1] + f.y * t, e[2] + f.z * t)
 
 
 func _mark_dirty() -> void:
@@ -57,26 +60,32 @@ func _update() -> void:
 	if not _dirty:
 		return
 	_dirty = false
-	var r := march(_camera.eye(), _camera.forward(), _params)
+	var e := _camera.eye64()
+	var r := march_at(e[0], e[1], e[2], _camera.forward(), _params)
 	_distance = r[0]
 	_hit = r[1]
 
 
-## Sphere-trace from `origin` along unit `dir`. Returns [distance, hit]:
-## [t, true] on a hit, [INF, false] when the ray leaves the shape's cube (or
-## passes the Kleinian's view distance), and
-## [t_reached, false] when the step budget runs out first.
+## march_at() from a Vector3 origin (32-bit: fine away from the surface).
 static func march(origin: Vector3, dir: Vector3, params: FractalParams) -> Array:
-	var tb := _box_intersect(origin, dir, params.bound_half())
+	return march_at(origin.x, origin.y, origin.z, dir, params)
+
+
+## Sphere-trace from the 64-bit origin (ox, oy, oz) along unit `dir`: each sample
+## point o + dir t is formed in 64-bit scalars, so the march resolves the surface
+## below the 32-bit grid. Returns [distance, hit]: [t, true] on a hit, [INF,
+## false] when the ray leaves the shape's cube (or passes the Kleinian's view
+## distance), [t_reached, false] when the step budget runs out first.
+static func march_at(ox: float, oy: float, oz: float, dir: Vector3, params: FractalParams) -> Array:
+	var tb := _box_intersect(Vector3(ox, oy, oz), dir, params.bound_half())   # the cube needs no precision
 	if params.view_distance() > 0.0:
 		tb.y = minf(tb.y, params.view_distance())   # the shader stops there too
 	if tb.y < maxf(tb.x, 0.0):
 		return [INF, false]
-	var near := maxf(DistanceEstimator.estimate(origin, params), FractalParams.NEAR_FLOOR)
+	var near := maxf(DistanceEstimator.estimate_at(ox, oy, oz, params), FractalParams.NEAR_FLOOR)
 	var t := maxf(tb.x, 0.0)
 	for _i in MAX_STEPS:
-		var p := origin + dir * t
-		var d := DistanceEstimator.estimate_at(p.x, p.y, p.z, params)
+		var d := DistanceEstimator.estimate_at(ox + dir.x * t, oy + dir.y * t, oz + dir.z * t, params)
 		if d < params.hit_epsilon(t, near):
 			return [t, true]
 		t += d

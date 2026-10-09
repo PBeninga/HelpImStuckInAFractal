@@ -78,13 +78,17 @@ func _physics_process(delta: float) -> void:
 	if dir.length() == 0.0:
 		at_zoom_limit = false
 		return
-	var t := _camera.transform
-	t.origin += dir * current_speed() * delta
-	if not move_allowed(_camera.eye(), t.origin):
+	# The step is added in 64-bit: below about 1e-6 a 32-bit origin could not move.
+	var step := current_speed() * delta
+	var e := _camera.eye64()
+	var nx: float = e[0] + dir.x * step
+	var ny: float = e[1] + dir.y * step
+	var nz: float = e[2] + dir.z * step
+	if not move_allowed(_camera.eye(), Vector3(nx, ny, nz)):   # Task 6 makes the guard 64-bit
 		at_zoom_limit = true
 		return
 	at_zoom_limit = false
-	_camera.transform = t
+	_camera.set_eye64(nx, ny, nz)
 
 
 ## Whether the camera may move from `from` to `to`: yes when `to` is at least

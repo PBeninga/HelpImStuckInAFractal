@@ -83,6 +83,25 @@ func run() -> void:
 	fly.enabled = false
 	cam.transform = CameraState.make_default().transform
 
+	# --- the step is added in 64-bit: a step far below the 32-bit grid still moves the eye ---
+	cam.speed_factor = 1e-9   # about 1e-10 per tick at the default view (the grid there is ~1e-6)
+	var e32 := cam.eye()
+	var e64 := cam.eye64()
+	var step := fly.current_speed() / Engine.physics_ticks_per_second
+	fly.enabled = true
+	await _tick(&"move_forward")
+	fly.enabled = false
+	var moved := cam.eye64()
+	var dv := Vector3(moved[0] - e64[0], moved[1] - e64[1], moved[2] - e64[2])
+	var dist := sqrt((moved[0] - e64[0]) ** 2 + (moved[1] - e64[1]) ** 2 + (moved[2] - e64[2]) ** 2)
+	check(cam.eye() == e32, "a 1e-10 step cannot move the 32-bit shadow")
+	# (the move is measured as a difference of doubles near 8, whose last bits are
+	# about 1.5e-5 of a 1e-10 step: hence 1e-4)
+	check(absf(dist / step - 1.0) < 1e-4, "but the 64-bit eye moves by the whole step (%s of %s)" % [dist, step])
+	check(dv.normalized().is_equal_approx(cam.forward()), "along forward")
+	cam.speed_factor = 1.0
+	cam.transform = CameraState.make_default().transform
+
 	# --- the wheel scales the factor by 1.25, clamped to [0.01, 100] ---
 	var f0 := cam.speed_factor
 	fly.scroll(true)

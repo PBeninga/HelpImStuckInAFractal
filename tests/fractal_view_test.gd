@@ -114,6 +114,16 @@ func run() -> void:
 	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "and moving back restores 16")
 	check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and the probe's lighting")
 
+	# near_dist follows the camera below 1e-6: measured from the 64-bit eye, clamped only at 1e-14
+	var snear := SurfaceFixture.default_surface(params)
+	var enear := SurfaceFixture.backed(snear, 1e-8)
+	cam.set_eye64(enear[0], enear[1], enear[2])
+	var dnear := DistanceEstimator.estimate_at(enear[0], enear[1], enear[2], params)
+	check_eq(float(mat.get_shader_parameter("near_dist")), maxf(dnear, FractalParams.NEAR_FLOOR),
+		"a camera 1e-8 short of the surface pushes its own distance (%s)" % dnear)
+	check(float(mat.get_shader_parameter("near_dist")) < 1e-7, "not the old 1e-6 clamp")
+	cam.transform = home   # back from the 1e-8 camera
+
 	# the shape switch reaches the shader, and the bounding cube follows the shape
 	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbox marches in its cube of half-side 2")
 	params.apply_resolved({&"shape": FractalParams.Shape.KIFS, &"kifs_scale": 2.5, &"kifs_rot2_yz": 12.0})

@@ -366,7 +366,8 @@ func _push_camera() -> void:
 func _push_near() -> void:
 	if _material == null or _params == null or _camera == null:
 		return
-	var near := maxf(DistanceEstimator.estimate(_camera.eye(), _params), FractalParams.NEAR_FLOOR)
+	var e := _camera.eye64()
+	var near := maxf(DistanceEstimator.estimate_at(e[0], e[1], e[2], _params), FractalParams.NEAR_FLOOR)
 	_material.set_shader_parameter("near_dist", near)
 	_material.set_shader_parameter("coarse_iters", _params.coarse_iters(near))
 	_material.set_shader_parameter("nf_weight", FractalParams.nf_weight(near))
