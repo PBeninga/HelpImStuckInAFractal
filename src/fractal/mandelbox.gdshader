@@ -29,6 +29,10 @@ uniform int fine_steps;
 // surface, so the smoother surface it marches toward stays within its hit
 // threshold of the real one (FractalParams.coarse_iters). 16 at the default view.
 uniform int coarse_iters;
+// The self-shadow march's step budget (0 = no shadow ray). The view pushes it
+// from FractalParams.SHADOW_STEPS through the load-shed ladder, so it has no
+// default here: an unpushed frame casts no shadow, like the site.
+uniform int shadow_steps;
 // How much of the Ice Fractal normal (calc_nf) the probe-lit colour modes use:
 // 1 far from the surface, fading to 0 (the true normal) up close, where
 // calc_nf's fixed 0.01 offset turns to noise (FractalParams.nf_weight).
@@ -85,16 +89,29 @@ uniform float palette_frequency = 1.0;
 uniform float palette_offset = 0.0;
 uniform float palette_occlusion = 0.5;
 
-// Lighting. The defaults are the site's constants, so the picture is unchanged
-// until one is moved.
-uniform float light_ambient = 0.1;
-uniform float light_diffuse = 0.5;
-uniform float light_specular = 1.0;
-uniform float light_shininess = 160.0;
+// Light. The defaults are the site's constants, so the picture is unchanged
+// until one is moved. light_color and surface_color are the two COLOR rows,
+// pushed from Color as a vec3 (FractalParams.COLOR_KEYS).
+uniform vec3 light_color = vec3(1.0, 1.0, 1.0);
 uniform float light_yaw = 0.0;      // degrees about cam_up
 uniform float light_pitch = 0.0;    // degrees about cam_right
+uniform float light_size = 0.0;     // the lamp's angular radius, degrees
+uniform float light_ambient = 0.1;
+uniform float light_diffuse = 0.5;
+uniform float shadows = 0.0;        // 0 off (no shadow ray), toward 1 darker
+// Scattering: light-tinted distance haze, off at density 0.
+uniform float scatter_density = 0.0;
+uniform float scatter_glow = 0.0;
+uniform float scatter_brightness = 1.0;
 uniform float exposure = 1.0;
 uniform float saturation = 1.0;
+// Surface. roughness 0.111111111111 (1/9) is the site's specular exponent of 160.
+uniform vec3 surface_color = vec3(1.0, 1.0, 1.0);
+uniform float roughness = 0.111111111111;
+uniform float light_specular = 1.0;
+// Texture: the noise editor's Texture and Bump outputs scale by these.
+uniform float texture_strength = 1.0;
+uniform float bump_strength = 1.0;
 
 // The Palette mode's cosine palette A + B cos(2pi (C t + D)), one float per
 // vector and channel so each is a catalogue id of its own.
@@ -115,6 +132,10 @@ uniform float palette_d_b = 0.67;
 float noise_displace(vec3 p) { return 0.0; }
 float noise_step_scale() { return 1.0; }
 vec3 noise_tint(vec3 col, vec3 p) { return col; }
+vec3 noise_texture(vec3 p) { return vec3(1.0); }
+float noise_bump(vec3 p) { return 0.0; }
+const bool noise_texture_on = false;
+const bool noise_bump_on = false;
 // NOISE:END
 
 // The hit threshold at ray distance t: the pixel cone precision * t (detail is
@@ -410,12 +431,60 @@ vec2 box_intersect(vec3 ro, vec3 rd, float half_size) {
 	return vec2(t_enter, t_exit);
 }
 
+// Henyey-Greenstein phase: how strongly haze scatters toward c = cos(angle to
+// the light). g = 0 is even in all directions; g -> 1 bunches it forward.
+float hg(float c, float g) {
+	float gg = g * g;
+	return (1.0 - gg) / pow(max(1.0 + gg - 2.0 * g * c, 1e-6), 1.5);
+}
+
+// Light-tinted distance haze for a ray that travelled t toward dir, with the
+// light coming from ldir. Off when the density is 0, so the default is untouched.
+vec3 scatter(vec3 col, float t, vec3 dir, vec3 ldir) {
+	if (scatter_density <= 0.0) { return col; }
+	float a = 1.0 - exp(-scatter_density * t / max(near_dist, 1e-6));
+	float phase = hg(dot(dir, ldir), scatter_glow) / hg(1.0, scatter_glow);
+	vec3 haze = light_color * scatter_brightness * phase;
+	return mix(col, haze, clamp(a, 0.0, 1.0));
+}
+
+// A soft self-shadow: march from just off the surface toward the light, up to
+// shadow_steps steps (<= 64), stopping at the cube's far side. A near-hit darkens
+// fully; otherwise the closest approach, scaled by the lamp's angular size, is the
+// penumbra. k widens the penumbra as the lamp widens (light_size); a size-0 lamp
+// is near-hard. Costs one extra ray per pixel; skipped when shadow_steps is 0.
+float soft_shadow(vec3 v, vec3 n, vec3 ldir, float total) {
+	float eps0 = hit_eps(total);
+	vec3 ro = v + n * 4.0 * eps0;
+	float far = box_intersect(ro, ldir, box_half).y;
+	float k = 1.0 / tan(max(radians(light_size), radians(0.5)));
+	int n_coarse = clamp(coarse_iters, 16, 32);
+	float res = 1.0;
+	float t = eps0;
+	for (int i = 0; i < 64; i++) {
+		if (i >= shadow_steps) { break; }
+		float d = de(ro + ldir * t, n_coarse);
+		if (d < eps0) { return 0.0; }
+		res = min(res, k * d / t);
+		t += d * noise_step_scale();
+		if (t > far) { break; }
+	}
+	return clamp(res, 0.0, 1.0);
+}
+
 void fragment() {
 	vec2 ndc = (UV - 0.5) * 2.0;
 	ndc.y = -ndc.y;  // +y up
 	vec3 dir = normalize(cam_forward
 		+ ndc.x * aspect * tan_half_fov * cam_right
 		+ ndc.y * tan_half_fov * cam_up);
+
+	// The headlight direction for the haze over a miss or the sky: the view ray
+	// back toward the eye, swung by the light's yaw and pitch like the hit light.
+	vec3 sky_ldir = -dir;
+	if (light_yaw != 0.0 || light_pitch != 0.0) {
+		sky_ldir = rotate_about(rotate_about(sky_ldir, cam_up, light_yaw), cam_right, light_pitch);
+	}
 
 	vec3 bg = (color_mode == 5 || color_mode == 6) ? vec3(1.0) : vec3(0.0);
 	// A miss is infinitely far, so under fog the sky is the fog: far surfaces fade
@@ -464,15 +533,23 @@ void fragment() {
 		}
 
 		if (left_cube) {
-			COLOR = vec4(bg, 1.0);  // the only misses: leaving the cube, the fog or the view distance
+			// The only misses: leaving the cube, the fog or the view distance. The
+			// haze fills the space the ray marched, to its exit (default: no haze).
+			float t_scat = min(t_exit, total);
+			COLOR = vec4(scatter(bg, t_scat, dir, sky_ldir), 1.0);
 		} else {
 			// Step-count shading stays on the original 128-step scale whatever the
 			// budget, so a ray that hits looks the same; one that ran out is 1.
 			float ce = n2 == fine_steps ? 1.0 : min(float(n1 + n2) / 128.0, 1.0);
 			float inv = 1.0 - ce;
 			if (color_mode == 0) {
-				// Grayscale needs no normal: stay cheap
-				COLOR = vec4(mix(probe_dot(mix(vec3(inv), fog_color, fog_amount(total)), eye + dir * total),
+				// Grayscale needs no normal: stay cheap. The haze still fills the space.
+				vec3 sldir = -dir;
+				if (light_yaw != 0.0 || light_pitch != 0.0) {
+					sldir = rotate_about(rotate_about(sldir, cam_up, light_yaw), cam_right, light_pitch);
+				}
+				vec3 gcol = scatter(vec3(inv), total, dir, sldir);
+				COLOR = vec4(mix(probe_dot(mix(gcol, fog_color, fog_amount(total)), eye + dir * total),
 					bg, view_fade(total)), 1.0);
 			} else {
 				vec3 v = eye + dir * total;
@@ -501,12 +578,36 @@ void fragment() {
 				n = calc_normal(v, delta);
 			}
 
+			// Bump: tilt the normal by the across-surface part of noise_bump's
+			// gradient (a fake relief; the surface does not move). A result with
+			// no length (a NaN) keeps the old normal.
+			if (noise_bump_on && bump_strength != 0.0) {
+				vec2 e2 = vec2(delta, 0.0);
+				vec3 g = vec3(
+					noise_bump(v + e2.xyy) - noise_bump(v - e2.xyy),
+					noise_bump(v + e2.yxy) - noise_bump(v - e2.yxy),
+					noise_bump(v + e2.yyx) - noise_bump(v - e2.yyx)) / (2.0 * delta);
+				vec3 m = n - bump_strength * (g - n * dot(n, g));
+				if (dot(m, m) > 1e-12) { n = normalize(m); }
+			}
+
 			vec3 ldir = normalize(2.0 * eh - h);
-			if (light_yaw != 0.0 || light_pitch != 0.0) {
+			bool swung = light_yaw != 0.0 || light_pitch != 0.0;
+			if (swung) {
 				ldir = rotate_about(rotate_about(ldir, cam_up, light_yaw), cam_right, light_pitch);
 			}
+			// Shadow only when the lamp is off the headlight: a headlight's shadow
+			// ray retraces the view ray and would self-shadow the whole surface.
+			float sh = 1.0;
+			if (shadows > 0.0 && shadow_steps > 0 && swung) {
+				sh = mix(1.0, soft_shadow(v, n, ldir, total), shadows);
+			}
 			float nl = abs(dot(n, ldir));
-			float lgt = light_diffuse * nl + light_specular * pow(nl, light_shininess) + light_ambient;
+			// The specular exponent from roughness; the lamp's size widens the lobe.
+			// r_eff^2 = roughness^2 + radians(light_size)^2, so size 0 is the site's.
+			float r_eff2 = roughness * roughness + radians(light_size) * radians(light_size);
+			float e = 2.0 / max(r_eff2, 1e-9) - 2.0;
+			float lgt = sh * (light_diffuse * nl + light_specular * pow(nl, e)) + light_ambient;
 			vec3 base = vec3(lgt) * (-n * 0.25 + 0.75) + vec3(0.0, 0.0, 0.2);
 
 				vec3 col;
@@ -554,14 +655,21 @@ void fragment() {
 			} else {
 				col = vec3(inv);
 			}
+				// Texture: recolour the surface by the Texture output (white = no change).
+				if (noise_texture_on) { col *= mix(vec3(1.0), noise_texture(v), texture_strength); }
+				// Surface and light colour, each guarded so white stays bit-for-bit.
+				if (surface_color != vec3(1.0)) { col *= surface_color; }
+				if (light_color != vec3(1.0)) { col *= light_color; }
 				// Each guarded, so at the defaults the site's modes stay bit-for-bit.
 				if (exposure != 1.0) { col *= exposure; }
 				if (saturation != 1.0) {
 					float luma = dot(col, vec3(0.299, 0.587, 0.114));
 					col = mix(vec3(luma), col, saturation);
 				}
-				COLOR = vec4(mix(probe_dot(mix(noise_tint(col, v), fog_color, fog_amount(total)), v),
-					bg, view_fade(total)), 1.0);
+				vec3 shaded = noise_tint(col, v);
+				shaded = scatter(shaded, total, dir, ldir);
+				shaded = mix(shaded, fog_color, fog_amount(total));
+				COLOR = vec4(mix(probe_dot(shaded, v), bg, view_fade(total)), 1.0);
 			}
 		}
 	}

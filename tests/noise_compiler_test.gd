@@ -61,6 +61,14 @@ func run() -> void:
 	check(String(def_result["code"]).contains("return col;"), "noise_tint is the stub")
 	check(String(def_result["code"]).contains("return 1.0;"), "noise_step_scale is the stub")
 	check_eq(String(def_result["code"]), NoiseCompiler.STUB, "the stub region is byte-identical to the base")
+	check(NoiseCompiler.STUB.contains("const bool noise_texture_on = false;"),
+		"the stub declares noise_texture_on = false")
+	check(NoiseCompiler.STUB.contains("const bool noise_bump_on = false;"),
+		"the stub declares noise_bump_on = false")
+	check(NoiseCompiler.STUB.contains("vec3 noise_texture(vec3 p) { return vec3(1.0); }"),
+		"the stub's noise_texture is white")
+	check(NoiseCompiler.STUB.contains("float noise_bump(vec3 p) { return 0.0; }"),
+		"the stub's noise_bump is flat")
 
 	# ---------------------------------------------- a wired graph: Value noise
 	var g := NoiseGraph.new(resolver)

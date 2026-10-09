@@ -11,7 +11,7 @@ extends "res://tests/test_case.gd"
 const RENDERER_UNIFORMS := ["eye", "cam_right", "cam_up", "cam_forward",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
 	"coarse_steps", "coarse_iters", "nf_weight", "fine_steps", "fog_dist", "fog_color",
-	"fog_clear", "probe_on", "probe_point", "probe_radius"]
+	"fog_clear", "probe_on", "probe_point", "probe_radius", "shadow_steps"]
 
 
 func run() -> void:
@@ -47,9 +47,26 @@ func run() -> void:
 	var with_default := 0
 	for m in re.search_all(sh.code):
 		var id := StringName(m.get_string(1))
+		if RENDERER_UNIFORMS.has(String(id)):
+			continue   # a renderer uniform that happens to carry a default
 		check(table.has(id), "the defaulted uniform '%s' is a catalogue id" % id)
 		if table.has(id):
 			check_approx(m.get_string(2).to_float(), float(table.get_default(id)),
 				"uniform '%s' defaults to the catalogue's %s" % [id, table.get_default(id)], 1e-9)
 		with_default += 1
-	check_eq(with_default, FractalParams.LOOK_KEYS.size(), "every look uniform declares its default")
+	check_eq(with_default, FractalParams.LOOK_KEYS.size(), "every scalar look uniform declares its default")
+
+	# every COLOR catalogue id is a vec3 uniform whose default is the colour's rgb
+	var cre := RegEx.create_from_string("uniform vec3 (\\w+) = vec3\\(\\s*([0-9.]+)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)\\s*\\);")
+	var colour_defaults := 0
+	for m in cre.search_all(sh.code):
+		var id := StringName(m.get_string(1))
+		if not table.has(id):
+			continue   # (there are no other defaulted vec3 uniforms today)
+		check_eq(table.spec(id).type, AttributeSpec.Type.COLOR, "the defaulted vec3 '%s' is a COLOR id" % id)
+		var c := table.get_default(id) as Color
+		check_approx(m.get_string(2).to_float(), c.r, "vec3 '%s' red matches the COLOR default" % id, 1e-9)
+		check_approx(m.get_string(3).to_float(), c.g, "vec3 '%s' green" % id, 1e-9)
+		check_approx(m.get_string(4).to_float(), c.b, "vec3 '%s' blue" % id, 1e-9)
+		colour_defaults += 1
+	check_eq(colour_defaults, FractalParams.COLOR_KEYS.size(), "both COLOR uniforms declare a vec3 default")

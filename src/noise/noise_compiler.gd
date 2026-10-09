@@ -27,6 +27,10 @@ const LIBRARY_PATH := "res://src/noise/noise_library.gdshaderinc"
 const STUB := """float noise_displace(vec3 p) { return 0.0; }
 float noise_step_scale() { return 1.0; }
 vec3 noise_tint(vec3 col, vec3 p) { return col; }
+vec3 noise_texture(vec3 p) { return vec3(1.0); }
+float noise_bump(vec3 p) { return 0.0; }
+const bool noise_texture_on = false;
+const bool noise_bump_on = false;
 """
 
 static var _library_cache := ""
