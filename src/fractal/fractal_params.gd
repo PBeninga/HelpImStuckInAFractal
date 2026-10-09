@@ -38,18 +38,27 @@ const RESOLVED_KEYS: Array[StringName] = [
 	&"mandelbulb_phase_theta", &"mandelbulb_phase_phi", &"mandelbulb_julia", &"mandelbulb_c_0",
 	&"mandelbulb_c_1", &"mandelbulb_c_2", &"precision", &"color_mode",
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
-	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess", &"light_yaw",
-	&"light_pitch", &"exposure", &"saturation", &"palette_a_r", &"palette_a_g", &"palette_a_b",
+	&"light_color", &"light_yaw", &"light_pitch", &"light_size", &"light_ambient",
+	&"light_diffuse", &"shadows", &"scatter_density", &"scatter_glow", &"scatter_brightness",
+	&"exposure", &"saturation", &"surface_color", &"roughness", &"light_specular",
+	&"texture_strength", &"bump_strength", &"palette_a_r", &"palette_a_g", &"palette_a_b",
 	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
 	&"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
 
-## The colour, lighting and palette fields after color_mode: each is pushed to
-## the shader uniform of the same name as it is.
+## The two COLOR fields after color_mode: pushed to the shader as a `Vector3`,
+## not as the plain value. Kept out of LOOK_KEYS so every look key is a scalar.
+const COLOR_KEYS: Array[StringName] = [&"light_color", &"surface_color"]
+
+## The scalar colour, lighting and palette fields after color_mode (every
+## resolved key past color_mode except the two COLOR_KEYS): each is pushed to the
+## shader uniform of the same name as it is.
 const LOOK_KEYS: Array[StringName] = [
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
-	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess",
-	&"light_yaw", &"light_pitch", &"exposure", &"saturation",
+	&"light_yaw", &"light_pitch", &"light_size", &"light_ambient", &"light_diffuse",
+	&"shadows", &"scatter_density", &"scatter_glow", &"scatter_brightness",
+	&"exposure", &"saturation", &"roughness", &"light_specular",
+	&"texture_strength", &"bump_strength",
 	&"palette_a_r", &"palette_a_g", &"palette_a_b", &"palette_b_r", &"palette_b_g", &"palette_b_b",
 	&"palette_c_r", &"palette_c_g", &"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
@@ -215,23 +224,52 @@ var _suppress := false
 @export var palette_occlusion: float = 0.5:
 	set(v): palette_occlusion = v; _emit()
 
-# --- Lighting (the defaults are the site's constants) ---
-@export var light_ambient: float = 0.1:
-	set(v): light_ambient = v; _emit()
-@export var light_diffuse: float = 0.5:
-	set(v): light_diffuse = v; _emit()
-@export var light_specular: float = 1.0:
-	set(v): light_specular = v; _emit()
-@export var light_shininess: float = 160.0:
-	set(v): light_shininess = v; _emit()
+# --- Light (the defaults are the site's constants, so the picture is unchanged;
+#     light_color pushed to the shader as a Vector3, see COLOR_KEYS) ---
+@export var light_color: Color = Color(1, 1, 1, 1):
+	set(v): light_color = v; _emit()
 @export var light_yaw: float = 0.0:
 	set(v): light_yaw = v; _emit()
 @export var light_pitch: float = 0.0:
 	set(v): light_pitch = v; _emit()
+@export var light_size := 0.0:
+	set(v): light_size = v; _emit()
+@export var light_ambient: float = 0.1:
+	set(v): light_ambient = v; _emit()
+@export var light_diffuse: float = 0.5:
+	set(v): light_diffuse = v; _emit()
+@export var shadows := 0.0:
+	set(v): shadows = v; _emit()
+
+# --- Scattering (off at density 0, so the default is untouched) ---
+@export var scatter_density := 0.0:
+	set(v): scatter_density = v; _emit()
+@export var scatter_glow := 0.0:
+	set(v): scatter_glow = v; _emit()
+@export var scatter_brightness := 1.0:
+	set(v): scatter_brightness = v; _emit()
+
+# --- Picture ---
 @export var exposure: float = 1.0:
 	set(v): exposure = v; _emit()
 @export var saturation: float = 1.0:
 	set(v): saturation = v; _emit()
+
+# --- Surface (roughness 1/9 is the site's specular exponent 160;
+#     surface_color pushed to the shader as a Vector3, see COLOR_KEYS) ---
+@export var surface_color: Color = Color(1, 1, 1, 1):
+	set(v): surface_color = v; _emit()
+@export var roughness := 1.0 / 9.0:
+	set(v): roughness = v; _emit()
+@export var light_specular: float = 1.0:
+	set(v): light_specular = v; _emit()
+
+# --- Texture (the noise editor's Texture and Bump outputs scale by these;
+#     1 is "full strength", but nothing wired means nothing changes) ---
+@export var texture_strength := 1.0:
+	set(v): texture_strength = v; _emit()
+@export var bump_strength := 1.0:
+	set(v): bump_strength = v; _emit()
 
 # --- Palette: A + B cos(2π (C t + D)), per channel (see Palette) ---
 @export var palette_a_r: float = 0.5:
@@ -309,6 +347,11 @@ const RENDER_SCALE_FLOOR := 0.1
 ## bounded for MAX_STEPS_MAX.
 const MAX_STEPS_MIN := 32
 const MAX_STEPS_MAX := 512
+
+## The full shadow march, in steps, at load level 0. The view pushes
+## `shadow_steps = round(SHADOW_STEPS × shed.shadow)` (Task 5), so the shed
+## ladder halves it at level 1 and drops it to 0 from level 2.
+const SHADOW_STEPS := 48
 
 @export var detail: float = 1.0:
 	set(v): detail = clampf(v, DETAIL_MIN, DETAIL_MAX); emit_changed()
