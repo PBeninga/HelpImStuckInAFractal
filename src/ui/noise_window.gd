@@ -2,12 +2,13 @@ class_name NoiseWindow
 extends Window
 ## The embedded window that hosts the NoiseEditor. It owns the one NoiseGraph,
 ## hands it to the editor and to the FractalView, and turns the editor's toolbar
-## signals into graph edits and graph-only saves/loads in saves/noise/.
+## signals into graph edits. The graph has no file of its own: it is saved inside
+## the level (Workspace's "noise" section) and restored when a level is loaded.
 ##
 ## Unlike the console it is embedded in the main window (dragged by its title
 ## bar, closed with its ✕, drawn above the view). Main owns it: it opens and closes it
 ## (the N key and the console View tab's Noise editor… button), and reads its graph
-## for a view save.
+## for a level save.
 ##
 ## W, A, S or D pressed here (outside a text edit; see TextFocus.is_game_key)
 ## asks for the game (`game_focus_requested`): Main closes the window and
@@ -27,7 +28,6 @@ signal game_focus_requested
 
 var _view: FractalView
 var _editor: NoiseEditor
-var _files: WorkspaceFiles
 var _graph: NoiseGraph
 
 
@@ -50,18 +50,8 @@ func setup(view: FractalView) -> void:
 	_editor.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_editor)
 
-	_files = WorkspaceFiles.new()
-	_files.name = "NoiseFiles"
-	_files.subdir = "noise/"
-	_files.quick_save_enabled = false
-	add_child(_files)
-	_files.save_to.connect(_save_graph_to)
-	_files.load_from.connect(_load_graph_from)
-
 	_editor.add_node_requested.connect(_on_add_node_requested)
 	_editor.new_requested.connect(_on_new_requested)
-	_editor.save_requested.connect(_files.prompt_save)
-	_editor.load_requested.connect(_files.prompt_load)
 
 	if not _view.noise_status.is_connected(_on_view_status):
 		_view.noise_status.connect(_on_view_status)
@@ -77,16 +67,12 @@ func graph() -> NoiseGraph:
 	return _graph
 
 
-func workspace_files() -> WorkspaceFiles:
-	return _files
-
-
-## This graph as a dict, for embedding under a view save's "noise" key.
+## This graph as a dict, for embedding under a level save's "noise" key.
 func to_dict() -> Dictionary:
 	return _graph.to_dict() if _graph != null else {}
 
 
-## Replace the graph from a dict (a view's "noise" section). Returns warnings.
+## Replace the graph from a dict (a level's "noise" section). Returns warnings.
 func apply_dict(d: Dictionary) -> Array:
 	var warnings: Array = []
 	var g := NoiseGraph.from_dict(d, warnings, _resolver())
@@ -162,25 +148,3 @@ func _on_new_requested() -> void:
 func _on_view_status(text: String) -> void:
 	if text != "":
 		_editor.set_status(text)
-
-
-func _save_graph_to(path: String) -> void:
-	var err := Workspace.save_noise_file(path, _graph.to_dict())
-	if err != OK:
-		_editor.set_status("Save failed (error %d)" % err)
-		return
-	_files.note_saved(path)
-	_editor.set_status("Saved %s" % path.get_file())
-
-
-func _load_graph_from(path: String) -> void:
-	var result := Workspace.load_noise_file(path)
-	if not result["ok"]:
-		_editor.set_status("Load failed: %s" % result["warnings"][0])
-		return
-	var warnings := apply_dict(result["noise"])
-	_files.note_loaded(path)
-	if warnings.is_empty():
-		_editor.set_status("Loaded %s" % path.get_file())
-	else:
-		_editor.set_status("Loaded %s with %d warning(s)" % [path.get_file(), warnings.size()])

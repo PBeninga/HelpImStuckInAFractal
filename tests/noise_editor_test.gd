@@ -47,8 +47,7 @@ func run() -> void:
 	# toolbar
 	check(editor.extent_spin() != null and editor.extent_spin().value == 4.0, "the Extent spin defaults to 4")
 	check(editor.slice_spin() != null and editor.slice_spin().value == 0.0, "the Slice Z spin defaults to 0")
-	check(editor.save_button != null and editor.load_button != null and editor.new_button != null,
-		"the toolbar has New, Load and Save")
+	check(editor.new_button != null, "the toolbar has New")
 
 	# titles and positions
 	var pos_type := NoiseNodeRegistry.type_by_id(&"position")

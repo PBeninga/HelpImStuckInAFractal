@@ -4,9 +4,9 @@ extends "res://tests/test_case.gd"
 ## noise" adds that node, with a preview, where the click was; wiring it to
 ## Displace gives the view's shader the noise uniforms; a click on the node's
 ## Scale slider pushes a new uniform value without rebuilding the shader; the
-## Extent spin box changes the previews; the wire menu disconnects; and the
-## toolbar's Save… and Load… panels round-trip the graph through user://; and
-## W in the Extent spin box commits it and asks for the game.
+## Extent spin box changes the previews; the wire menu disconnects; the toolbar's
+## New resets the field (the graph has no file of its own — it is saved inside
+## the level); and W in the Extent spin box commits it and asks for the game.
 
 const TMP := "user://ui_noise_test.json"
 ## The canvas a new Value noise node needs to its right and below (its title,
@@ -50,7 +50,7 @@ func run() -> void:
 		await _scale_slider_is_live()
 		await _extent_changes_previews()
 		await _wire_menu_disconnects()
-		await _save_and_load()
+		await _new_resets_the_field()
 		await _wasd_leaves_for_game()
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TMP))
@@ -207,45 +207,14 @@ func _wire_menu_disconnects() -> void:
 	await ui.frames(2)
 
 
-func _save_and_load() -> void:
-	var files := window.workspace_files()
-	await ui.click(editor.save_button)
-	var save := files.save_dialog()
-	check(save.visible, "a click on Save… opens the save panel")
-	if not save.visible:
-		return
-	# The player goes to user:// in the panel, types the name and clicks Save.
-	save.current_dir = ProjectSettings.globalize_path(TMP.get_base_dir())
-	await ui.frames(1)
-	await ui.type_text(save.get_line_edit(), TMP.get_file().get_basename(), false)
-	await ui.click(save.get_ok_button())
-	await ui.frames(2)
-	check(FileAccess.file_exists(TMP), "clicking the panel's Save button writes the file")
-	check(not save.visible, "and closes the panel")
-	if FileAccess.file_exists(TMP):
-		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(TMP))
-		var saved_nodes: Array = data["noise"]["nodes"] if data is Dictionary and data.has("noise") else []
-		check_eq(saved_nodes.size(), 3, "the file holds the three-node graph")
-
+func _new_resets_the_field() -> void:
+	# The three-node graph is wired up here (Position → Value noise → Output).
+	check(_uniforms().has("n_%s_scale" % vn), "the view's shader has the noise before New")
 	await ui.click(editor.new_button)
 	await ui.frames(2)
 	check_eq(window.graph().nodes.size(), 2, "a click on New resets to Position and Output")
 	check(not _uniforms().has("n_%s_scale" % vn), "and the view's shader drops the noise")
-
-	await ui.click(editor.load_button)
-	var open := files.load_dialog()
-	check(open.visible, "a click on Load… opens the open panel")
-	if not open.visible:
-		return
-	# The player goes to user://, types the file name and presses Enter.
-	open.current_dir = ProjectSettings.globalize_path(TMP.get_base_dir())
-	await ui.frames(1)
-	await ui.type_text(open.get_line_edit(), TMP.get_file())
-	await ui.frames(2)
-	check(not open.visible, "Enter in the open panel's file field opens the file and closes the panel")
-	check_eq(window.graph().nodes.size(), 3, "the load restores the saved graph")
-	check(_uniforms().has("n_%s_scale" % vn), "and the view's shader has the noise again")
-	check(view.noise_graph() == window.graph(), "the view follows the loaded graph")
+	check(view.noise_graph() == window.graph(), "the view follows the new graph")
 
 
 func _wasd_leaves_for_game() -> void:
