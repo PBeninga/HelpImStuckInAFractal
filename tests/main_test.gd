@@ -239,6 +239,21 @@ func run() -> void:
 	main.camera.transform = file_view
 	main.reset_camera()
 	check(main.camera.transform.is_equal_approx(resaved), "after a save, Reset camera goes to the saved camera")
+	# a deep home keeps its 64-bit eye: Reset camera restores the doubles, not just
+	# the 32-bit shadow, both after a move too small for the shadow to notice and
+	# after flying far away
+	main.camera.set_eye64(1.2345678901234, 0.9140000000123, 0.787)
+	main._remember_home()
+	var deep_home: PackedFloat64Array = main.camera.eye64()
+	main.camera.set_eye64(deep_home[0] + 1e-10, deep_home[1], deep_home[2])
+	check(main.camera.eye() == Vector3(deep_home[0], deep_home[1], deep_home[2]), "(a 1e-10 move keeps the same 32-bit shadow)")
+	main.reset_camera()
+	check_eq(main.camera.eye64(), deep_home, "Reset camera undoes a move below the 32-bit grid")
+	main.camera.set_eye64(5.0, -3.0, 2.0)
+	main.reset_camera()
+	check_eq(main.camera.eye64(), deep_home, "and one far away restores the home eye's doubles exactly")
+	main.camera.transform = resaved
+	main._remember_home()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 
 	# the View tab's Camera row switches mode

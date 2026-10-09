@@ -61,6 +61,9 @@ var _text_viewports: Array = []
 ## Where Reset camera goes: the camera as the current file has it (as last
 ## loaded or saved), or the starting view while no file is current.
 var _home_transform: Transform3D
+## The home eye in 64-bit: the transform's origin is only its 32-bit shadow, and a
+## deep view's eye differs from it by far more than the zoom floor.
+var _home_eye := PackedFloat64Array([0.0, 0.0, 0.0])
 var _home_speed := 1.0
 ## The console is docked beside the view in one fullscreen window.
 var _docked := false
@@ -440,6 +443,9 @@ func load_view_from(path: String) -> void:
 ## the camera now looks at.
 func reset_camera() -> void:
 	camera.transform = _home_transform
+	# the transform alone can leave the doubles behind (a move below the 32-bit grid
+	# keeps the same transform), so put the 64-bit eye back explicitly
+	camera.set_eye64(_home_eye[0], _home_eye[1], _home_eye[2])
 	camera.speed_factor = _home_speed
 	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
 		_orbit.enter()
@@ -449,6 +455,7 @@ func reset_camera() -> void:
 
 func _remember_home() -> void:
 	_home_transform = camera.transform
+	_home_eye = camera.eye64()
 	_home_speed = camera.speed_factor
 
 
