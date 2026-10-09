@@ -8,7 +8,7 @@
 
 **Tech Stack:** Godot 4.6.1 (standard build: GDScript `float` is 64-bit, `Vector3`/`Vector4` components are 32-bit), a `canvas_item` shader under GL Compatibility (GLSL ES 3.0 / WebGL 2 floats), headless SceneTree tests (`tests/*_test.gd`, `tests/run_all.sh`), the in-browser viz (`docs/viz/`, plain JS).
 
-Spec: `docs/superpowers/specs/2026-10-09-perturbation-deep-zoom-design.md` (revision b05be22: per-ray handoff, no iteration-floor guard). Format follows `docs/superpowers/plans/2026-10-08-deep-zoom-march.md`.
+Spec: `docs/superpowers/specs/2026-10-09-perturbation-deep-zoom-design.md` (revisions b05be22 and 5d80dcf: per-ray handoff, no iteration-floor guard). Format follows `docs/superpowers/plans/2026-10-08-deep-zoom-march.md`.
 
 ## Where to work
 
@@ -29,7 +29,7 @@ Every git command is `git -C $WT ...`. Every Godot run is `godot4 --headless --p
 - Every commit message ends with the line `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (pass it as a second `-m`). Subject style: `feat(scope): ...`, `test(scope): ...`, `docs(scope): ...`.
 - `tests/run_all.sh` (run as `$WT/tests/run_all.sh`; it `cd`s itself) must exit 0 before every commit. One test alone: `godot4 --headless --path $WT -s tests/<name>_test.gd`. After adding a file with a new `class_name`, run `godot4 --headless --import --path $WT >/dev/null 2>&1` once before running a single test (the class cache must know it).
 - **The invariant:** with `pert_iters == 0` the shader's arithmetic is exactly today's, and at the default view `pert_iters` is 0, so the default view renders bit-for-bit as before (the user checks this with `tests/screenshots.sh`). Every shader edit to an existing line must keep that true; say so in the commit. (A ray that hands off at `h = 0` also computes exactly today's `de(eye + dir × t)`.)
-- Everything is automatic: no new renderer option, the save stays version 2, no new console knob. The only UI change is the read-only `deep k=N` readout.
+- Everything is automatic: no new renderer option, the save stays version 2, no new console knob. The only UI change is the read-only `deep N` readout (the records in use).
 - Not perturbed (keep today's 32-bit floor, `pert_iters` 0): the Mandelbox's octahedral fold, the KIFS polyfold, the Mandelbulb. Noise displacement stays evaluated at the 32-bit position.
 - Comments and README prose in plain language; anything above basic calculus gets a one-line explanation (the user is an engineer, not a mathematician).
 - Constants and rules (exact):
@@ -79,10 +79,10 @@ Every git command is `git -C $WT ...`. Every Godot run is `godot4 --headless --p
     - `fractal_params_test`'s "0 at 1e-3": a camera 1e-3 *back* along the default ray has an estimate of about 2e-4, inside the switch (`PERT_ON × floor32 ≈ 9.5e-4`), so it perturbs. The test places the camera by its estimate at 2× and 0.5× the switch instead.
     - `center_ray_test`'s "a hit at 1e-8": the default box's centre ray does not resolve there (finding 2), so the test uses the Kleinian, which does (measured: t/back 1.011 from the 64-bit origin).
     - `fly_camera_test`'s deep flight is the spec's: from 1e-6 on the default box it reaches the zoom limit in about 380 ticks at an estimate of 7.8e-11, the last step 1.4e-11 per tick (measured). The 32-bit guard's own test moves to the octahedral fold, which keeps that floor.
-6. **`deep k=N` shows the records available** (`pert_iters`, 20 for most views, `n` when the eye's orbit escapes or settles sooner), as the spec says; how many each ray actually perturbs is decided on the GPU and not visible to the CPU.
+6. **`deep N` shows the records in use** (`pert_iters`, 20 for most views, `n` when the eye's orbit escapes or settles sooner), as the spec says; how many each ray actually perturbs is decided on the GPU and not visible to the CPU.
 7. **Full-precision saves:** `Workspace.save_file` writes JSON with `JSON.stringify(..., "\t", false, true)` (the default keeps 15 digits). Godot's float parser is not correctly rounded: about a third of doubles come back one 64-bit ulp off (at most about 4e-15 for coordinates under 20), thousands of times below any zoom floor. In-memory capture/restore is exact; the file round-trip test allows one ulp.
 8. **Small implementation facts:** GDScript has no overloading, so the scalar march is `CenterRay.march_at(ox, oy, oz, dir, params)` and `march(origin: Vector3, ...)` calls it. Godot's `is_equal_approx` never uses a tolerance below 1e-5, so the tests compare depths with `==`. `mag` per shape: Mandelbox, the product of the sphere-fold factors and `|scale|` (`dz` without its `+ 1`s); KIFS, `|kifs_scale|^i` for every `i` regardless of bailout; Kleinian, `dr` (constant after a fixed point). `ReferenceOrbit` has three fields beyond the spec's list: `eye` (for `floor32`), `points64` and `rec64` (the 64-bit copies the algebra check reads); `PERT_MAX` lives on `ReferenceOrbit`.
-9. **Spec text left over from the previous revision** (the plan follows the decided values): "The idea in plain words" still says the handoff is at `λ_k × d ≈ 1e-2`; the viz part's tab 1 lists `pert_end` and tab 7 draws "the 1e-2 handoff line". The plan uses `pert_x` and 0.1.
+9. **The spec's own leftovers were fixed in 5d80dcf** (the plain-words handoff, the uniform budget of 211 vectors, `deep 20` with `show_deep(n)`, `pert_x` in the viz's tab 1, the 0.1 handoff line in tab 7). The plan follows that text.
 10. **Not in this plan:** the spec's second pane, `perturbation-design` ("written now, before the code"), does not exist on the branch. It is a separate `/visualize` job.
 
 ## Merge hazards (for the user)
@@ -112,7 +112,7 @@ Every git command is `git -C $WT ...`. Every Godot run is `godot4 --headless --p
 | `src/fractal/perturbation.gdshaderinc` (new) | `pert_*` uniforms (`pert_a..d[20]`, `pert_x[21]`), `PERT_HANDOFF`, the perturbed steps, `de_pert`, `march_de`, `calc_normal_pert`, `true_normal` |
 | `src/fractal/mandelbox.gdshader`, `kifs.gdshaderinc`, `kleinian.gdshaderinc` | orbit loops take a start index; `fragment()` switch |
 | `src/fractal/fractal_view.gd` | `_push_near()` builds the orbit and pushes `pert_*`; `pert_iters()` |
-| `src/ui/console/movement_pane.gd`, `console_window.gd`, `src/main.gd` | `deep k=N` readout |
+| `src/ui/console/movement_pane.gd`, `console_window.gd`, `src/main.gd` | `deep N` readout |
 | tests | `camera_state_test`, `workspace_test`, `center_ray_test`, `fly_camera_test`, `reference_orbit_test` (new), `fractal_params_test`, `shader_test`, `fractal_view_test`, `console_test`, `ui_console_test`, `main_test` |
 | `README.md` | Deep zoom, Fly camera, Saved views, Testing |
 | `docs/viz/panes/deep-zoom.js` (new), `docs/viz/index.html`, `docs/viz/glossary.js` | the `deep-zoom` pane |
@@ -2908,7 +2908,7 @@ vec3 true_normal(vec3 v, vec3 off, float delta) {
 
 ```gdscript
 ## The perturbed march's iteration count last pushed (0: off). Main shows it in
-## the Movement pane as "deep k=N".
+## the Movement pane as "deep N".
 var _pert_iters := 0
 ## How many times the per-iteration record was pushed: never while perturbation
 ## is off, once per camera or shape change while it is on (the tests read it).
@@ -3122,7 +3122,7 @@ git -C $WT add src/camera/fly_camera.gd tests/fly_camera_test.gd tests/center_ra
 git -C $WT commit -m "feat(fly): the zoom guard in 64-bit at the new floor, speed floor 1e-14" -m "move_allowed builds one ReferenceOrbit at the candidate eye for both its distance and its floor. On the default box a camera below today's 32-bit floor now closes in more than ten times before the limit." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-### Task 7: `deep k=N` in the Movement pane
+### Task 7: `deep N` in the Movement pane
 
 **Files:**
 - Modify: `src/ui/console/movement_pane.gd`, `src/ui/console/console_window.gd`, `src/main.gd`
@@ -3130,18 +3130,18 @@ git -C $WT commit -m "feat(fly): the zoom guard in 64-bit at the new floor, spee
 
 **Interfaces:**
 - Consumes: `FractalView.pert_iters()` (Task 5).
-- Produces: `MovementPane.deep_label: Label`, `MovementPane.show_deep(k: int) -> void`, `ConsoleWindow.show_deep(k: int) -> void`.
+- Produces: `MovementPane.deep_label: Label`, `MovementPane.show_deep(n: int) -> void`, `ConsoleWindow.show_deep(n: int) -> void`.
 
 - [ ] **Step 1: Failing tests.**
 
 `tests/console_test.gd`, after the zoom-limit block:
 
 ```gdscript
-	# --- Movement pane: "deep k=N" while the march is perturbed, hidden at 0 ---
+	# --- Movement pane: "deep N" (the records in use) while the march is perturbed, hidden at 0 ---
 	check(movement.deep_label != null and not movement.deep_label.visible, "the deep readout starts hidden")
 	console.show_deep(14)
-	check(movement.deep_label.visible and movement.deep_label.text == "deep k=14",
-		"show_deep(14) shows 'deep k=14' in the Movement pane")
+	check(movement.deep_label.visible and movement.deep_label.text == "deep 14",
+		"show_deep(14) shows 'deep 14' in the Movement pane")
 	console.show_deep(0)
 	check(not movement.deep_label.visible, "and 0 hides it again")
 ```
@@ -3168,7 +3168,7 @@ git -C $WT commit -m "feat(fly): the zoom guard in 64-bit at the new floor, spee
 	var deep_label: Label = main.console().movement_pane().deep_label
 	main.view._pert_iters = 14
 	main._process(0.0)
-	check(deep_label.visible and deep_label.text == "deep k=14", "Main shows the view's k in the Movement pane")
+	check(deep_label.visible and deep_label.text == "deep 14", "Main shows the view's records in use in the Movement pane")
 	main.view._pert_iters = 0
 	main._process(0.0)
 	check(not deep_label.visible, "and hides it at 0")
@@ -3179,10 +3179,10 @@ git -C $WT commit -m "feat(fly): the zoom guard in 64-bit at the new floor, spee
 - [ ] **Step 3: Implement.** `movement_pane.gd`: beside `zoom_label`:
 
 ```gdscript
-## "deep k=14", on the speed readout line, shown only while the renderer is
+## "deep 20", on the speed readout line, shown only while the renderer is
 ## perturbing (FractalView.pert_iters() > 0).
 var deep_label: Label
-var _deep_k := 0
+var _deep_n := 0
 ```
 
 In the speed row, right after `show_zoom_limit(_zoom_limit)`:
@@ -3191,27 +3191,27 @@ In the speed row, right after `show_zoom_limit(_zoom_limit)`:
 	deep_label = Label.new()
 	deep_label.tooltip_text = "The renderer is past the 32-bit limit: the camera's own orbit is worked out in 64-bit on the CPU, k iterations of it are handed to the GPU, and each ray iterates only its small offset from it (perturbation) until the offset is big enough for 32 bits. Hidden while off."
 	speed_row.add_child(deep_label)
-	show_deep(_deep_k)
+	show_deep(_deep_n)
 ```
 
 Update `zoom_label.tooltip_text` to: "The fly camera is as close to the surface as the renderer can draw: nearer, the perturbed march runs out of 32-bit precision after its last handoff (for shapes it does not perturb, the 32-bit positions run out). Moving away is always allowed." Add:
 
 ```gdscript
 ## The perturbed march's iteration count; the readout shows only while it is above 0.
-func show_deep(k: int) -> void:
-	_deep_k = k
+func show_deep(n: int) -> void:
+	_deep_n = n
 	if deep_label == null:
 		return
-	deep_label.text = "deep k=%d" % k
-	deep_label.visible = k > 0
+	deep_label.text = "deep %d" % n
+	deep_label.visible = n > 0
 ```
 
-and extend the file's header line about the readout ("with "zoom limit" and "deep k=N" beside it while ..."). `console_window.gd`:
+and extend the file's header line about the readout ("with "zoom limit" and "deep N" beside it while ..."). `console_window.gd`:
 
 ```gdscript
 ## The perturbed march's k, shown in the Movement pane while above 0.
-func show_deep(k: int) -> void:
-	_movement.show_deep(k)
+func show_deep(n: int) -> void:
+	_movement.show_deep(n)
 ```
 
 `main.gd` `_process`, after `show_zoom_limit`: `_console.show_deep(view.pert_iters())`, and extend its comment ("and the view's perturbed iteration count").
@@ -3223,7 +3223,7 @@ func show_deep(k: int) -> void:
 ```bash
 $WT/tests/run_all.sh; echo exit=$?
 git -C $WT add src/ui/console/movement_pane.gd src/ui/console/console_window.gd src/main.gd tests/console_test.gd tests/ui_console_test.gd tests/main_test.gd
-git -C $WT commit -m "feat(console): Movement pane shows \"deep k=N\" while the march is perturbed" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git -C $WT commit -m "feat(console): Movement pane shows \"deep N\" while the march is perturbed" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ### Task 8: README
@@ -3232,7 +3232,7 @@ git -C $WT commit -m "feat(console): Movement pane shows \"deep k=N\" while the 
 
 - [ ] **Step 1: Rewrite the Deep zoom section's "Zoom limit" bullet** into four bullets (keep "Coarse pass iterations" and "Lighting" as they are; update the section's opening line: more things now adjust themselves):
   - **A 64-bit eye.** The camera's position is three 64-bit numbers; the 32-bit transform the renderer reads is their rounding. The fly step, the centre ray, the fly speed and saves use the 64-bit ones (a saved view keeps the eye to within one 64-bit rounding step), and the camera's distance to the surface is measured from them, down to `1e-14`.
-  - **Perturbation.** Plain words first: the CPU runs the camera's own orbit once per frame in 64-bit (`X_0` the eye, `X_1` its first iterate, ...); each pixel starts a small offset `δ_0 = dir × t` away, and the GPU follows only `δ_{i+1} = f(X_i + δ_i) − f(X_i)`, never the pixel's own point. Each fold's difference is worked out from the gap between the crease and `X` (crease minus `X`, computed in 64-bit, small when precision matters), so nothing subtracts two nearly equal large numbers ("catastrophic cancellation": one line of explanation). Each ray hands off on its own: once its offset has grown (by the magnification) to `0.1`, or the 20 recorded iterations run out, it adds the offset back to `X_i` in 32 bits and finishes with the ordinary loop. A ray that starts `0.1` or more from the eye hands off at once, so distant parts of the picture are drawn exactly as before. It switches on within `10 ×` the 32-bit floor, where both marches agree, so there is no pop. The Movement pane shows `deep k=N` (the iterations recorded) while it is on. Link the spec and Wikipedia's [perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation) section.
+  - **Perturbation.** Plain words first: the CPU runs the camera's own orbit once per frame in 64-bit (`X_0` the eye, `X_1` its first iterate, ...); each pixel starts a small offset `δ_0 = dir × t` away, and the GPU follows only `δ_{i+1} = f(X_i + δ_i) − f(X_i)`, never the pixel's own point. Each fold's difference is worked out from the gap between the crease and `X` (crease minus `X`, computed in 64-bit, small when precision matters), so nothing subtracts two nearly equal large numbers ("catastrophic cancellation": one line of explanation). Each ray hands off on its own: once its offset has grown (by the magnification) to `0.1`, or the 20 recorded iterations run out, it adds the offset back to `X_i` in 32 bits and finishes with the ordinary loop. A ray that starts `0.1` or more from the eye hands off at once, so distant parts of the picture are drawn exactly as before. It switches on within `10 ×` the 32-bit floor, where both marches agree, so there is no pop. The Movement pane shows `deep 20` (the iterations recorded) while it is on. Link the spec and Wikipedia's [perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation) section.
   - **Zoom limit.** `floor_pert = ulp32(max |X_K|) / (50 × eps × λ_K)`: the old 32-bit rule applied at the last handoff point (`K = min(20, n)`), where the view is `λ_K` times bigger. About `3e-11` to `3e-10` on the default box (the old floor was about `1e-4`). Shapes it does not perturb (the octahedral fold, the KIFS polyfold, the Mandelbulb) keep the 32-bit floor `ulp32(largest |eye coordinate|) / (50 × eps)`. A noise field's displacement is still evaluated at the 32-bit position (a displaced surface is smooth below its displacement anyway). Keep the existing sentences about the `zoom limit` readout and moving away always being allowed.
   - **Where 32 iterations run out.** Say plainly what the user sees, without promising a depth: with 32 iterations the surface has only so much detail, and past that point (which varies enormously from place to place) the hit test can no longer be met; rays run out of steps and the picture darkens, the same look as the old coarse-pass problem. The camera is not stopped there. Measured by `perturbation_test.gd` (64-bit march, the shader's hit threshold, 128 steps): at the default view's centre point the surface stops resolving between `1e-7` and `1e-8`, so the default box gains about two to three decades there, not the seven the floor allows; neighbouring points of the same view resolve to `1e-9` .. `1e-12`; the Menger sponge and the Kleinian resolve to `1e-12`; the terraces save stops near `1e-6`. More iterations are a follow-up.
 - [ ] **Step 2: Fly camera section:** the zoom-limit sentence links the new floor; mention the speed can fall to `1e-14` and follows the distance measured from the 64-bit eye.
@@ -3264,10 +3264,10 @@ git -C $WT commit -m "docs(readme): deep zoom: the 64-bit eye, perturbation, the
   4. **The reference orbit** (live figure): per save (default box, ice field, terraces; the JS port finds each surface point from the default eye as `SurfaceFixture.surface_from` does), the eye's 32 iterates, `λ_i` on a log axis, and the hoverable per-iteration record (`a`, `b`, `c`, `d` with what each slot means).
   5. **δ step by step** (stepper, the mandelbox pane's pattern): one pixel's offset through the iterations; the frame read beside the frame written; Step / Back / Reset; each stage (fold, sphere fold, rotate, scale, add) with its shader line (`perturbation.gdshaderinc`) and GDScript line (`tests/perturbation_port.gd`); three columns: 64-bit exact (JS doubles), float32 perturbed and float32 direct (`Math.fround` after every operation, as the port's `r()`); crossings flagged. A JS port of `pert_clamp`, `pert_sphere` and the Mandelbox `de_pert` loop.
   6. **Crossing a fold** (figure): the clamp-difference formula on a draggable axis (`X`, `δ`, the two creases, the 3 × 3 case table lighting up), and the sphere fold's three regimes with the `m' − m` row for the current pair.
-  7. **Handoff and floors** (live figure + table, grouped): `|δ_i| ≈ λ_i × t` against `i` for three rays of one view (a near wall, the centre hit, a far ray) on a log axis, with the `PERT_HANDOFF` line at 0.1 (the spec's text says 1e-2 here; its constant is 0.1) and where each ray hands off (the far ray at once); a table of `floor32` and `floor_pert` per save computed by the port.
+  7. **Handoff and floors** (live figure + table, grouped): `|δ_i| ≈ λ_i × t` against `i` for three rays of one view (a near wall, the centre hit, a far ray) on a log axis, with the `PERT_HANDOFF` line at 0.1 and where each ray hands off (the far ray at once); a table of `floor32` and `floor_pert` per save computed by the port.
   8. **Measured** (two tables, grouped): the MEASURED agreement rows, and the REFERENCE FLOOR rows (per fixture, hits within 128 / 2000 steps by depth; the 9 rays of the default view and the deepest depth each resolves), with the parameters in the note.
   9. **Coarse pass and lighting** (live figure): `coarse_iters(near)` and `nf_weight(near)` against `d` on a log axis, with the formulas (`FractalParams.coarse_iters`, `nf_weight`).
-  10. **Cards**: invariants (hue 3: the default view is bit-for-bit; `pert_iters == 0` is today's path; `eye()` is the rounded shadow; `ReferenceOrbit.distance` equals the estimator exactly), gotchas (hue 2: `Vector3` is 32-bit; `Workspace._tidy` and JSON's 15 digits (and Godot's parser one ulp off); the old 1e-6 speed clamp and `NEAR_FLOOR`; the WebGL uniform budget (101 `vec4`s); folds that keep the 32-bit floor; noise at 32-bit), history (hue 6: the self-similar substitution note; the two-float option; the per-frame handoff `k` replaced by the per-ray one; `PERT_HANDOFF` 1e-2 → 0.1 from the measured grid; the dropped iteration-floor guard; the sort formula corrected), open (hue 4: polyfold and octahedral folds, the Mandelbulb, the 32-iteration floor and more iterations past it, the orbit camera, the `perturbation-design` pane).
+  10. **Cards**: invariants (hue 3: the default view is bit-for-bit; `pert_iters == 0` is today's path; `eye()` is the rounded shadow; `ReferenceOrbit.distance` equals the estimator exactly), gotchas (hue 2: `Vector3` is 32-bit; `Workspace._tidy` and JSON's 15 digits (and Godot's parser one ulp off); the old 1e-6 speed clamp and `NEAR_FLOOR`; the WebGL uniform budget (101 `vec4`s, 211 of the 224-vector minimum if nothing packs); folds that keep the 32-bit floor; noise at 32-bit), history (hue 6: the self-similar substitution note; the two-float option; the per-frame handoff `k` replaced by the per-ray one; `PERT_HANDOFF` 1e-2 → 0.1 from the measured grid; the dropped iteration-floor guard; the sort formula corrected), open (hue 4: polyfold and octahedral folds, the Mandelbulb, the 32-iteration floor and more iterations past it, the orbit camera, the `perturbation-design` pane).
 
 - [ ] **Step 5: Glossary entries** in `docs/viz/glossary.js` (ids new; check the existing ids first: `orbit` and `ulp` exist, so match `reference orbit` as a phrase and do not re-add `ulp`):
   - `perturbation`: "Following a pixel's small difference from a nearby reference instead of the pixel itself. Here the reference is the camera's own orbit, worked out once per frame in 64-bit on the CPU; the GPU iterates only each pixel's offset from it, which 32-bit floats hold precisely because it is small. Deep Mandelbrot-set zoomers use the same trick." Links: Wikipedia's perturbation section (URL above), then a friendlier explainer if one is found.
