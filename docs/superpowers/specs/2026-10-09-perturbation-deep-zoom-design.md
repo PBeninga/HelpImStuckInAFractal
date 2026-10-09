@@ -40,11 +40,11 @@ a 32-bit float holds a small number to the same relative precision as a large
 one. This is how deep Mandelbrot-set zoomers work
 ([perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation)).
 
-After `k` iterations the offset has grown by the magnification `λ_k`
-(about `|scale|` per iteration, more with the sphere fold); once `λ_k × d`
-reaches about `1e-2` the offset is big enough that `X_k + δ_k` in 32 bits is
-as good as exact, and the GPU hands off to today's loop for the remaining
-`32 − k` iterations.
+Each iteration grows the offset by the magnification (about `|scale|`, more
+with the sphere fold); once a ray's own `|δ|` reaches `0.1` it is big enough
+that `X_i + δ_i` in 32 bits is as good as exact, and that ray hands off to
+today's loop for its remaining iterations. Rays near a wall hand off late,
+far rays at once.
 
 ## Scope
 
@@ -168,9 +168,9 @@ available), `vec4 pert_a[PERT_MAX]`, `pert_b`, `pert_c`, `pert_d`
 (`PERT_MAX = 20`), and `vec4 pert_x[PERT_MAX + 1]` (`X_0 … X_PERT_MAX`, the
 handoff points). Uniform arrays compile in a `canvas_item` shader under GL
 Compatibility and take a `PackedVector4Array` (checked headless on 4.6.1).
-101 `vec4`s plus the existing ~110 scalars come to about 190 of WebGL 2's
-224-vector minimum if a driver packs no scalars into shared rows (they
-normally pack four to a row). Only the user's web export can confirm the
+101 `vec4`s plus `pert_iters` and the existing 109 declarations come to
+211 of WebGL 2's 224-vector minimum if a driver packs no scalars into shared
+rows (they normally pack four to a row). Only the user's web export can confirm the
 link; `PERT_MAX` is the knob if it fails.
 
 `float de_pert(vec3 off, int iters)`, where `off = dir × t` (the shader never
@@ -307,8 +307,9 @@ of 32-bit precision after its last handoff.
 
 ### 6. Console
 
-The Movement pane shows `deep k=14` on the speed line while `pert_iters > 0`
-(`MovementPane.show_deep(k)`, `k = 0` hides it), forwarded by `Main._process`
+The Movement pane shows `deep 20` (the records in use) on the speed line
+while `pert_iters > 0` (`MovementPane.show_deep(n)`, `n = 0` hides it),
+forwarded by `Main._process`
 from `FractalView.pert_iters()` the way `at_zoom_limit` is. Nothing else in
 the console changes; the Shape tab's Self-similar line stays as a description.
 
@@ -319,7 +320,7 @@ skill after the code lands (its `file:line` links pin a commit). Ten tabs:
 
 1. **Architecture** (graph): zones *64-bit CPU* (CameraState eye64, FlyCamera,
    CenterRay, ReferenceOrbit, Workspace), *the bridge* (the uniforms:
-   `pert_iters`, `pert_a..d`, `pert_end`, `near_dist`, `coarse_iters`,
+   `pert_iters`, `pert_a..d`, `pert_x`, `near_dist`, `coarse_iters`,
    `nf_weight`), *float32 GPU* (`fragment`, `de` / `de_pert`, the normals).
 2. **Why 32-bit breaks** (live figure): a log slider for the camera distance
    `d`; the float32 grid near the eye, the view's width in grid steps, the hit
@@ -339,7 +340,7 @@ skill after the code lands (its `file:line` links pin a commit). Ten tabs:
    radial fold's three regimes with the `m' − m` formula per pair.
 7. **Handoff and floors** (live figure + table): `|δ_i| ≈ λ_i × t` against
    `i` for three rays of one view (a near wall, the centre hit, a far ray)
-   on a log axis with the `1e-2` handoff line and where each hands off;
+   on a log axis with the `0.1` handoff line and where each hands off;
    today's floor and `floor_pert` per save, computed by the port.
 8. **Measured** (table): the agreement numbers from `perturbation_test.gd`.
 9. **Coarse pass and lighting** (live figure): `coarse_iters(near)` and
@@ -411,7 +412,8 @@ Headless, `tests/` TestCase style, nothing windowed.
   readout shows with `k`, hides at 0.
 - `deep_zoom_test.gd`: unchanged.
 - `README.md`: the Deep zoom section describes the 64-bit eye, the reference
-  orbit, the handoff and the two floors; the zoom-limit paragraph is rewritten.
+  orbit, the per-ray handoff and the new floor, and what the unguarded
+  32-iteration floor looks like; the zoom-limit paragraph is rewritten.
 
 The windowed check (`tests/screenshots.sh`) is the user's: the default view
 must be pixel-identical before and after, and a flight to `1e-8` on the
