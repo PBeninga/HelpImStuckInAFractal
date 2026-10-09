@@ -159,8 +159,8 @@ func _check_algebra() -> void:
 		var params: FractalParams = v[1]
 		var s := SurfaceFixture.surface_from(params, v[2])
 		var e := SurfaceFixture.backed(s, 1e-3)
-		var X := ReferenceOrbitDraft.build(params, e[0], e[1], e[2])
-		var k := mini(ReferenceOrbitDraft.PERT_MAX, X.n)
+		var X := ReferenceOrbit.build(params, e[0], e[1], e[2])
+		var k := mini(ReferenceOrbit.PERT_MAX, X.n)
 		var port := PerturbationPort.new(params, e, false)
 		port.handoff = INF   # perturb all k iterations however large the offset grows
 		var worst := 0.0
@@ -169,7 +169,7 @@ func _check_algebra() -> void:
 			var dir := Vector3(rng.randfn(), rng.randfn(), rng.randfn()).normalized()
 			var size := pow(10.0, rng.randf_range(-7.0, -1.0))
 			var off := [dir.x * size, dir.y * size, dir.z * size]
-			var P := ReferenceOrbitDraft.build(params, e[0] + off[0], e[1] + off[1], e[2] + off[2])
+			var P := ReferenceOrbit.build(params, e[0] + off[0], e[1] + off[1], e[2] + off[2])
 			port.trace = []
 			port.tracing = true
 			var dp := port.de_pert(X, k, off, 32)
@@ -290,12 +290,12 @@ func _agree(got: Array, want: Array) -> bool:
 
 ## Task 4 replaces these two with FractalParams.pert_iters / floor_pert.
 func _records(orbit) -> int:
-	return mini(ReferenceOrbitDraft.PERT_MAX, orbit.n)
+	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
 
 
 func _floor_pert(orbit, params: FractalParams) -> float:
 	var eps := params.precision / params.detail
-	var kk := mini(ReferenceOrbitDraft.PERT_MAX, orbit.n)
+	var kk := mini(ReferenceOrbit.PERT_MAX, orbit.n)
 	var x: Vector4 = orbit.points[kk]
 	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
 	return FractalParams.ulp32(m) / (FractalParams.ZOOM_FLOOR_DIVISOR * eps * orbit.mag[kk])
@@ -315,7 +315,7 @@ func _check_agreement() -> void:
 		for dd in DEPTHS:
 			var d: float = dd
 			var e := SurfaceFixture.backed(s, d)
-			var orbit := ReferenceOrbitDraft.build(params, e[0], e[1], e[2])
+			var orbit := ReferenceOrbit.build(params, e[0], e[1], e[2])
 			var near := orbit.distance
 			var k := _records(orbit)
 			var fp := _floor_pert(orbit, params)
