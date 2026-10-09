@@ -546,6 +546,12 @@ func _active_camera() -> Node:
 	return fly if params.camera_mode == FractalParams.CameraMode.FLY else _orbit
 
 
+## Every key press first lets go of a modifier the OS no longer holds (Cmd and
+## Shift left stuck by Cmd+Shift+5, which would stop WASD), before anything reads it.
+func _input(event: InputEvent) -> void:
+	StaleModifiers.release(event)
+
+
 # The only mouse dispatcher: Ctrl tap -> Escape/screenshot -> noise -> marker -> camera.
 func _unhandled_input(event: InputEvent) -> void:
 	# 1. A Ctrl tap (down then up with no other key between) toggles the console.
