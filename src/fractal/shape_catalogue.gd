@@ -3,7 +3,8 @@ extends RefCounted
 ## Every knob in inspector order, for every shape: the Fractal group (which
 ## shape, and the fourth coordinate w), the Mandelbox's Box, Julia and
 ## Iteration rotation groups (MandelboxShape), KIFS and KIFS rotation
-## (KifsShape), Kleinian (KleinianShape), then the rows every shape shares —
+## (KifsShape), Kleinian (KleinianShape), Mandelbulb (MandelbulbShape), then
+## the rows every shape shares —
 ## the precision, the colour mode and the Palette mode's controls, the
 ## lighting, and the palette's twelve numbers. A shape's own rows show only
 ## while that shape is drawn. The console shows SHAPE_GROUPS on its Shape tab
@@ -34,7 +35,7 @@ const PALETTE_VECTOR_EFFECTS := [
 
 ## Which groups the console's two tabs show.
 const SHAPE_GROUPS: Array[String] = ["Fractal", "Box", "Julia", "Iteration rotation",
-	"KIFS", "KIFS rotation", "Kleinian", "Render"]
+	"KIFS", "KIFS rotation", "Kleinian", "Mandelbulb", "Render"]
 const COLOUR_GROUPS: Array[String] = ["Colour", "Lighting", "Palette"]
 
 
@@ -45,6 +46,13 @@ static func shown_for(shape: int, inner: Callable = Callable()) -> Callable:
 		if int(values.get(&"shape", FractalParams.Shape.MANDELBOX)) != shape:
 			return false
 		return not inner.is_valid() or bool(inner.call(values))
+
+
+## The predicate for the W row: shown unless the shape is the Mandelbulb, which
+## is 3D and never reads w.
+static func _not_3d() -> Callable:
+	return func(values: Dictionary) -> bool:
+		return int(values.get(&"shape", FractalParams.Shape.MANDELBOX)) != FractalParams.Shape.MANDELBULB
 
 
 ## The predicate for the Palette mode's rows: shown only while the Colour mode
@@ -68,22 +76,25 @@ static func specs() -> Array[AttributeSpec]:
 	out.append(AttributeSpec.make({
 		"id": "shape", "label": "Fractal", "type": ENUM,
 		"default": FractalParams.Shape.MANDELBOX,
-		"enum_labels": ["Mandelbox", "KIFS", "Kleinian"],
-		"enum_values": [FractalParams.Shape.MANDELBOX, FractalParams.Shape.KIFS, FractalParams.Shape.KLEINIAN],
+		"enum_labels": ["Mandelbox", "KIFS", "Kleinian", "Mandelbulb"],
+		"enum_values": [FractalParams.Shape.MANDELBOX, FractalParams.Shape.KIFS, FractalParams.Shape.KLEINIAN,
+			FractalParams.Shape.MANDELBULB],
 		"group": "Fractal",
 		"tooltip": "Which fractal is drawn. Each has its own rows below; only the chosen one's are shown.",
-		"effects": "Mandelbox is the site's box-and-sphere-fold solid. KIFS is the kaleidoscopic family: the Menger sponge, the Sierpinski tetrahedron and their rotated, twisted relatives. Kleinian is a pseudo-Kleinian limit set, an endless lattice of curved sheets and rings whose rays stop at its View distance. The camera stays put, so fly out (or Reset camera) to frame the new shape.",
+		"effects": "Mandelbox is the site's box-and-sphere-fold solid. KIFS is the kaleidoscopic family: the Menger sponge, the Sierpinski tetrahedron and their rotated, twisted relatives. Kleinian is a pseudo-Kleinian limit set, an endless lattice of curved sheets and rings whose rays stop at its View distance. Mandelbulb is the 3D cousin of the Mandelbrot set: a lobed, budding ball about 2.2 across. The camera stays put, so fly out (or Reset camera) to frame the new shape.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "w", "label": "W", "type": F,
 		"default": 0.0, "min": -4.0, "max": 4.0, "step": 0.01, "group": "Fractal",
-		"tooltip": "The fourth coordinate of the sample point. Every shape is a 4D field; the viewer flies through the w = 0 slice by default.",
+		"show_when": _not_3d(),
+		"tooltip": "The fourth coordinate of the sample point. Every shape but the Mandelbulb is a 4D field; the viewer flies through the w = 0 slice by default. Hidden on the Mandelbulb, which is 3D.",
 		"effects": "0 is the familiar 3D shape. Moving w slides the whole view to a different 3D slice of the 4D shape, which can reveal entirely new structure. Bind it to an axis or Time to glide between slices.",
 	}))
 
 	out.append_array(_only_on(MandelboxShape.specs(), FractalParams.Shape.MANDELBOX))
 	out.append_array(_only_on(KifsShape.specs(), FractalParams.Shape.KIFS))
 	out.append_array(_only_on(KleinianShape.specs(), FractalParams.Shape.KLEINIAN))
+	out.append_array(_only_on(MandelbulbShape.specs(), FractalParams.Shape.MANDELBULB))
 
 	# --- Render ---
 	out.append(AttributeSpec.make({
@@ -220,7 +231,7 @@ static func specs() -> Array[AttributeSpec]:
 ## Colour, Lighting and Palette.
 static func group_tooltips() -> Dictionary:
 	var out := {
-		"Fractal": "Fractal: which shape is drawn, and the 3D slice of its 4D field the camera flies through. The rows below change with the shape.",
+		"Fractal": "Fractal: which shape is drawn, and the 3D slice of its 4D field the camera flies through (the Mandelbulb is 3D, so it has no slice). The rows below change with the shape.",
 		"Render": "Render: how finely the ray march resolves the surface. A look-and-cost knob, not a shape knob.",
 		"Colour": "Colour: which colouring mode paints the surface and, for the Palette mode, what runs it along the palette.",
 		"Lighting": "Lighting: the light every lit colour mode shares, a headlight following the camera by default. Each value's default is the site's, so the default picture is unchanged until you move one.",
@@ -229,12 +240,13 @@ static func group_tooltips() -> Dictionary:
 	out.merge(MandelboxShape.group_tooltips())
 	out.merge(KifsShape.group_tooltips())
 	out.merge(KleinianShape.group_tooltips())
+	out.merge(MandelbulbShape.group_tooltips())
 	return out
 
 
 ## Whether the fractal being drawn is exactly self-similar, for the Shape
 ## tab's read-only line: each shape's own rule (MandelboxShape, KifsShape,
-## KleinianShape .self_similarity). `values` maps catalogue ids to resolved
+## KleinianShape, MandelbulbShape .self_similarity). `values` maps catalogue ids to resolved
 ## values, missing ids reading as their defaults; `displaced` is whether a
 ## noise field moves the surface. Returns {"qualifies": bool, "reason": String}.
 static func self_similarity(values: Dictionary, displaced := false) -> Dictionary:
@@ -243,6 +255,8 @@ static func self_similarity(values: Dictionary, displaced := false) -> Dictionar
 			return KifsShape.self_similarity(values, displaced)
 		FractalParams.Shape.KLEINIAN:
 			return KleinianShape.self_similarity(values, displaced)
+		FractalParams.Shape.MANDELBULB:
+			return MandelbulbShape.self_similarity(values, displaced)
 	return MandelboxShape.self_similarity(values, displaced)
 
 

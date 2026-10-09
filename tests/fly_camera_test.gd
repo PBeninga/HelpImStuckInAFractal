@@ -133,7 +133,9 @@ func run() -> void:
 			["hybrid fold", {&"hybrid_mix": 0.5}, CameraState.DEFAULT_EYE],
 			["Menger", {&"shape": FractalParams.Shape.KIFS}, Vector3(3.2, 2.4, 1.9)],
 			["Sierpinski", {&"shape": FractalParams.Shape.KIFS, &"kifs_fold": KifsEstimator.FoldSet.DIAGONAL, &"kifs_scale": 2.0}, Vector3(3.5, -2.0, 2.2)],
-			["Kleinian", {&"shape": FractalParams.Shape.KLEINIAN}, Vector3(2.5, 1.6, 1.2)]]:
+			["Kleinian", {&"shape": FractalParams.Shape.KLEINIAN}, Vector3(2.5, 1.6, 1.2)],
+			["Mandelbulb", {&"shape": FractalParams.Shape.MANDELBULB}, Vector3(2.2, 1.6, 1.2)],
+			["Julia Mandelbulb", {&"shape": FractalParams.Shape.MANDELBULB, &"mandelbulb_julia": true}, Vector3(2.2, -1.6, 1.2)]]:
 		await _fly_at(shot[0], shot[1], shot[2])
 
 	await _zoom_floor_guard()

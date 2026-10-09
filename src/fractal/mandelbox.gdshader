@@ -1,7 +1,8 @@
 shader_type canvas_item;
 // The fractal raymarcher: the Mandelbox (written from the design spec's
 // algorithm; nothing is copied from icefractal.com), and through `shape` the
-// KIFS and Kleinian of kifs.gdshaderinc and kleinian.gdshaderinc. All float
+// KIFS, Kleinian and Mandelbulb of kifs.gdshaderinc, kleinian.gdshaderinc and
+// mandelbulb.gdshaderinc. All float
 // math is highp (WebGL 2 => float32), which is Godot's canvas_item default.
 //
 // One Mandelbox iteration (mb_step) runs for both de() and field(): the fold
@@ -44,7 +45,7 @@ uniform vec3 probe_point;
 uniform float probe_radius;
 
 // --- shape uniforms (names == catalogue ids) ---
-uniform int shape;            // 0 Mandelbox, 1 KIFS, 2 Kleinian
+uniform int shape;            // 0 Mandelbox, 1 KIFS, 2 Kleinian, 3 Mandelbulb
 uniform float box_scale;
 uniform float fold_limit;
 uniform float min_radius;
@@ -292,6 +293,7 @@ vec4 mb_constant(vec4 z0) {
 
 #include "res://src/fractal/kifs.gdshaderinc"
 #include "res://src/fractal/kleinian.gdshaderinc"
+#include "res://src/fractal/mandelbulb.gdshaderinc"
 
 // The Kleinian's rays stop at its View distance (0: no limit for the others).
 float view_limit() {
@@ -311,6 +313,7 @@ float view_fade(float t) {
 float de(vec3 p, int iters) {
 	if (shape == 1) { return kifs_de(vec4(p, w), iters) + noise_displace(p); }
 	if (shape == 2) { return kleinian_de(vec4(p, w), iters) + noise_displace(p); }
+	if (shape == 3) { return mandelbulb_de(p, iters) + noise_displace(p); }
 	vec4 z0 = vec4(p, w);
 	vec4 c = mb_constant(z0);
 	vec4 z = z0;
