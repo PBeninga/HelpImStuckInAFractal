@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let the fly camera zoom past the 32-bit floor: a 64-bit eye, a CPU reference orbit, and a GPU march that iterates only each pixel's small offset from that orbit for its first `k` iterations (perturbation), with the zoom guard moved down to where perturbation or 32 iterations run out.
+**Goal:** Let the fly camera zoom past the 32-bit floor: a 64-bit eye, a CPU reference orbit, and a GPU march in which each ray iterates only its small offset from that orbit until the offset is big enough for 32 bits (perturbation), with the zoom guard moved down to where the perturbed march runs out of precision.
 
-**Architecture:** `CameraState` keeps the eye as three 64-bit floats (the `Transform3D` origin becomes their rounded shadow). Each time the camera or the shape changes, `FractalView._push_near()` builds a `ReferenceOrbit` from the 64-bit eye: the eye's own 32 iterates in 64-bit, plus a per-iteration record of small "gaps" (crease position minus the reference point) packed into four `PackedVector4Array`s. `FractalParams.pert_iters()` picks how many iterations `k` to perturb; when it is positive the shader's march calls `de_pert(dir × t, n)` instead of `de(eye + dir × t, n)`. `de_pert` iterates the offset with per-fold difference formulas, then adds it to `X_k` and finishes with the ordinary loop. With `pert_iters == 0` the shader runs exactly today's arithmetic. The fly camera's guard moves to `max(floor_pert, floor_iter)`.
+**Architecture:** `CameraState` keeps the eye as three 64-bit floats (the `Transform3D` origin becomes their rounded shadow). Each time the camera or the shape changes, `FractalView._push_near()` builds a `ReferenceOrbit` from the 64-bit eye: the eye's own 32 iterates in 64-bit, plus a per-iteration record of small "gaps" (crease position minus the reference point) packed into four `PackedVector4Array`s, and the first 21 iterates as the handoff points `pert_x`. `FractalParams.pert_iters()` is 0 (off) or the number of records, `min(20, n)`; when it is positive the shader's march calls `de_pert(dir × t, n)` instead of `de(eye + dir × t, n)`. `de_pert` iterates the ray's offset with per-fold difference formulas while the records last and the offset is under `PERT_HANDOFF = 0.1`, then hands off at `pert_x[h] + offset` to the ordinary loop. A far ray hands off at once, at today's `eye + dir × t`. With `pert_iters == 0` the shader runs exactly today's arithmetic. The fly camera's guard moves to `floor_pert`.
 
 **Tech Stack:** Godot 4.6.1 (standard build: GDScript `float` is 64-bit, `Vector3`/`Vector4` components are 32-bit), a `canvas_item` shader under GL Compatibility (GLSL ES 3.0 / WebGL 2 floats), headless SceneTree tests (`tests/*_test.gd`, `tests/run_all.sh`), the in-browser viz (`docs/viz/`, plain JS).
 
-Spec: `docs/superpowers/specs/2026-10-09-perturbation-deep-zoom-design.md`. Format follows `docs/superpowers/plans/2026-10-08-deep-zoom-march.md`.
+Spec: `docs/superpowers/specs/2026-10-09-perturbation-deep-zoom-design.md` (revision b05be22: per-ray handoff, no iteration-floor guard). Format follows `docs/superpowers/plans/2026-10-08-deep-zoom-march.md`.
 
 ## Where to work
 
@@ -28,61 +28,62 @@ Every git command is `git -C $WT ...`. Every Godot run is `godot4 --headless --p
 - **Commit by explicit path** (`git -C $WT add <path> ...`, never `-A` or `.`). Godot tracks a `.uid` file beside every `.gd` / `.gdshaderinc`: commit the new file's `.uid` with it (it appears after `tests/run_all.sh` or `godot4 --headless --import --path $WT`).
 - Every commit message ends with the line `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (pass it as a second `-m`). Subject style: `feat(scope): ...`, `test(scope): ...`, `docs(scope): ...`.
 - `tests/run_all.sh` (run as `$WT/tests/run_all.sh`; it `cd`s itself) must exit 0 before every commit. One test alone: `godot4 --headless --path $WT -s tests/<name>_test.gd`. After adding a file with a new `class_name`, run `godot4 --headless --import --path $WT >/dev/null 2>&1` once before running a single test (the class cache must know it).
-- **The invariant:** with `pert_iters == 0` the shader's arithmetic is exactly today's, and at the default view `pert_iters` is 0, so the default view renders bit-for-bit as before (the user checks this with `tests/screenshots.sh`). Every shader edit to an existing line must keep that true; say so in the commit.
+- **The invariant:** with `pert_iters == 0` the shader's arithmetic is exactly today's, and at the default view `pert_iters` is 0, so the default view renders bit-for-bit as before (the user checks this with `tests/screenshots.sh`). Every shader edit to an existing line must keep that true; say so in the commit. (A ray that hands off at `h = 0` also computes exactly today's `de(eye + dir × t)`.)
 - Everything is automatic: no new renderer option, the save stays version 2, no new console knob. The only UI change is the read-only `deep k=N` readout.
 - Not perturbed (keep today's 32-bit floor, `pert_iters` 0): the Mandelbox's octahedral fold, the KIFS polyfold, the Mandelbulb. Noise displacement stays evaluated at the 32-bit position.
 - Comments and README prose in plain language; anything above basic calculus gets a one-line explanation (the user is an engineer, not a mathematician).
-- Constants (exact):
-  - `ReferenceOrbit.PERT_MAX = 20` (uniform array length; `k` never exceeds it), `ReferenceOrbit.ITERATIONS = 32`.
-  - `FractalParams.PERT_ON = 10.0`, `FractalParams.PERT_HANDOFF = 0.1` (see Spec findings 15; the spec says 1e-2), `FractalParams.ITER_FLOOR_RADIUS = 0.25` (see Spec findings 1).
+- Constants and rules (exact):
+  - `ReferenceOrbit.PERT_MAX = 20` (uniform array length), `ReferenceOrbit.ITERATIONS = 32`.
+  - `FractalParams.PERT_ON = 10.0`, `FractalParams.PERT_HANDOFF = 0.1` (the shader's `const float PERT_HANDOFF`; shader_test checks they match), `FractalParams.NEAR_FLOOR = 1e-14` (was 1e-6).
   - `FlyCamera.SPEED_FLOOR = 1e-14`.
-  - `pert_iters(orbit, near) = 0` if `not orbit.perturbable` or `near >= PERT_ON × floor32(eye)`; else the smallest `k` in `1..min(PERT_MAX, orbit.n)` with `orbit.mag[k] × near >= PERT_HANDOFF`, or `min(PERT_MAX, orbit.n)` if none reaches it. `near` is the raw estimate at the eye (not clamped to `NEAR_FLOOR`).
+  - `pert_iters(orbit, near) = 0` if `not orbit.perturbable` or `near >= PERT_ON × floor32(eye)`; else `min(PERT_MAX, orbit.n)`. `near` is the raw estimate at the eye.
+  - Per ray (shader): perturb iteration `i` while `i < min(pert_iters, iters)` and `|δ|² < PERT_HANDOFF²`; at the first `h` where either fails, `z = pert_x[h] + δ` (float32) and the direct loop runs from `h` to `iters` with the accumulated `dz`.
   - `floor32(eye) = ulp32(max |eye_i|) / (ZOOM_FLOOR_DIVISOR × eps)` (today's `zoom_floor`), `eps = precision / detail`.
   - `floor_pert = ulp32(max |X_K| over x, y, z, w) / (ZOOM_FLOOR_DIVISOR × eps × mag[K])`, `K = min(PERT_MAX, orbit.n)`.
-  - `floor_iter = ITER_FLOOR_RADIUS / (eps × mag[32])`; 0 for the Kleinian.
-  - `zoom_floor(eye64) = max(floor_pert, floor_iter)` for a perturbable orbit, `floor32(eye64)` otherwise.
+  - `zoom_floor(eye64) = floor_pert` for a perturbable orbit, `floor32(eye64)` otherwise. The 32-iteration floor is not guarded.
 
-## Spec findings (read before Task 1)
+## Findings and decisions (read before Task 1)
 
 **This plan's code was dry-run.** Tasks 1 to 7 were applied, as written here, to a clean `git archive` copy of the branch in a scratch folder, and `tests/run_all.sh` passed there (44 suites, exit 0; `perturbation_test.gd` about 30 s). The worktree was not touched. Treat a failure you hit as a deviation from the text, or as something that changed on the branch since, before suspecting the maths.
 
-While planning, the spec's numbers were checked headless against the real CPU estimators (a 64-bit march with the shader's hit test `estimate < eps × t`, 32 iterations each step, along each fixture's centre ray from its surface point). The spec's mechanism holds; several of its *test thresholds* cannot. The plan resolves each one as below. Tell the user about 1 and 2; they change what the feature delivers on the default box.
+1. **The per-ray handoff agrees everywhere.** Task 1's grid (emulated float32, 27 rays per cell, 128 steps, records `min(20, n)`, handoff at `|δ| ≥ 0.1`): perturbed 100% in all 15 cells; today's direct float32 march 0 to 11% at 1e-6 (and below 30% wherever the reference resolves the surface).
 
-| fixture (eps) | λ_32 at the eye | spec `floor_iter` (bound_half) | measured: last depth that hits / first that misses | plan `floor_iter` (R = 0.25) | `k` at d = 1e-5 / 1e-6 / 1e-7 |
-|---|---|---|---|---|---|
-| default box (2.5e-5) | 1.76e10 | 4.6e-6 | 3e-7 / 1e-7 | 5.7e-7 | 10 / 13 / 16 |
-| ice field save (2e-5) | 3.27e11 | 3.1e-6 | 1e-7 / 1e-8 | 3.8e-8 | 9 / 12 / 14 |
-| terraces save (1e-4) | 1.2e9 to 1.6e9 | 1.7e-4 | 3e-6 / 1e-6 | 2.1e-6 | 11 / 14 / 18 |
-| KIFS Menger (2.5e-5) | 1.85e15 | 5.6e-11 | 1e-8 / none | 5.4e-12 | 7 / 9 / 11 |
-| Kleinian (2.5e-5) | about 1950 (saturates) | 2e5 (meaningless) | 1e-8 / none | 0 (not applied) | 6 / 20 / 20 |
-
-(Depths are camera back-off distances along the centre ray. The camera's estimate at the eye, `near`, is about 0.2 to 0.5 of that: the default box at back 1e-5 has `near` 2.0e-6, at 1e-6 4.8e-7, at 1e-7 1.9e-8. The `k` column applied the handoff rule to the back-off distance; the shipped rule uses `near`, which gives `k` one to three higher. The `floor_iter` columns are in units of `near`, which the guard compares against, so the guard stops the camera a little further out than the last depth that hits: on the safe side.)
-
-1. **`floor_iter`'s numerator.** `bound_half` (2, or 20 in Julia mode) overstates where the 32-iteration estimate bottoms out by 15 to 50 times on the three Mandelbox fixtures. The estimate floors at about `|z_32| / λ_32` with `|z_32|` a fraction of a unit at the surface. The plan uses a named constant `ITER_FLOOR_RADIUS = 0.25`, calibrated on these three fixtures: with it, a 128-step 64-bit march from `10 × floor_iter` hits within 1% on all three, and from `floor_iter / 10` it misses on all three (measured). That is the spec's own bracket test, which `bound_half` fails.
-2. **The default box gains about 2 decades, not 6.** At the default view's own surface point, 32 iterations stop resolving at about 2e-7, so the new floor there is about `5.7e-7` (camera estimate), against today's `9.5e-5`. The spec's "zoom_floor below 1e-8 for the default box" and "a flight to 1e-8 on the default box must show detail" cannot hold without more than 32 iterations (out of scope per the spec). The KIFS and Kleinian fixtures do resolve at 1e-8. Tests are adapted: `fractal_params_test` checks the default box's floor is at least 50× below `floor32`; `center_ray_test` uses 3e-7 (measured: the 64-bit origin hits, t/back 1.001; the rounded origin misses, 1.143); the fly test starts below today's floor rather than at 1e-6 (which is under the new floor).
-3. **The Kleinian has no `floor_iter`.** Its `bound_half` is a 1e4 sentinel, and its estimate (Knighty's thingy over `dr`) goes to 0 at the sheets rather than bottoming out. Its floor is `floor_pert` alone.
-4. **Sort formula, "only the reference swaps".** The spec writes `δ'_a = δ_b + gap, δ'_b = δ_a − gap`. The correct one is `δ'_a = δ_a + gap, δ'_b = δ_b − gap` (the pixel's components stay put; the reference's swap). Derivation: `δ'_a = P_a − X_b = X_a + δ_a − X_b = δ_a + gap`. The plan uses the corrected form, and the 64-bit algebra check would catch the spec's.
-5. **Diagonal, "both reflect":** `δ' = (−δ_b, −δ_a)` (swapped and negated, not just swapped). "Only the reference": `(δ_a + gap, δ_b + gap)`.
-6. **`iters < pert_iters`** (the coarse pass asking for fewer iterations than `k`): the spec says "run `min(pert_iters, iters)`" but `pert_end` is `X_k`. The plan always runs `k` perturbed iterations and resumes to `max(iters, k)`. In practice it never binds: below `PERT_ON × floor32` the coarse count is already 24 to 32 and `k <= 20`.
-7. **Record slots the spec leaves unused:** cylinder fold, `a.xy` holds the reference's own `X.xy` (instead of recovering it from `c` with `(L + g) / (L − g)`, which divides by zero at `r = 2L`); KIFS, `d` holds `X_{i+1}` (the GPU's per-iteration bailout test needs the point, and only `X_k` is a uniform).
-8. **"Reproduces the reference exactly" in 64-bit:** two different 64-bit computations cannot agree bit-for-bit. The algebra check compares the perturbed offset with the direct orbit's difference iteration by iteration, within `1e-12 × λ_i × max(1, |X_i|, |P_i|) + 1e-9 × |δ_i|` (rounding is about 1e-16 × λ_i; a wrong formula is off by about `|δ_i|`), over random offsets of 1e-7 to 1e-1 that exercise every crossing case.
-9. **The agreement grid's checks** apply to cells where the 64-bit reference hits on at least half the 27 rays. Below a fixture's 32-iteration floor (the terraces at 1e-6 and 1e-7, the default box at 1e-7) the reference runs out of steps on most rays and "agreement" says nothing. Every cell is printed. The spec's 27-ray fan, march budget and classes are defined in Task 1 (a 3 × 3 grid at three field fractions; 128 steps at 32 iterations; hit / beyond `10 d` / out of steps).
-10. **Full-precision saves:** `Workspace.save_file` writes JSON with `JSON.stringify(..., "\t", false, true)`. The default (`full_precision = false`) keeps 15 significant digits, so a deep eye loses about 1e-14 (checked headless: `1.9600000012345678` comes back as `1.96000000123457`). Full precision prints the shortest exact form (`0.1` stays `0.1`), so other fields read the same. Godot's float parser is not correctly rounded, though: measured over 20,000 values, about a third come back one 64-bit ulp off (at most about 4e-15 for coordinates under 20). That is thousands of times below the deepest zoom floor (about 5e-12), so the plan accepts it: in-memory capture/restore is exact, and the file round-trip test allows one ulp. (Bit-exact files would need the doubles' bytes stored beside the numbers, e.g. base64; not worth a format addition.)
-11. **GDScript has no overloading:** the scalar march is `CenterRay.march_at(ox, oy, oz, dir, params)`; `march(origin: Vector3, ...)` calls it.
-12. **`mag` per shape:** Mandelbox, the product of the sphere-fold factors and `|scale|` (the `dz` without its `+ 1`s; the cylinder fold's xy factor is not included, as `dz` does not include it); KIFS, `|kifs_scale|^i` for every `i` regardless of bailout (an exterior eye always escapes early, and `floor_iter` needs what 32 iterations magnify); Kleinian, `dr` (constant after a fixed point).
-13. **`ReferenceOrbit` has three fields beyond the spec's list:** `eye` (the doubles it was built from, for `floor32`), `points64` and `rec64` (the 64-bit copies the algebra check reads). `PERT_MAX` lives on `ReferenceOrbit` (it sizes its arrays); `FractalParams` reads it from there, so no constant crosses the two classes' cyclic reference at parse time.
-14. **Not in this plan:** the spec's second pane, `perturbation-design` ("written now, before the code"), does not exist on the branch. It is a separate `/visualize` job.
-15. **`PERT_HANDOFF` is 0.1, not the spec's 1e-2.** Task 1's code was run headless while planning (emulated float32, 27 rays per cell, 128 steps). With the hand-off at `mag[k] × near >= 1e-2`, the default box scored 85% at 1e-6 (k 14) and 96% at 1e-7 (k 18): four rays landed 0.15% to 0.5% off the reference, because the 32-bit point after an early hand-off is only a few times finer than the hit threshold. In 64-bit the same marches miss nothing, so the formulas are not at fault. With 0.1, every cell of the grid (five fixtures, plus the default box at 3e-6 and 3e-7) scored 100%, at the cost of at most three more perturbed iterations (k 17 instead of 14 at 1e-6; still at most 20):
-
-    | fixture | d | k at 1e-2 | agrees | k at 0.1 | agrees |
+    | fixture | near at d = 1e-5 / 1e-6 / 1e-7 | records | reference hits (of 27) | direct agrees | perturbed agrees |
     |---|---|---|---|---|---|
-    | default box | 1e-5 / 3e-6 / 1e-6 / 3e-7 / 1e-7 | 12 / 13 / 14 / 17 / 18 | 100 / 100 / **85** / 100 / **96** % | 15 / 16 / 17 / 20 / 20 | 100% everywhere |
-    | ice field | 1e-5 / 1e-6 / 1e-7 | 11 / 15 / 16 | 100% | 14 / 18 / 19 | 100% |
-    | terraces | 1e-5 / 1e-6 / 1e-7 | 12 / 16 / 20 | 100% | 15 / 19 / 20 | 100% |
-    | Menger | 1e-5 / 1e-6 / 1e-7 | 8 / 9 / 12 | 100% | 10 / 12 / 14 | 100% |
-    | Kleinian | 1e-5 / 1e-6 / 1e-7 | 8 (its eye's orbit settles after 8: `n` caps `k`) | 100% | 8 | 100% |
+    | default box | 2.0e-6 / 4.8e-7 / 1.9e-8 | 20 | 27 / 27 / 11 | 3 / 0 / 59 % | 100% |
+    | ice field | 1.8e-6 / 5.1e-8 / 2.2e-8 | 20 | 25 / 24 / 27 | 7 / 11 / 0 % | 100% |
+    | terraces | 4.7e-6 / 4.2e-7 / 4.0e-10 | 20 | 27 / 0 / 0 | 11 / 100 / 100 % | 100% |
+    | Menger | 4.3e-6 / 5.1e-7 / 4.3e-8 | 18 / 20 / 20 | 27 / 27 / 27 | 11 / 0 / 0 % | 100% |
+    | Kleinian | 5.0e-6 / 5.0e-7 / 5.0e-8 | 8 (the eye's orbit settles after 8) | 27 / 27 / 27 | 0% | 100% |
 
-    The self-similar note's rule (`λ_k × d ≥ 1e-2`) measured `d` as the back-off distance and judged glitches from too large an offset; perturbation here is exact algebra (no series approximation), so a later hand-off has no such cost. To restore the spec's value, change the one constant; Task 1's checks still pass then, because the two weak cells are below the default box's 32-iteration floor and the 1e-7 cell is unchecked.
+    The direct march's "agreement" in the terraces' deep cells and the default box at 1e-7 is agreement on "ran out of steps": those cells are below the fixture's 32-iteration floor (finding 2). So the "under 30%" check is applied at 1e-6 only where the reference hits on at least half the rays; the perturbed check applies to every cell.
+
+2. **Where 32 iterations stop resolving: both earlier measurements were right, because it depends on where you look.** Task 1 prints this (lines `REFERENCE FLOOR`). Everything is the 64-bit CPU estimator: hit when the 32-iteration estimate `< eps × t` (`eps = precision / detail`, detail 1, falloff 0, so `near` is not used and nothing is clamped), budgets of 128 steps (the shader's) and 2000; surface points refined until the estimate is under 1e-13 (or as low as round-off allows). Measured:
+    - **The 27-ray fan** around each fixture's centre point, hits within 128 / 2000 steps:
+
+      | fixture | 1e-6 | 1e-7 | 1e-8 | 1e-9 | 1e-10 | 1e-11 | 1e-12 |
+      |---|---|---|---|---|---|---|---|
+      | default box | 27 / 27 | 14 / 27 | 3 / 27 | 0 / 10 | 0 / 0 | 0 / 0 | 0 / 0 |
+      | ice field | 24 / 27 | 26 / 27 | 7 / 21 | 0 / 3 | 0 / 0 | 0 / 0 | 0 / 0 |
+      | terraces | 0 / 14 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+      | Menger | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 |
+      | Kleinian | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 | 27 / 27 |
+
+    - **Nine rays of the default view** near its middle (a 3 × 3 grid at 0.1 and at 0.3 of the half field), each backed off from its own hit: the deepest depth that still hits within 10% of d, per ray: 1e-12, 1e-9, 1e-8, 1e-6, 1e-5, 1e-9, 1e-7, 1e-10, none (spread 0.1); 1e-9, 1e-11, 1e-10, 1e-7, 1e-5, 1e-6, 1e-7, 1e-6, 1e-4 (spread 0.3).
+
+    So the default view's centre point sits in a shallow spot (it stops resolving between 1e-7 and 1e-8), while points a few pixels away resolve to 1e-9 .. 1e-12. **On the default box at its default view, expect about two decades of new detail, not the six or seven the zoom floor allows**; past a point's own floor its rays run out of steps and the picture darkens. The Menger sponge and the Kleinian resolve to 1e-12. The README says this plainly (Task 8) rather than promising a depth.
+
+3. **Diagonal fold, "only the reference reflects":** the spec's `δ'_a = δ_a + gap, δ'_b = δ_b + gap` agrees with the plan (derivation: `X'_a = −X_b`, `P'_a = P_a = X_a + δ_a`, so `δ'_a = X_a + δ_a + X_b = δ_a + gap`). Task 1's case `X = (−0.3, 0.2) → P = (−0.1, 0.4)` checks it against the direct difference, and the algebra check crosses it 152 times. The spec's sort and diagonal corrections, the cylinder's `a.xy` and the KIFS `d` slot match the plan.
+4. **The algebra check runs with no handoff** (`port.handoff = INF`): the formulas are exact at any offset size, and offsets of 1e-7 to 1e-1 grown through 20 iterations are what cross every kind of crease (each kind occurred 50 to 3,400 times). "Exactly" means iteration by iteration within `1e-12 × λ_i × max(1, |X_i|, |P_i|) + 1e-9 × |δ_i|` (round-off is about 1e-16 × λ_i; a wrong formula is off by about `|δ_i|`), and the estimate after all 32 iterations within the march's own 0.1% (up to 7e-5 was measured: the remaining iterations amplify round-off).
+5. **Test placements that differ from the spec's wording, with reasons:**
+    - `fractal_params_test`'s "0 at 1e-3": a camera 1e-3 *back* along the default ray has an estimate of about 2e-4, inside the switch (`PERT_ON × floor32 ≈ 9.5e-4`), so it perturbs. The test places the camera by its estimate at 2× and 0.5× the switch instead.
+    - `center_ray_test`'s "a hit at 1e-8": the default box's centre ray does not resolve there (finding 2), so the test uses the Kleinian, which does (measured: t/back 1.011 from the 64-bit origin).
+    - `fly_camera_test`'s deep flight is the spec's: from 1e-6 on the default box it reaches the zoom limit in about 380 ticks at an estimate of 7.8e-11, the last step 1.4e-11 per tick (measured). The 32-bit guard's own test moves to the octahedral fold, which keeps that floor.
+6. **`deep k=N` shows the records available** (`pert_iters`, 20 for most views, `n` when the eye's orbit escapes or settles sooner), as the spec says; how many each ray actually perturbs is decided on the GPU and not visible to the CPU.
+7. **Full-precision saves:** `Workspace.save_file` writes JSON with `JSON.stringify(..., "\t", false, true)` (the default keeps 15 digits). Godot's float parser is not correctly rounded: about a third of doubles come back one 64-bit ulp off (at most about 4e-15 for coordinates under 20), thousands of times below any zoom floor. In-memory capture/restore is exact; the file round-trip test allows one ulp.
+8. **Small implementation facts:** GDScript has no overloading, so the scalar march is `CenterRay.march_at(ox, oy, oz, dir, params)` and `march(origin: Vector3, ...)` calls it. Godot's `is_equal_approx` never uses a tolerance below 1e-5, so the tests compare depths with `==`. `mag` per shape: Mandelbox, the product of the sphere-fold factors and `|scale|` (`dz` without its `+ 1`s); KIFS, `|kifs_scale|^i` for every `i` regardless of bailout; Kleinian, `dr` (constant after a fixed point). `ReferenceOrbit` has three fields beyond the spec's list: `eye` (for `floor32`), `points64` and `rec64` (the 64-bit copies the algebra check reads); `PERT_MAX` lives on `ReferenceOrbit`.
+9. **Spec text left over from the previous revision** (the plan follows the decided values): "The idea in plain words" still says the handoff is at `λ_k × d ≈ 1e-2`; the viz part's tab 1 lists `pert_end` and tab 7 draws "the 1e-2 handoff line". The plan uses `pert_x` and 0.1.
+10. **Not in this plan:** the spec's second pane, `perturbation-design` ("written now, before the code"), does not exist on the branch. It is a separate `/visualize` job.
 
 ## Merge hazards (for the user)
 
@@ -91,24 +92,24 @@ While planning, the spec's numbers were checked headless against the real CPU es
 - `distance_estimator.gd`: **not touched.** `ReferenceOrbit` calls its static helpers and computes the sphere factor itself.
 - `mandelbox.gdshader`: one new function `mb_orbit` (after `mb_constant`), the Mandelbox loop in `de()` replaced by one call to it, one `#include` line, two `de(...)` → `march_de(...)` calls in `fragment()`'s loops, three `calc_normal(v, delta)` → `true_normal(v, dir * total, delta)`. Everything else is in the new `perturbation.gdshaderinc`.
 - `kifs.gdshaderinc`, `kleinian.gdshaderinc`: each loop moved into an `*_orbit` function plus a `*_distance` function. The bodies are unchanged.
-- `fractal_params.gd`: `zoom_floor(eye: Vector3)` becomes `floor32(eye: PackedFloat64Array)` (same body). New constants and functions are appended after it.
+- `fractal_params.gd`: the `NEAR_FLOOR` value; `zoom_floor(eye: Vector3)` becomes `floor32(eye: PackedFloat64Array)` (same body). New constants and functions are appended after it.
 - `fractal_view.gd`: `_push_near()`'s body, two new vars and one accessor.
 
 ## File map
 
 | file | change |
 |---|---|
-| `tests/perturbation_port.gd` (new, `class_name PerturbationPort`) | GDScript port of the shader's perturbed and direct estimates, in emulated float32 or 64-bit |
+| `tests/perturbation_port.gd` (new, `class_name PerturbationPort`) | GDScript port of the shader's perturbed (per-ray handoff) and direct estimates, in emulated float32 or 64-bit |
 | `tests/reference_orbit_draft.gd` (new in Task 1, moved to `src/fractal/reference_orbit.gd` in Task 3) | the reference orbit and its per-iteration record |
-| `tests/perturbation_test.gd` (new) | case tables, 64-bit algebra check, float32 agreement grid, the printed table |
-| `tests/surface_fixture.gd` | `surface_from`, `backed`, `save_params`, `back_for_distance`, `march64`, `variants` |
+| `tests/perturbation_test.gd` (new) | case tables, 64-bit algebra check, float32 agreement grid, the reference-floor printout |
+| `tests/surface_fixture.gd` | `surface_from`, `along`, `backed`, `save_params`, `back_for_distance`, `march64`, `variants` |
 | `src/camera/camera_state.gd` | `eye_x/y/z`, `set_eye64`, `eye64`, the transform setter keeps the doubles |
 | `src/camera/fly_camera.gd` | 64-bit step, `move_allowed(PackedFloat64Array, PackedFloat64Array)`, `SPEED_FLOOR`, `base_speed` from the 64-bit eye |
 | `src/camera/center_ray.gd` | `march_at` (scalar origin); the cache marches from `eye64` |
 | `src/workspace/workspace.gd` | eye saved and restored at full precision |
 | `src/fractal/reference_orbit.gd` (new, Task 3) | `ReferenceOrbit` |
-| `src/fractal/fractal_params.gd` | `PERT_ON`, `PERT_HANDOFF`, `ITER_FLOOR_RADIUS`, `floor32`, `pert_iters`, `floor_pert`, `floor_iter`, `zoom_floor_for`, `zoom_floor(eye64)` |
-| `src/fractal/perturbation.gdshaderinc` (new) | `pert_*` uniforms, the perturbed steps, `de_pert`, `march_de`, `calc_normal_pert`, `true_normal` |
+| `src/fractal/fractal_params.gd` | `NEAR_FLOOR` 1e-14, `PERT_ON`, `PERT_HANDOFF`, `floor32`, `pert_iters`, `floor_pert`, `zoom_floor_for`, `zoom_floor(eye64)` |
+| `src/fractal/perturbation.gdshaderinc` (new) | `pert_*` uniforms (`pert_a..d[20]`, `pert_x[21]`), `PERT_HANDOFF`, the perturbed steps, `de_pert`, `march_de`, `calc_normal_pert`, `true_normal` |
 | `src/fractal/mandelbox.gdshader`, `kifs.gdshaderinc`, `kleinian.gdshaderinc` | orbit loops take a start index; `fragment()` switch |
 | `src/fractal/fractal_view.gd` | `_push_near()` builds the orbit and pushes `pert_*`; `pert_iters()` |
 | `src/ui/console/movement_pane.gd`, `console_window.gd`, `src/main.gd` | `deep k=N` readout |
@@ -131,7 +132,7 @@ This runs before any shader work and proves the difference formulas. It has thre
 - Produces:
   - `ReferenceOrbitDraft.build(params: FractalParams, ex: float, ey: float, ez: float) -> ReferenceOrbitDraft`, consts `ITERATIONS := 32`, `PERT_MAX := 20`; fields `eye: PackedFloat64Array` (3), `distance: float`, `n: int`, `perturbable: bool`, `mag: PackedFloat64Array` (33), `points: PackedVector4Array` (33, 32-bit), `points64: PackedFloat64Array` (33 × 4), `a, b, c, d: PackedVector4Array` (20 each, 32-bit), `rec64: PackedFloat64Array` (20 × 4 slots × 4, index `(i * 4 + slot) * 4 + comp`, slot 0..3 = a..d).
   - `PerturbationPort.new(params, eye64: PackedFloat64Array, use_f32: bool)`; `de_pert(orbit, k: int, off: Array, iters: int) -> float`; `de_direct(pos: Array, iters: int) -> float`; the step functions `pert_clamp1`, `pert_clamp`, `pert_abs`, `pert_swap`, `pert_sort`, `pert_flip`, `pert_diagonal`, `pert_menger`, `pert_sphere`, `pert_cylinder`, `pert_mb_fold`; `r(x)`, `u(x)`; vars `crossings: Dictionary`, `tracing: bool`, `trace: Array`.
-  - `SurfaceFixture.surface_from(params, eye: Vector3) -> Array`, `backed(s: Array, back: float) -> PackedFloat64Array`, `save_params(path: String) -> FractalParams`, `back_for_distance(params, s: Array, target: float) -> float`, `march64(o: PackedFloat64Array, dir: Array, params, steps: int) -> Array` (`[t, hit]`), `variants() -> Array` (`[name, params, eye: Vector3, perturbable: bool]`).
+  - `SurfaceFixture.surface_from(params, eye: Vector3) -> Array`, `along(params, from: PackedFloat64Array, dir: Vector3, tol: float) -> Array`, `backed(s: Array, back: float) -> PackedFloat64Array`, `save_params(path: String) -> FractalParams`, `back_for_distance(params, s: Array, target: float) -> float`, `march64(o: PackedFloat64Array, dir: Array, params, steps: int) -> Array` (`[t, hit]`), `variants() -> Array` (`[name, params, eye: Vector3, perturbable: bool]`).
 
 #### The per-iteration record (the GPU reads this; Task 5's shader and this port must agree)
 
@@ -175,8 +176,8 @@ Box fold: `lo = −L`, `hi = L` (`L` = `fold_limit`). Hybrid iteration (`hybrid_
   both outside: `m' − m = −2 L Δr / (rr r')`; only pixel outside: `−2 (g + Δr) / r'`; only reference outside: `2 g / rr`; both inside: 0. `δ'_xy = m' δ_xy + X (m' − m)`. The z and w components take the clamp formula with gaps `a.zw`, `b.zw`. `dz` is unchanged.
 - **Linear steps:** iteration rotation, KIFS R1/R2 and twist apply to `δ` as they are (`mb_iter_rotate`, `kifs_rot1/2`, `mb_rot_plane`). Scale: `δ' = s δ` (the KIFS `−(s − 1) o` and the Kleinian shift cancel).
 - **The add** (Mandelbox): `δ' = s δ + δc`, `δc = (off.x, off.y, off.z, 0)` with each of x, y, z zeroed where the Julia flag (`julia_all` or `julia_k`) is on. `dz = dz |s| + 1` as the direct path.
-- **Bailout / fixed point:** the CPU caps `k` at `orbit.n`. KIFS: after each perturbed iteration, if `|d + δ|² > 1e6` (`d` = record `X_{i+1}`) the pixel escaped: the estimate is `kifs_distance(d + δ, i + 1)`. Kleinian: no fixed-point test inside the perturbed loop (a fixed reference is capped by `n`; the resumed loop tests as usual).
-- **Handoff:** `z = X_k + δ_k` (`pert_end`), the pixel's own `dz` (or `dr`, or KIFS `n = k`), then the ordinary loop from iteration `k` to `max(iters, k)`. The Mandelbox's resumed `c` is `mb_constant(vec4(eye + off, w))`, formed in 32 bits (its rounding is shrunk by `λ_k` like everything else).
+- **Bailout / fixed point:** the records stop at `orbit.n` (`pert_iters = min(PERT_MAX, n)`). KIFS: after perturbed iteration `i`, if `|d + δ|² > 1e6` (`d` = record `X_{i+1}`) the pixel escaped: the estimate is `kifs_distance(d + δ, i + 1)`. Kleinian: no fixed-point test inside the perturbed loop (a fixed reference is capped by `n`; the resumed loop tests as usual).
+- **Handoff, per ray:** before iteration `i` the ray keeps perturbing while `i < min(pert_iters, iters)` **and** `|δ|² < PERT_HANDOFF²` (`PERT_HANDOFF = 0.1`). At the first `h` where either fails: `z = X_h + δ_h` (`pert_x[h]`, a 32-bit sum), the pixel's own `dz` (or `dr`, or KIFS `n = h`), then the ordinary loop from iteration `h` to `iters`. A far ray (`|δ_0| = t ≥ 0.1`) hands off at `h = 0`, where `z = X_0 + δ_0 = vec4(eye + off, w)` with `dz = 1`: today's expression exactly. The Mandelbox's constant after the handoff is `mb_constant(vec4(eye + off, w))`, formed in 32 bits (about one eye-ulp of error against a `δ` of at least 0.1).
 
 - [ ] **Step 1: Add the fixture helpers to `tests/surface_fixture.gd`.** Append to the file (keep `default_surface` as it is):
 
@@ -205,6 +206,28 @@ static func surface_from(params: FractalParams, eye: Vector3) -> Array:
 		y += f.y * d
 		z += f.z * d
 	return [best[0], best[1], best[2], f.x, f.y, f.z]
+
+
+## The surface point along unit `dir` from the 64-bit point `from`: marched in
+## 64-bit until the 32-iteration estimate is under `tol`, keeping the closest
+## point reached if round-off stalls it first. Returns [x, y, z, dx, dy, dz, estimate].
+static func along(params: FractalParams, from: PackedFloat64Array, dir: Vector3, tol: float) -> Array:
+	var x: float = from[0]
+	var y: float = from[1]
+	var z: float = from[2]
+	var best := [x, y, z]
+	var best_d := INF
+	for _i in 4000:
+		var d := DistanceEstimator.estimate_at(x, y, z, params)
+		if d < best_d:
+			best_d = d
+			best = [x, y, z]
+		if d < tol:
+			break
+		x += dir.x * d
+		y += dir.y * d
+		z += dir.z * d
+	return [best[0], best[1], best[2], dir.x, dir.y, dir.z, best_d]
 
 
 ## The camera `back` short of the surface point s along its ray, in 64-bit.
@@ -313,9 +336,11 @@ extends "res://tests/test_case.gd"
 ##    difference, iteration by iteration, for every shape variant, over random
 ##    offsets big enough to cross every kind of crease;
 ## 3. the march in emulated float32, the spec's table: the direct float32 march
-##    gets under 30% of rays right at 1e-6 (today's failure), the perturbed one at
-##    least 90% at every depth, wherever the 64-bit reference itself resolves the
-##    surface. Prints the table (lines start with MEASURED) for the viz's Measured tab.
+##    gets under 30% of rays right at 1e-6 (today's failure), the perturbed one
+##    (per-ray handoff at PERT_HANDOFF) at least 90% at every depth. Prints the
+##    table (lines start with MEASURED) for the viz's Measured tab;
+## 4. where the 64-bit reference march itself stops hitting, per fixture, down to
+##    1e-12 (lines start with REFERENCE FLOOR): data for the iteration-floor follow-up.
 
 const DEPTHS := [1e-5, 1e-6, 1e-7]
 ## The march budget: the shader's default 96 + 32, every step at 32 iterations.
@@ -325,11 +350,6 @@ const STEPS := 128
 const AGREE_T := 1e-3
 ## Random offsets per shape variant in the algebra check.
 const SAMPLES := 48
-## Spec findings 1: the 32-iteration estimate bottoms out near this radius over λ_32.
-## Spec findings 15: hand off once mag[k] × near reaches this.
-## (Task 4 moves both to FractalParams and the helpers that use them to FractalParams.)
-const ITER_FLOOR_RADIUS := 0.25
-const PERT_HANDOFF := 0.1
 
 
 func run() -> void:
@@ -464,14 +484,20 @@ extends RefCounted
 ## code in 64-bit: the algebra check.
 ##
 ## 4-vectors are Arrays of four floats. `orbit` is the reference orbit (its
-## a, b, c, d, points, rec64, points64) and `k` its pert_iters: together they
-## stand for the pert_* uniforms. Octahedral folds and the polyfold are not
+## a, b, c, d, points, rec64, points64) and `k` its pert_iters (the records
+## available, min(PERT_MAX, n)): together they stand for the pert_* uniforms
+## (orbit.points[0 .. PERT_MAX] is pert_x). Octahedral folds and the polyfold are not
 ## ported (they are never perturbed).
 
 const PLANES := DistanceEstimator.PLANES
+## The shader's PERT_HANDOFF (perturbation.gdshaderinc): a ray hands off once |dl| reaches it.
+const PERT_HANDOFF := 0.1
 
 var f32 := true
 var params: FractalParams
+## The handoff radius de_pert uses: PERT_HANDOFF, or INF for the algebra check
+## (the formulas are exact at any size, and large offsets exercise every crossing).
+var handoff := PERT_HANDOFF
 ## The shader's `eye` uniform: the 64-bit eye, rounded when f32.
 var eye: Array = [0.0, 0.0, 0.0]
 ## How many times the pixel and the reference fell on different sides of a
@@ -543,7 +569,7 @@ func rec(orbit, i: int, slot: int) -> Array:
 	return [orbit.rec64[base], orbit.rec64[base + 1], orbit.rec64[base + 2], orbit.rec64[base + 3]]
 
 
-## X_i (pert_end is X_k).
+## X_i (pert_x[i]).
 func point(orbit, i: int) -> Array:
 	if f32:
 		var v: Vector4 = orbit.points[i]
@@ -954,20 +980,29 @@ func pert_mb_fold(dl: Array, ra: Array, rb: Array, gr: float, i: int) -> Array:
 
 # ------------------------------------------------------------- de_pert
 
-## de_pert(off, iters): the estimate at eye + off without forming that sum. k
-## perturbed iterations from the record, then the ordinary loop from X_k + dl
-## up to max(iters, k). No noise (the tests have none).
+## de_pert(off, iters): the estimate at eye + off without forming that sum for the
+## orbit. A ray runs the perturbed step while i < min(k, iters) and |dl|^2 <
+## handoff^2; at the first i = h where either fails it hands off: z = X_h + dl
+## (pert_x[h]) and the ordinary loop runs from h to iters. A far ray (|off| >=
+## handoff) hands off at h = 0, where z = eye + off: today's expression. No noise
+## (the tests have none).
 func de_pert(orbit, k: int, off: Array, iters: int) -> float:
 	var dl := [r(off[0]), r(off[1]), r(off[2]), 0.0]
 	var p := [r(eye[0] + dl[0]), r(eye[1] + dl[1]), r(eye[2] + dl[2])]
+	var lim := mini(k, iters)
 	if params.shape == FractalParams.Shape.KIFS:
-		return de_pert_kifs(orbit, k, dl, iters)
+		return de_pert_kifs(orbit, lim, dl, iters)
 	if params.shape == FractalParams.Shape.KLEINIAN:
-		return de_pert_kleinian(orbit, k, dl, iters)
-	return de_pert_mandelbox(orbit, k, dl, p, iters)
+		return de_pert_kleinian(orbit, lim, dl, iters)
+	return de_pert_mandelbox(orbit, lim, dl, p, iters)
 
 
-func de_pert_mandelbox(orbit, k: int, dl: Array, p: Array, iters: int) -> float:
+## The shader's loop test: stop perturbing once |dl|^2 reaches PERT_HANDOFF^2.
+func _handed_off(dl: Array) -> bool:
+	return dot4(dl, dl) >= r(u(handoff) * u(handoff))
+
+
+func de_pert_mandelbox(orbit, lim: int, dl: Array, p: Array, iters: int) -> float:
 	var j := params.julia_all
 	var dc := [0.0 if (j or params.julia_0) else dl[0], 0.0 if (j or params.julia_1) else dl[1],
 		0.0 if (j or params.julia_2) else dl[2], 0.0]
@@ -975,7 +1010,10 @@ func de_pert_mandelbox(orbit, k: int, dl: Array, p: Array, iters: int) -> float:
 	var fr2 := maxf(r(u(params.fixed_radius) * u(params.fixed_radius)), u(1e-12))
 	var dz := 1.0
 	var rotating := mb_rotating()
-	for i in k:
+	var h := 0
+	for i in lim:
+		if _handed_off(dl):
+			break
 		var ra := rec(orbit, i, 0)
 		var rb := rec(orbit, i, 1)
 		var rc := rec(orbit, i, 2)
@@ -997,20 +1035,24 @@ func de_pert_mandelbox(orbit, k: int, dl: Array, p: Array, iters: int) -> float:
 		dz = r(r(dz * absf(s)) + 1.0)
 		if tracing:
 			trace.append(dl.duplicate())
-	var z := add4(point(orbit, k), dl)
+		h = i + 1
+	var z := add4(point(orbit, h), dl)
 	var c := mb_constant([p[0], p[1], p[2], u(params.w)])
-	var res := mb_orbit(z, dz, c, k, maxi(iters, k))
+	var res := mb_orbit(z, dz, c, h, iters)
 	return r(length4(res[0]) / absf(res[1]))
 
 
-func de_pert_kifs(orbit, k: int, dl: Array, iters: int) -> float:
+func de_pert_kifs(orbit, lim: int, dl: Array, iters: int) -> float:
 	var s := u(params.kifs_scale)
 	var oz := u(params.kifs_offset_2)
 	var t := r(oz * r(s - 1.0))
 	var rot1 := kifs_rot_on(0)
 	var rot2 := kifs_rot_on(1)
 	var n := 0
-	for i in k:
+	var h := 0
+	for i in lim:
+		if _handed_off(dl):
+			break
 		if rot1:
 			dl = kifs_rot(dl, 0)
 		if params.kifs_fold == KifsEstimator.FoldSet.DIAGONAL:
@@ -1027,24 +1069,29 @@ func de_pert_kifs(orbit, k: int, dl: Array, iters: int) -> float:
 		if tracing:
 			trace.append(dl.duplicate())
 		n = i + 1
+		h = i + 1
 		var zi := add4(rec(orbit, i, 3), dl)
 		if dot4(zi, zi) > 1.0e6:
 			return kifs_distance(zi, n)
-	var res := kifs_orbit(add4(point(orbit, k), dl), n, k, maxi(iters, k))
+	var res := kifs_orbit(add4(point(orbit, h), dl), n, h, iters)
 	return kifs_distance(res[0], res[1])
 
 
-func de_pert_kleinian(orbit, k: int, dl: Array, iters: int) -> float:
+func de_pert_kleinian(orbit, lim: int, dl: Array, iters: int) -> float:
 	var kk := r(u(params.kleinian_radius) * u(params.kleinian_radius))
 	var dr := 1.0
-	for i in k:
+	var h := 0
+	for i in lim:
+		if _handed_off(dl):
+			break
 		dl = pert_clamp(dl, rec(orbit, i, 0), rec(orbit, i, 1), "clamp")
 		var sf := pert_sphere(dl, dr, rec(orbit, i, 2), 1.0e30, rec(orbit, i, 3)[0], kk, kk, "inversion")
 		dl = sf[0]
 		dr = sf[1]
 		if tracing:
 			trace.append(dl.duplicate())
-	var res := kleinian_orbit(add4(point(orbit, k), dl), dr, k, maxi(iters, k))
+		h = i + 1
+	var res := kleinian_orbit(add4(point(orbit, h), dl), dr, h, iters)
 	return kleinian_distance(res[0], res[1])
 ```
 
@@ -1075,6 +1122,7 @@ func _check_algebra() -> void:
 		var X := ReferenceOrbitDraft.build(params, e[0], e[1], e[2])
 		var k := mini(ReferenceOrbitDraft.PERT_MAX, X.n)
 		var port := PerturbationPort.new(params, e, false)
+		port.handoff = INF   # perturb all k iterations however large the offset grows
 		var worst := 0.0
 		var worst_de := 0.0
 		for _j in SAMPLES:
@@ -1144,7 +1192,8 @@ extends RefCounted
 ##   orbit.distance   # == DistanceEstimator.estimate_at(ex, ey, ez, params), exactly
 ##   orbit.n          # iterations run before a KIFS bailout or a Kleinian fixed point (32 otherwise)
 ##   orbit.mag        # λ_0 .. λ_32 (λ_0 = 1): how much the orbit has magnified after i iterations
-##   orbit.points     # X_0 .. X_32 as 32-bit Vector4s (X_k is the handoff point, pert_end)
+##   orbit.points     # X_0 .. X_32 as 32-bit Vector4s (the first PERT_MAX + 1 are pushed as
+##                    # pert_x: the point a ray hands off to after i perturbed iterations)
 ##   orbit.a, .b, .c, .d   # the record, PERT_MAX Vector4s each (layout: see the shader's header)
 ##   orbit.perturbable     # false for the octahedral fold, the polyfold and the Mandelbulb
 ##
@@ -1320,7 +1369,7 @@ func _kifs(params: FractalParams, px: float, py: float, pz: float) -> void:
 	n = 0
 	var escaped := false
 	for i in ITERATIONS:
-		# |s|^i whatever the bailout: floor_iter asks what 32 iterations magnify
+		# |s|^i whatever the bailout: mag says what i iterations magnify, not when this orbit escaped
 		mag[i + 1] = pow(absf(s), i + 1)
 		if escaped:
 			_set_point(i + 1, p)
@@ -1486,7 +1535,7 @@ func _pack() -> void:
 
 - [ ] **Step 9: Run, expect PASS** (`--import` first: a new `class_name`). The algebra check prints `crossings by shape: {...}`. If a coverage check fails (a kind never crossed), widen the offsets to `rng.randf_range(-7.0, 0.0)` or raise `SAMPLES` to 96; never drop a kind from `want`. If an iteration check fails, print that variant's first failing iteration and step kind and fix the port's formula there.
 
-- [ ] **Step 10: Add the agreement grid.** In `run()`, after `_check_algebra()`, add `_check_agreement()`, and append:
+- [ ] **Step 10: Add the agreement grid and the reference-floor printout.** In `run()`, after `_check_algebra()`, add `_check_agreement()` and `_print_reference_floor()`, and append:
 
 ```gdscript
 # ------------------------------------------------------------- 3. the march in float32
@@ -1569,13 +1618,9 @@ func _agree(got: Array, want: Array) -> bool:
 	return got[0] == want[0] and (got[0] != 0 or absf(got[1] - want[1]) <= AGREE_T * want[1])
 
 
-## Task 4 replaces these three with FractalParams.pert_iters / floor_pert / floor_iter.
-func _handoff(orbit, near: float) -> int:
-	var top := mini(ReferenceOrbitDraft.PERT_MAX, orbit.n)
-	for k in range(1, top + 1):
-		if orbit.mag[k] * near >= PERT_HANDOFF:
-			return k
-	return top
+## Task 4 replaces these two with FractalParams.pert_iters / floor_pert.
+func _records(orbit) -> int:
+	return mini(ReferenceOrbitDraft.PERT_MAX, orbit.n)
 
 
 func _floor_pert(orbit, params: FractalParams) -> float:
@@ -1586,17 +1631,12 @@ func _floor_pert(orbit, params: FractalParams) -> float:
 	return FractalParams.ulp32(m) / (FractalParams.ZOOM_FLOOR_DIVISOR * eps * orbit.mag[kk])
 
 
-func _floor_iter(orbit, params: FractalParams) -> float:
-	if params.shape == FractalParams.Shape.KLEINIAN:
-		return 0.0
-	return ITER_FLOOR_RADIUS / (params.precision / params.detail * orbit.mag[ReferenceOrbitDraft.ITERATIONS])
-
-
-## A cell is checked when the 64-bit reference hits on at least half its rays:
-## below a fixture's 32-iteration floor (the terraces at 1e-6) every reference ray
-## runs out of steps, and "agreeing" on that says nothing.
+## The perturbed march must agree on at least 90% at every cell. The direct one's
+## "under 30%" is checked at 1e-6 where the reference hits on at least half the
+## rays: below a fixture's 32-iteration floor (the terraces at 1e-6) every ray of
+## every march runs out of steps, and the direct march "agrees" on that trivially.
 func _check_agreement() -> void:
-	print("MEASURED | fixture | d | near | k | floor_pert | floor_iter | reference hit/beyond/none | direct agrees | perturbed agrees | checked")
+	print("MEASURED | fixture | d | near | records | floor_pert | reference hit/beyond/none | direct agrees | perturbed agrees")
 	for fx in _fixtures():
 		var name: String = fx[0]
 		var params: FractalParams = fx[1]
@@ -1607,9 +1647,8 @@ func _check_agreement() -> void:
 			var e := SurfaceFixture.backed(s, d)
 			var orbit := ReferenceOrbitDraft.build(params, e[0], e[1], e[2])
 			var near := orbit.distance
-			var k := _handoff(orbit, near)
+			var k := _records(orbit)
 			var fp := _floor_pert(orbit, params)
-			var fi := _floor_iter(orbit, params)
 			var port := PerturbationPort.new(params, e, true)
 			var classes := [0, 0, 0]
 			var direct := 0
@@ -1621,17 +1660,90 @@ func _check_agreement() -> void:
 					direct += 1
 				if _agree(_march_pert(port, orbit, k, dir, params, d), want):
 					pert += 1
-			var checked: bool = classes[0] * 2 >= fan.size()
-			print("MEASURED | %s | %s | %s | %d | %s | %s | %d/%d/%d | %d%% | %d%% | %s" % [name, d, near, k, fp, fi,
-				classes[0], classes[1], classes[2], direct * 100 / fan.size(), pert * 100 / fan.size(), checked])
+			print("MEASURED | %s | %s | %s | %d | %s | %d/%d/%d | %d%% | %d%%" % [name, d, near, k, fp,
+				classes[0], classes[1], classes[2], direct * 100 / fan.size(), pert * 100 / fan.size()])
 			# exact comparison: is_equal_approx's tolerance never falls below 1e-5, so it
 			# would call 1e-5, 1e-6 and 1e-7 all equal
-			if d == 1e-6 and checked:
+			if d == 1e-6 and classes[0] * 2 >= fan.size():
 				check(direct * 10 < fan.size() * 3,
 					"%s at 1e-6: today's float32 march gets under 30%% right (%d of %d)" % [name, direct, fan.size()])
-			if checked:
-				check(pert * 10 >= fan.size() * 9,
-					"%s at %s (k %d): the perturbed float32 march gets at least 90%% right (%d of %d)" % [name, d, k, pert, fan.size()])
+			check(pert * 10 >= fan.size() * 9,
+				"%s at %s: the perturbed float32 march gets at least 90%% right (%d of %d)" % [name, d, pert, fan.size()])
+
+
+# ------------------------------------------------------------- 4. where the reference stops hitting
+
+## A 64-bit march: [class, t] as _march_ref, with a step budget of its own.
+func _march_budget(o: PackedFloat64Array, dir: Array, params: FractalParams, d: float, steps: int) -> Array:
+	var eps := params.precision / params.detail
+	var t := 0.0
+	for _i in steps:
+		var de := DistanceEstimator.estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
+		if de < eps * t:
+			return [0, t]
+		t += de
+		if t > 10.0 * d:
+			return [1, t]
+	return [2, t]
+
+
+## Where 32 iterations stop resolving, measured rather than guarded (the spec's
+## part 5). Everything here is the 64-bit CPU estimator: no float32, no
+## perturbation. Hit test estimate < eps × t, eps = precision / detail (the
+## fixtures have detail 1 and no falloff, so `near` plays no part and nothing is
+## clamped); 32 iterations every step; a step budget of 128 (the shader's
+## default) and of 2000 (to tell "out of budget" from "never converges"). Two
+## views of it, because the floor depends on where the camera is:
+##   FAN: each fixture's surface point (refined along its ray until the estimate
+##     is under 1e-13, or as low as round-off lets it go), the 27-ray fan from a
+##     camera d back: hits within 128 / within 2000 steps.
+##   VIEW9: the default box, 9 rays near the middle of the default view (a 3 × 3
+##     grid at 0.1 and at 0.3 of the half field of view), each backed off d from
+##     its own hit: the deepest d (down from 1e-4) at which that ray still hits
+##     within 10% of d.
+func _print_reference_floor() -> void:
+	var depths := [1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12]
+	print("REFERENCE FLOOR | 64-bit march, hit when estimate < eps*t (eps = precision/detail), 32 iterations, near unused (detail falloff 0), budgets 128 / 2000 steps")
+	for fx in _fixtures():
+		var params: FractalParams = fx[1]
+		var s0: Array = fx[2]
+		var s := SurfaceFixture.along(params, SurfaceFixture.backed(s0, 1e-3), Vector3(s0[3], s0[4], s0[5]), 1e-13)
+		var e0 := PackedFloat64Array([s[0], s[1], s[2]])
+		var line := "REFERENCE FLOOR | FAN %s (surface estimate %s, eps %s) |" % [fx[0],
+			DistanceEstimator.estimate_at(s[0], s[1], s[2], params), params.precision / params.detail]
+		var fan := _fan(Vector3(s[3], s[4], s[5]))
+		for dd in depths:
+			var d: float = dd
+			var e := SurfaceFixture.backed(s, d)
+			var h128 := 0
+			var h2000 := 0
+			for dir in fan:
+				if _march_budget(e, dir, params, d, 128)[0] == 0:
+					h128 += 1
+				if _march_budget(e, dir, params, d, 2000)[0] == 0:
+					h2000 += 1
+			line += " %s: %d / %d |" % [d, h128, h2000]
+		print(line)
+	var box := FractalParams.new()
+	var cam := CameraState.make_default()
+	var ce := PackedFloat64Array([cam.eye().x, cam.eye().y, cam.eye().z])   # (eye64() arrives in Task 2)
+	for spread in [0.1, 0.3]:
+		var deepest := []
+		for ia in [-1, 0, 1]:
+			for ib in [-1, 0, 1]:
+				var dir: Vector3 = (cam.forward() + cam.right() * (ia * spread * 1.6 * FractalView.TAN_HALF_FOV)
+					+ cam.up() * (ib * spread * FractalView.TAN_HALF_FOV)).normalized()
+				var sp := SurfaceFixture.along(box, ce, dir, 1e-13)
+				var last := "none"
+				for dd in depths:
+					var d: float = dd
+					var r := _march_budget(SurfaceFixture.backed(sp, d), [sp[3], sp[4], sp[5]], box, d, 128)
+					if r[0] == 0 and absf(r[1] / d - 1.0) < 0.1:
+						last = str(d)
+					else:
+						break
+				deepest.append(last)
+		print("REFERENCE FLOOR | VIEW9 default box, spread %s of the half field: deepest d that still hits within 10%%, per ray: %s" % [spread, deepest])
 ```
 
 - [ ] **Step 11: Run, expect PASS.** It takes about a minute (about 2,000 emulated-float32 marches). Measured while planning, with this exact code: the algebra check passes on all 14 perturbable variants and every crossing kind occurs (clamp about 3,400 times, sphere 154, cylinder 50, abs 431, sort 184/177, menger 236, diagonal 149/152, Kleinian 111/111); perturbed 100% in every cell; direct at 1e-6 0% (default box), 11% (ice field), 0% (Menger), 0% (Kleinian); the terraces at 1e-6 and 1e-7 and the default box at 1e-7 are unchecked (the reference hits on 0, 0 and 11 of 27 rays: below their 32-iteration floors). **If a checked cell scores under 90%, stop and report it** (fixture, depth, k, the MEASURED line): it is a finding about the method, not a threshold to loosen.
@@ -1647,11 +1759,11 @@ git -C $WT commit -m "test(perturbation): a float32 port of the perturbed step p
 ### Task 2: The 64-bit eye
 
 **Files:**
-- Modify: `src/camera/camera_state.gd`, `src/camera/fly_camera.gd` (the step only), `src/camera/center_ray.gd`, `src/workspace/workspace.gd`
-- Test: `tests/camera_state_test.gd`, `tests/workspace_test.gd`, `tests/center_ray_test.gd`, `tests/fly_camera_test.gd`
+- Modify: `src/camera/camera_state.gd`, `src/camera/fly_camera.gd` (the step only), `src/camera/center_ray.gd`, `src/workspace/workspace.gd`, `src/fractal/fractal_params.gd` (`NEAR_FLOOR` only), `src/fractal/fractal_view.gd` (`_push_near`'s estimate only)
+- Test: `tests/camera_state_test.gd`, `tests/workspace_test.gd`, `tests/center_ray_test.gd`, `tests/fly_camera_test.gd`, `tests/fractal_params_test.gd`, `tests/fractal_view_test.gd`
 
 **Interfaces:**
-- Produces: `CameraState.eye_x/eye_y/eye_z: float` (exported), `CameraState.set_eye64(x: float, y: float, z: float) -> void`, `CameraState.eye64() -> PackedFloat64Array`; `CenterRay.march_at(ox: float, oy: float, oz: float, dir: Vector3, params: FractalParams) -> Array` (`[t, hit]` as `march`).
+- Produces: `CameraState.eye_x/eye_y/eye_z: float` (exported), `CameraState.set_eye64(x: float, y: float, z: float) -> void`, `CameraState.eye64() -> PackedFloat64Array`; `CenterRay.march_at(ox: float, oy: float, oz: float, dir: Vector3, params: FractalParams) -> Array` (`[t, hit]` as `march`); `FractalParams.NEAR_FLOOR = 1e-14` (was 1e-6: it clamps `near` in `_push_near`, `hit_epsilon` and the centre ray, and at 1e-6 the level of detail, the fog, `coarse_iters` and the switch-on rule would stop following the camera exactly where perturbation starts; it only ever guarded against a zero).
 - `eye()` still returns `transform.origin` (the rounded shadow) for every 32-bit consumer. `FlyCamera.move_allowed` keeps its `Vector3` signature until Task 6.
 
 - [ ] **Step 1: Failing tests.**
@@ -1736,28 +1848,48 @@ func _deep_eye() -> void:
 
 ```gdscript
 	# --- the 64-bit march: march() is march_at() on the same origin, and from
-	# 3e-7 short of the surface only a 64-bit origin hits (measured while
-	# planning: t/back 1.001 from the 64-bit origin; the 32-bit-rounded origin
-	# misses, t/back 1.143) ---
+	# 1e-8 short of the Kleinian's surface (which resolves far below that) only a
+	# 64-bit origin hits (measured while planning: t/back 1.011 from the 64-bit
+	# origin; a 32-bit origin there is about 1e-7 off, ten times the distance) ---
 	var e := CameraState.make_default().eye()
 	var f0 := CameraState.make_default().forward()
 	check_eq(CenterRay.march_at(e.x, e.y, e.z, f0, params), CenterRay.march(e, f0, params),
 		"march() is march_at() on the same origin")
-	var sf := SurfaceFixture.default_surface(params)
+	var klp := FractalParams.new()
+	klp.shape = FractalParams.Shape.KLEINIAN
+	var sf := SurfaceFixture.surface_from(klp, Vector3(2.5, 1.6, 1.2))
 	var sdir := Vector3(sf[3], sf[4], sf[5])
-	var o := SurfaceFixture.backed(sf, 3e-7)
-	var r64 := CenterRay.march_at(o[0], o[1], o[2], sdir, params)
-	check(r64[1] and absf(r64[0] / 3e-7 - 1.0) < 0.01,
-		"from 3e-7 the 64-bit origin hits at about 3e-7 (hit %s, t/back %s)" % [r64[1], r64[0] / 3e-7])
-	var r32 := CenterRay.march(Vector3(o[0], o[1], o[2]), sdir, params)
-	check(not r32[1] or absf(r32[0] / 3e-7 - 1.0) > 0.05,
-		"the same ray from the 32-bit-rounded origin does not (hit %s, t/back %s)" % [r32[1], r32[0] / 3e-7])
-	var deep_cam := CameraState.make_default()
+	var o := SurfaceFixture.backed(sf, 1e-8)
+	var r64 := CenterRay.march_at(o[0], o[1], o[2], sdir, klp)
+	check(r64[1] and absf(r64[0] / 1e-8 - 1.0) < 0.05,
+		"from 1e-8 the 64-bit origin hits at about 1e-8 (hit %s, t/back %s)" % [r64[1], r64[0] / 1e-8])
+	var r32 := CenterRay.march(Vector3(o[0], o[1], o[2]), sdir, klp)
+	check(not r32[1] or absf(r32[0] / 1e-8 - 1.0) > 0.05,
+		"the same ray from the 32-bit-rounded origin does not (hit %s, t/back %s)" % [r32[1], r32[0] / 1e-8])
+	var deep_cam := CameraState.new()
+	deep_cam.transform = Transform3D(Basis.IDENTITY, Vector3(o[0], o[1], o[2])).looking_at(Vector3(o[0], o[1], o[2]) + sdir, Vector3(0, 0, 1))
 	deep_cam.set_eye64(o[0], o[1], o[2])
-	check_eq(CenterRay.new(params, deep_cam).distance(), r64[0], "the cached ray marches from the 64-bit eye")
+	var cached := CenterRay.new(klp, deep_cam).distance()
+	check(absf(cached / r64[0] - 1.0) < 0.01, "the cached ray marches from the 64-bit eye (%s against %s)" % [cached, r64[0]])
 ```
 
-(The fixture's direction is the default camera's forward, so `deep_cam` looks along `sdir`.)
+(`deep_cam`'s forward is `sdir` up to 32-bit rounding of the basis, hence 1% rather than equality.)
+
+`tests/fractal_params_test.gd`, append to `run()`: `check_eq(FractalParams.NEAR_FLOOR, 1e-14, "near is clamped only against a zero (1e-14), not at 1e-6")`.
+
+`tests/fractal_view_test.gd`, after the line `check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and the probe's lighting")`, insert:
+
+```gdscript
+	# near_dist follows the camera below 1e-6: measured from the 64-bit eye, clamped only at 1e-14
+	var snear := SurfaceFixture.default_surface(params)
+	var enear := SurfaceFixture.backed(snear, 1e-8)
+	cam.set_eye64(enear[0], enear[1], enear[2])
+	var dnear := DistanceEstimator.estimate_at(enear[0], enear[1], enear[2], params)
+	check_eq(float(mat.get_shader_parameter("near_dist")), maxf(dnear, FractalParams.NEAR_FLOOR),
+		"a camera 1e-8 short of the surface pushes its own distance (%s)" % dnear)
+	check(float(mat.get_shader_parameter("near_dist")) < 1e-7, "not the old 1e-6 clamp")
+	cam.transform = home   # back from the 1e-8 camera
+```
 
 `tests/fly_camera_test.gd`, insert after the block `# --- the physics step really moves by speed x dt ...` (after `cam.transform = CameraState.make_default().transform`):
 
@@ -1782,7 +1914,7 @@ func _deep_eye() -> void:
 	cam.transform = CameraState.make_default().transform
 ```
 
-- [ ] **Step 2: Run the four tests, expect FAIL** (`set_eye64`, `eye64`, `march_at` not found).
+- [ ] **Step 2: Run the six tests, expect FAIL** (`set_eye64`, `eye64`, `march_at` not found; `NEAR_FLOOR` is 1e-6).
 
 - [ ] **Step 3: Implement `CameraState`.** Replace the file body (keep the header comment, add a paragraph):
 
@@ -1922,6 +2054,15 @@ static func march_at(ox: float, oy: float, oz: float, dir: Vector3, params: Frac
 
 (Delete the old `march(origin, dir, params)` body; `_box_intersect` is unchanged.)
 
+- [ ] **Step 5b: `NEAR_FLOOR` and the view's estimate.** In `fractal_params.gd`: `const NEAR_FLOOR := 1e-14   # only guards against a zero: near must follow the camera below 1e-6`. In `fractal_view.gd` `_push_near()`, measure from the 64-bit eye (Task 5 replaces this line again with the reference orbit's distance):
+
+```gdscript
+	var e := _camera.eye64()
+	var near := maxf(DistanceEstimator.estimate_at(e[0], e[1], e[2], _params), FractalParams.NEAR_FLOOR)
+```
+
+At the default view the eye's doubles are its 32-bit origin, so `near_dist` there is bit-for-bit what it was.
+
 - [ ] **Step 6: Implement the full-precision save.** In `workspace.gd`:
   - `capture`: `"eye": _eye_to_array(camera),` with
 
@@ -1968,13 +2109,13 @@ static func _array_to_doubles(raw: Variant) -> Variant:
 
   - Update the file's header comment: the eye is written at full precision; `forward` and `up` keep 7 significant figures.
 
-- [ ] **Step 7: Run the four tests, then the suite.** `$WT/tests/run_all.sh; echo exit=$?`: everything passes (`deep_zoom_test` unchanged; the centre ray now marches in 64-bit, which shifts the fixture's starting hit by round-off only).
+- [ ] **Step 7: Run the six tests, then the suite.** `$WT/tests/run_all.sh; echo exit=$?`: everything passes (`deep_zoom_test` unchanged; the centre ray now marches in 64-bit, which shifts the fixture's starting hit by round-off only).
 
 - [ ] **Step 8: Commit.**
 
 ```bash
-git -C $WT add src/camera/camera_state.gd src/camera/fly_camera.gd src/camera/center_ray.gd src/workspace/workspace.gd tests/camera_state_test.gd tests/workspace_test.gd tests/center_ray_test.gd tests/fly_camera_test.gd
-git -C $WT commit -m "feat(camera): a 64-bit eye for the fly step, the centre ray and saves" -m "CameraState keeps eye_x/y/z as the truth and the transform's origin as their rounded shadow; eye() is unchanged for every 32-bit consumer. CenterRay.march_at marches from a scalar origin. Saves write the eye at full precision (JSON full_precision); saves/default.json loads to the same transform." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git -C $WT add src/camera/camera_state.gd src/camera/fly_camera.gd src/camera/center_ray.gd src/workspace/workspace.gd src/fractal/fractal_params.gd src/fractal/fractal_view.gd tests/camera_state_test.gd tests/workspace_test.gd tests/center_ray_test.gd tests/fly_camera_test.gd tests/fractal_params_test.gd tests/fractal_view_test.gd
+git -C $WT commit -m "feat(camera): a 64-bit eye for the fly step, the centre ray and saves" -m "CameraState keeps eye_x/y/z as the truth and the transform's origin as their rounded shadow; eye() is unchanged for every 32-bit consumer. CenterRay.march_at marches from a scalar origin. Saves write the eye at full precision (JSON full_precision); saves/default.json loads to the same transform. NEAR_FLOOR drops to 1e-14 and near_dist is measured from the 64-bit eye, so a camera 1e-8 from the surface sees its own distance." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ### Task 3: `ReferenceOrbit`
@@ -2036,7 +2177,7 @@ func run() -> void:
 	kifs.shape = FractalParams.Shape.KIFS
 	var ko := ReferenceOrbit.build(kifs, 3.2, 2.4, 1.9)
 	check(ko.n < 32, "a KIFS eye outside the sponge escapes early (n %d)" % ko.n)
-	check_eq(ko.mag[32], pow(3.0, 32), "and its mag is |scale|^i regardless (floor_iter reads mag[32])")
+	check_eq(ko.mag[32], pow(3.0, 32), "and its mag is |scale|^i regardless of the escape")
 
 	# record spot checks, default box at its surface (fold order 0, box fold)
 	var s := SurfaceFixture.default_surface(box)
@@ -2086,7 +2227,7 @@ git -C $WT commit -m "feat(fractal): ReferenceOrbit, the camera's 64-bit orbit a
 
 (`git mv` already staged the removal of the draft paths.)
 
-### Task 4: `FractalParams.pert_iters` and the two floors
+### Task 4: `FractalParams.pert_iters` and the zoom floor
 
 **Files:**
 - Modify: `src/fractal/fractal_params.gd`, `src/camera/fly_camera.gd` (one call), `tests/perturbation_test.gd`
@@ -2094,7 +2235,7 @@ git -C $WT commit -m "feat(fractal): ReferenceOrbit, the camera's 64-bit orbit a
 
 **Interfaces:**
 - Consumes: `ReferenceOrbit` (Task 3).
-- Produces: `FractalParams.PERT_ON := 10.0`, `PERT_HANDOFF := 0.1`, `ITER_FLOOR_RADIUS := 0.25`; `func floor32(eye: PackedFloat64Array) -> float`; `func pert_iters(orbit: ReferenceOrbit, near: float) -> int`; `func floor_pert(orbit: ReferenceOrbit) -> float`; `func floor_iter(orbit: ReferenceOrbit) -> float`; `func zoom_floor_for(orbit: ReferenceOrbit) -> float`; `func zoom_floor(eye: PackedFloat64Array) -> float` (replaces `zoom_floor(eye: Vector3)`).
+- Produces: `FractalParams.PERT_ON := 10.0`, `PERT_HANDOFF := 0.1` (the CPU's record of the shader's handoff radius; nothing on the CPU computes with it, Task 5's shader_test checks the shader's const equals it); `func floor32(eye: PackedFloat64Array) -> float`; `func pert_iters(orbit: ReferenceOrbit, near: float) -> int` (0, or `min(PERT_MAX, orbit.n)`); `func floor_pert(orbit: ReferenceOrbit) -> float`; `func zoom_floor_for(orbit: ReferenceOrbit) -> float`; `func zoom_floor(eye: PackedFloat64Array) -> float` (replaces `zoom_floor(eye: Vector3)`).
 
 - [ ] **Step 1: Failing tests.**
 
@@ -2119,11 +2260,11 @@ In `tests/fractal_params_test.gd`, rewrite the existing `# zoom_floor: ...` bloc
 and add the call `_perturbation()` as the last line of `run()`, and the function:
 
 ```gdscript
-## pert_iters and the two zoom floors (ReferenceOrbit at a camera on the default
+## pert_iters and the zoom floor (ReferenceOrbit at a camera on the default
 ## view's line of sight, backed off its surface point).
 func _perturbation() -> void:
-	# pert_iters: off at the default view and above PERT_ON x floor32, on below it,
-	# rising as the camera closes in, never above PERT_MAX
+	# pert_iters: off at the default view and above PERT_ON x floor32; below it,
+	# every record the orbit has (each ray picks its own handoff on the GPU)
 	var pp := FractalParams.new()
 	var de := CameraState.DEFAULT_EYE
 	var home := ReferenceOrbit.build(pp, de.x, de.y, de.z)
@@ -2135,61 +2276,31 @@ func _perturbation() -> void:
 		var ob := ReferenceOrbit.build(pp, eb[0], eb[1], eb[2])
 		check(absf(ob.distance / (cs[0] * switch_at) - 1.0) < 0.1, "placed at %s x the switch (near %s)" % [cs[0], ob.distance])
 		check_eq(pp.pert_iters(ob, ob.distance) > 0, cs[1], "%s x the switch distance: perturbing is %s" % [cs[0], cs[1]])
-	var last := 0
-	for back in [1e-4, 1e-5, 1e-6, 1e-7]:
-		var eb := SurfaceFixture.backed(sp, back)
-		var ob := ReferenceOrbit.build(pp, eb[0], eb[1], eb[2])
-		var kk := pp.pert_iters(ob, ob.distance)
-		check(kk >= last and kk >= 1 and kk <= ReferenceOrbit.PERT_MAX, "back %s: k %d (rising, within 1..20)" % [back, kk])
-		var smallest := true
-		for j in range(1, kk):
-			smallest = smallest and ob.mag[j] * ob.distance < FractalParams.PERT_HANDOFF
-		check(smallest and (ob.mag[kk] * ob.distance >= FractalParams.PERT_HANDOFF or kk == mini(ReferenceOrbit.PERT_MAX, ob.n)),
-			"back %s: k is the smallest with mag[k] x near >= PERT_HANDOFF (or the cap)" % back)
-		last = kk
+	var e5 := SurfaceFixture.backed(sp, 1e-5)
+	var o5 := ReferenceOrbit.build(pp, e5[0], e5[1], e5[2])
+	check_eq(pp.pert_iters(o5, o5.distance), mini(ReferenceOrbit.PERT_MAX, o5.n), "1e-5 from the surface: every record, min(PERT_MAX, n) = %d" % mini(ReferenceOrbit.PERT_MAX, o5.n))
 	var kifs := FractalParams.new()
 	kifs.shape = FractalParams.Shape.KIFS
-	var ks := SurfaceFixture.surface_from(kifs, Vector3(3.2, 2.4, 1.9))
-	var ke := SurfaceFixture.backed(ks, 1e-7)
-	var ko := ReferenceOrbit.build(kifs, ke[0], ke[1], ke[2])
-	check(kifs.pert_iters(ko, ko.distance) <= ko.n, "a KIFS k never passes the eye's own bailout (n %d)" % ko.n)
+	var ko := ReferenceOrbit.build(kifs, 3.2, 2.4, 1.9)
+	check(ko.n < ReferenceOrbit.PERT_MAX, "precondition: a KIFS eye outside the sponge escapes early (n %d)" % ko.n)
+	check_eq(kifs.pert_iters(ko, 1e-9), ko.n, "and then it gets only the n records its orbit has")
 	for v in SurfaceFixture.variants():
 		if v[3]:
 			continue
 		var vs := SurfaceFixture.surface_from(v[1], v[2])
-		var vb := SurfaceFixture.backed(vs, 1e-5)
-		var vo := ReferenceOrbit.build(v[1], vb[0], vb[1], vb[2])
-		check_eq(v[1].pert_iters(vo, vo.distance), 0, "%s is never perturbed" % v[0])
-		check_eq(v[1].zoom_floor(vb), v[1].floor32(vb), "and keeps the 32-bit floor")
+		for back in [1e-3, 1e-5, 1e-7]:
+			var vb := SurfaceFixture.backed(vs, back)
+			var vo := ReferenceOrbit.build(v[1], vb[0], vb[1], vb[2])
+			check_eq(v[1].pert_iters(vo, vo.distance), 0, "%s at %s: never perturbed" % [v[0], back])
+		var v5 := SurfaceFixture.backed(vs, 1e-5)
+		check_eq(v[1].zoom_floor(v5), v[1].floor32(v5), "%s keeps today's 32-bit floor" % v[0])
 
-	# the two floors: far below the 32-bit floor on the default box (measured while
-	# planning: about 5.7e-7, against 9.5e-5), the Kleinian has no iteration floor
-	var e5 := SurfaceFixture.backed(sp, 1e-5)
-	var o5 := ReferenceOrbit.build(pp, e5[0], e5[1], e5[2])
-	check(pp.zoom_floor(e5) > 0.0 and pp.zoom_floor(e5) < pp.floor32(e5) / 50.0,
-		"the default box's zoom floor (%s) is at least 50x below the 32-bit one (%s)" % [pp.zoom_floor(e5), pp.floor32(e5)])
-	check_eq(pp.zoom_floor(e5), maxf(pp.floor_pert(o5), pp.floor_iter(o5)), "and it is the larger of the two floors")
-	var kl := FractalParams.new()
-	kl.shape = FractalParams.Shape.KLEINIAN
-	var lo := ReferenceOrbit.build(kl, 2.5, 1.6, 1.2)
-	check_eq(kl.floor_iter(lo), 0.0, "the Kleinian has no iteration floor (its estimate reaches 0 at the sheets)")
-
-	# floor_iter brackets where 32 iterations stop resolving: a 128-step 64-bit march
-	# from 10 x floor_iter hits within 1%; from floor_iter / 10 it does not
-	for v in SurfaceFixture.variants():
-		if not (v[0] in ["default box", "ice field", "terraces"]):
-			continue
-		var bp: FractalParams = v[1]
-		var bs := SurfaceFixture.surface_from(bp, v[2])
-		var be := SurfaceFixture.backed(bs, 1e-5)
-		var fi := bp.floor_iter(ReferenceOrbit.build(bp, be[0], be[1], be[2]))
-		var dir := [bs[3], bs[4], bs[5]]
-		var above := SurfaceFixture.march64(SurfaceFixture.backed(bs, 10.0 * fi), dir, bp, 128)
-		check(above[1] and absf(above[0] / (10.0 * fi) - 1.0) < 0.01,
-			"%s: from 10 x floor_iter (%s) the ray hits (t/back %s)" % [v[0], 10.0 * fi, above[0] / (10.0 * fi)])
-		var below := SurfaceFixture.march64(SurfaceFixture.backed(bs, 0.1 * fi), dir, bp, 128)
-		check(not below[1] or absf(below[0] / (0.1 * fi) - 1.0) >= 0.01,
-			"%s: from floor_iter / 10 it does not (hit %s, t/back %s)" % [v[0], below[1], below[0] / (0.1 * fi)])
+	# the zoom floor: floor_pert alone for a perturbable shape. On the default box
+	# it is far below 1e-9 (measured while planning: 3.0e-10 at 1e-5 back,
+	# 1.5e-10 at 1e-6), against today's 9.5e-5
+	check(pp.zoom_floor(e5) > 0.0 and pp.zoom_floor(e5) < 1e-9,
+		"the default box's zoom floor is below 1e-9 (%s; the 32-bit one is %s)" % [pp.zoom_floor(e5), pp.floor32(e5)])
+	check_eq(pp.zoom_floor(e5), pp.floor_pert(o5), "and it is floor_pert")
 ```
 
 In `tests/fly_camera_test.gd`, the zoom-guard test moves to the octahedral fold (a shape that keeps the 32-bit floor, so the 32-bit guard stays tested), and placements become adaptive. Replace `_place` and `_depth`, and the start of `_zoom_floor_guard` up to and including its first precondition check:
@@ -2259,36 +2370,27 @@ func floor32(eye: PackedFloat64Array) -> float:
 ## once the camera is within PERT_ON × the 32-bit floor: an order of magnitude
 ## before the 32-bit march breaks, where both agree, so there is no pop.
 const PERT_ON := 10.0
-## Hand the offset back to the ordinary loop once the view has been magnified
-## until it is this big (mag[k] × near): from there a 32-bit point is fine enough
-## for the hit threshold. Measured (tests/perturbation_test.gd's grid): 1e-2, the
-## self-similar note's figure, left four rays in 27 off by 0.15-0.5% on the default
-## box at 1e-6; 0.1 agrees everywhere for at most three more perturbed iterations.
+## The shader's handoff radius (perturbation.gdshaderinc's PERT_HANDOFF, which
+## shader_test checks against this): a ray stops perturbing once its offset from
+## the reference reaches it, where a 32-bit point is fine enough for the hit
+## threshold. Measured (tests/perturbation_test.gd's grid): at 1e-2 four rays in
+## 27 on the default box at 1e-6 landed 0.15-0.5% off; at 0.1 every cell agrees.
 const PERT_HANDOFF := 0.1
-## Inside the shape the 32-iteration estimate |z_32| / dz_32 bottoms out near this
-## radius over the magnification mag[32]: measured on the default box, the
-## ice-field and the terraces saves (|z_32| is a fraction of a unit at the
-## surface; the plan's Spec findings 1 has the table).
-const ITER_FLOOR_RADIUS := 0.25
 
 
-## How many iterations the shader perturbs for a camera whose reference orbit is
-## `orbit` and whose raw distance to the surface is `near`: 0 (off: the direct
-## march, exactly as before) when the shape is not perturbable or the camera is at
-## least PERT_ON × floor32 away; else the smallest k with mag[k] × near >=
-## PERT_HANDOFF, capped at min(PERT_MAX, orbit.n).
+## How many of the reference orbit's records the shader may use for a camera
+## whose raw distance to the surface is `near`: 0 (off: the direct march, exactly
+## as before) when the shape is not perturbable or the camera is at least
+## PERT_ON × floor32 away; else all of them, min(PERT_MAX, orbit.n). Each ray
+## decides its own handoff from the size of its offset (PERT_HANDOFF).
 func pert_iters(orbit: ReferenceOrbit, near: float) -> int:
 	if not orbit.perturbable or near >= PERT_ON * floor32(orbit.eye):
 		return 0
-	var top := mini(ReferenceOrbit.PERT_MAX, orbit.n)
-	for k in range(1, top + 1):
-		if orbit.mag[k] * near >= PERT_HANDOFF:
-			return k
-	return top
+	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
 
 
-## The perturbed march's own floor: the 32-bit floor applied at the handoff point
-## X_K (K = min(PERT_MAX, n)), where the view is mag[K] times bigger.
+## The perturbed march's own floor: the 32-bit floor applied at the last handoff
+## point X_K (K = min(PERT_MAX, n)), where the view is mag[K] times bigger.
 func floor_pert(orbit: ReferenceOrbit) -> float:
 	var k := mini(ReferenceOrbit.PERT_MAX, orbit.n)
 	var x: Vector4 = orbit.points[k]
@@ -2296,21 +2398,15 @@ func floor_pert(orbit: ReferenceOrbit) -> float:
 	return ulp32(m) / (ZOOM_FLOOR_DIVISOR * maxf(precision / detail, 1e-30) * maxf(orbit.mag[k], 1e-300))
 
 
-## Where 32 iterations stop resolving: a ray only hits where the estimate is
-## under eps × t, and the estimate cannot fall much below ITER_FLOOR_RADIUS /
-## mag[32]. 0 for the Kleinian, whose estimate reaches 0 at its sheets.
-func floor_iter(orbit: ReferenceOrbit) -> float:
-	if shape == Shape.KLEINIAN:
-		return 0.0
-	return ITER_FLOOR_RADIUS / (maxf(precision / detail, 1e-30) * maxf(orbit.mag[ReferenceOrbit.ITERATIONS], 1e-300))
-
-
-## The zoom floor for a reference orbit already built at the eye: the larger of
-## the two floors when the shape is perturbable, else the 32-bit floor.
+## The zoom floor for a reference orbit already built at the eye: floor_pert when
+## the shape is perturbable, else the 32-bit floor. Not guarded: where 32
+## iterations stop resolving (the estimate bottoms out). That depth varies by
+## orders of magnitude from point to point (tests/perturbation_test.gd prints it),
+## and past it rays run out of steps and the picture darkens; a follow-up.
 func zoom_floor_for(orbit: ReferenceOrbit) -> float:
 	if not orbit.perturbable:
 		return floor32(orbit.eye)
-	return maxf(floor_pert(orbit), floor_iter(orbit))
+	return floor_pert(orbit)
 
 
 ## How close the fly camera may come to the surface with its eye at `eye` (64-bit).
@@ -2322,16 +2418,16 @@ func zoom_floor(eye: PackedFloat64Array) -> float:
 
 - [ ] **Step 4: Keep the fly camera compiling.** In `FlyCamera.move_allowed(from: Vector3, to: Vector3)` replace `_params.zoom_floor(to)` with `_params.zoom_floor(PackedFloat64Array([to.x, to.y, to.z]))` (Task 6 makes the whole guard 64-bit).
 
-- [ ] **Step 5: The proof uses the production rule.** In `tests/perturbation_test.gd`: delete the constants `ITER_FLOOR_RADIUS` and `PERT_HANDOFF` and the helpers `_handoff`, `_floor_pert` and `_floor_iter`; in `_check_agreement` use `params.pert_iters(orbit, near)`, `params.floor_pert(orbit)` and `params.floor_iter(orbit)`.
+- [ ] **Step 5: The proof uses the production rule.** In `tests/perturbation_test.gd`: delete the helpers `_records` and `_floor_pert`; in `_check_agreement` use `params.pert_iters(orbit, near)` and `params.floor_pert(orbit)`; and add to `run()`: `check_eq(PerturbationPort.PERT_HANDOFF, FractalParams.PERT_HANDOFF, "the port hands off where FractalParams says")`.
 
-- [ ] **Step 6: Run `fractal_params_test`, `fly_camera_test`, `perturbation_test`, expect PASS.** If the floor_iter bracket fails on one fixture, report the fixture and the two `t/back` values; do not retune `ITER_FLOOR_RADIUS` without saying so in the commit (it was calibrated on exactly these three).
+- [ ] **Step 6: Run `fractal_params_test`, `fly_camera_test`, `perturbation_test`, expect PASS.**
 
 - [ ] **Step 7: Full suite and commit.**
 
 ```bash
 $WT/tests/run_all.sh; echo exit=$?
 git -C $WT add src/fractal/fractal_params.gd src/camera/fly_camera.gd tests/fractal_params_test.gd tests/fly_camera_test.gd tests/perturbation_test.gd
-git -C $WT commit -m "feat(params): pert_iters and the two zoom floors (perturbed precision, 32 iterations)" -m "zoom_floor(eye64) = max(floor_pert, floor_iter) for perturbable shapes, the old 32-bit formula (now floor32) otherwise. floor_iter's radius is 0.25, calibrated on the default box and the ice-field and terraces saves (the spec's bound_half overstated it 15-50x); the Kleinian has none. The fly guard test moves to the octahedral fold, which keeps the 32-bit floor." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git -C $WT commit -m "feat(params): pert_iters and the perturbed zoom floor" -m "pert_iters is 0 or every record the orbit has (each ray hands off on its own); zoom_floor(eye64) is floor_pert for perturbable shapes, the old 32-bit formula (now floor32) otherwise. The 32-iteration floor is not guarded (it varies by orders of magnitude from point to point; perturbation_test prints it). The fly guard test moves to the octahedral fold, which keeps the 32-bit floor." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ### Task 5: The shader and the view's pushes
@@ -2343,20 +2439,24 @@ git -C $WT commit -m "feat(params): pert_iters and the two zoom floors (perturbe
 
 **Interfaces:**
 - Consumes: `ReferenceOrbit` (Task 3), `FractalParams.pert_iters` (Task 4).
-- Produces: shader uniforms `int pert_iters`, `vec4 pert_a[20]`, `pert_b[20]`, `pert_c[20]`, `pert_d[20]`, `vec4 pert_end`; GLSL `mb_orbit(inout vec4 z, inout float dz, vec4 c, int first, int iters)`, `kifs_orbit(inout vec4 p, inout int n, int first, int iters)`, `kifs_distance(vec4 p, int n)`, `kifs_rot1_on()`, `kifs_rot2_on()`, `kleinian_orbit(inout vec4 p, inout float dr, int first, int iters)`, `kleinian_distance(vec4 p, float dr)`, `de_pert(vec3 off, int iters)`, `march_de(vec3 pos, vec3 off, int iters)`, `calc_normal_pert(vec3 off, float delta)`, `true_normal(vec3 v, vec3 off, float delta)`; `FractalView.pert_iters() -> int`, `FractalView._pert_pushes: int`.
+- Produces: shader uniforms `int pert_iters`, `vec4 pert_a[20]`, `pert_b[20]`, `pert_c[20]`, `pert_d[20]`, `vec4 pert_x[21]` (`X_0 .. X_PERT_MAX`, the handoff points), `const float PERT_HANDOFF = 0.1`; GLSL `mb_orbit(inout vec4 z, inout float dz, vec4 c, int first, int iters)`, `kifs_orbit(inout vec4 p, inout int n, int first, int iters)`, `kifs_distance(vec4 p, int n)`, `kifs_rot1_on()`, `kifs_rot2_on()`, `kleinian_orbit(inout vec4 p, inout float dr, int first, int iters)`, `kleinian_distance(vec4 p, float dr)`, `de_pert(vec3 off, int iters)`, `march_de(vec3 pos, vec3 off, int iters)`, `calc_normal_pert(vec3 off, float delta)`, `true_normal(vec3 v, vec3 off, float delta)`; `FractalView.pert_iters() -> int`, `FractalView._pert_pushes: int`.
 - The GLSL below is a line-for-line twin of `tests/perturbation_port.gd`. A reviewer should diff them function by function.
 
 - [ ] **Step 1: Failing tests.**
 
-`tests/shader_test.gd`: add `"pert_iters", "pert_a", "pert_b", "pert_c", "pert_d", "pert_end"` to `RENDERER_UNIFORMS`, and append to `run()`:
+`tests/shader_test.gd`: add `"pert_iters", "pert_a", "pert_b", "pert_c", "pert_d", "pert_x"` to `RENDERER_UNIFORMS`, and append to `run()`:
 
 ```gdscript
-	# the record arrays are as long as ReferenceOrbit's record
+	# the record arrays are as long as ReferenceOrbit's record, the handoff points
+	# one longer, and the shader hands off where FractalParams says
 	var inc := FileAccess.get_file_as_string("res://src/fractal/perturbation.gdshaderinc")
-	for arr in ["pert_a", "pert_b", "pert_c", "pert_d"]:
+	for arr in ["pert_a", "pert_b", "pert_c", "pert_d", "pert_x"]:
 		var m := RegEx.create_from_string("uniform vec4 %s\\[(\\d+)\\];" % arr).search(inc)
-		check(m != null and int(m.get_string(1)) == ReferenceOrbit.PERT_MAX,
-			"%s has ReferenceOrbit.PERT_MAX entries" % arr)
+		var entries := ReferenceOrbit.PERT_MAX + (1 if arr == "pert_x" else 0)
+		check(m != null and int(m.get_string(1)) == entries, "%s has %d entries" % [arr, entries])
+	var h := RegEx.create_from_string("const float PERT_HANDOFF = ([0-9.]+);").search(inc)
+	check(h != null and is_equal_approx(h.get_string(1).to_float(), FractalParams.PERT_HANDOFF),
+		"the shader's PERT_HANDOFF is FractalParams.PERT_HANDOFF")
 ```
 
 `tests/fractal_view_test.gd`: right after the first `await frames(1)` that follows `view.setup(params, cam)`, insert:
@@ -2368,10 +2468,10 @@ git -C $WT commit -m "feat(params): pert_iters and the two zoom floors (perturbe
 	check_eq(view._pert_pushes, 0, "and never pushes the record arrays")
 ```
 
-and after the line `check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and the probe's lighting")`, insert:
+and after the line `cam.transform = home   # back from the 1e-8 camera` (the end of Task 2's `near_dist` block), insert:
 
 ```gdscript
-	# a camera 1e-5 short of the surface perturbs: the record and X_k are pushed, once
+	# a camera 1e-5 short of the surface perturbs: the record and the handoff points are pushed, once
 	# (the close camera above, 1e-3 short, already perturbed, so count from here)
 	var sdeep := SurfaceFixture.default_surface(params)
 	var edeep := SurfaceFixture.backed(sdeep, 1e-5)
@@ -2379,14 +2479,16 @@ and after the line `check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, 
 	cam.set_eye64(edeep[0], edeep[1], edeep[2])
 	var orbit := ReferenceOrbit.build(params, edeep[0], edeep[1], edeep[2])
 	var kdeep := params.pert_iters(orbit, orbit.distance)
-	check(kdeep > 0, "precondition: 1e-5 from the surface perturbs (k %d)" % kdeep)
+	check_eq(kdeep, mini(ReferenceOrbit.PERT_MAX, orbit.n), "precondition: 1e-5 from the surface uses every record (k %d)" % kdeep)
 	check_eq(view.pert_iters(), kdeep, "the view reports k")
 	check_eq(int(mat.get_shader_parameter("pert_iters")), kdeep, "and pushes it")
 	for arr in ["pert_a", "pert_b", "pert_c", "pert_d"]:
 		check_eq((mat.get_shader_parameter(arr) as PackedVector4Array).size(), ReferenceOrbit.PERT_MAX,
 			"%s has PERT_MAX entries" % arr)
 	check_eq(mat.get_shader_parameter("pert_a"), orbit.a, "the record is the orbit's")
-	check_eq(Vector4(mat.get_shader_parameter("pert_end")), orbit.points[kdeep], "pert_end is X_k")
+	var handoff_points: PackedVector4Array = mat.get_shader_parameter("pert_x")
+	check_eq(handoff_points.size(), ReferenceOrbit.PERT_MAX + 1, "pert_x has PERT_MAX + 1 entries")
+	check_eq(handoff_points, orbit.points.slice(0, ReferenceOrbit.PERT_MAX + 1), "they are X_0 .. X_PERT_MAX")
 	var pushes := view._pert_pushes
 	check_eq(pushes, pushes_before + 1, "one camera move pushes the arrays once")
 	await frames(3)
@@ -2514,8 +2616,11 @@ and in `de()` replace the five lines from `bool rotating = mb_rotating();` throu
 // 64-bit and hands down, for each of the first iterations, the gaps between X and
 // each fold's creases: small numbers, which a 32-bit float holds precisely. The
 // GPU iterates only the pixel's offset dl = P - X, with a difference formula per
-// step that never subtracts two nearly equal large numbers, then adds the offset
-// back at the handoff point X_k and finishes with the ordinary loop.
+// step that never subtracts two nearly equal large numbers. Each ray hands off on
+// its own, at the first iteration h where it runs out of records or its offset
+// reaches PERT_HANDOFF: z = X_h + dl (pert_x[h], a 32-bit sum, now precise
+// enough), and the ordinary loop runs from h. A far ray (|off| >= PERT_HANDOFF)
+// hands off at h = 0, where z = eye + off: today's expression exactly.
 // tests/perturbation_port.gd is this file's GDScript twin: keep them in step.
 //
 // The record for iteration i (ReferenceOrbit builds it):
@@ -2528,14 +2633,16 @@ and in `de()` replace the five lines from `bool rotating = mb_rotating();` throu
 //   Kleinian   a: -box - X    b: box - X    c: the post-fold point
 //              d: (|c|^2 - radius^2, m, 0, 0)
 
-uniform int pert_iters;    // k, the perturbed iterations; 0 = off (the direct march, exactly as before)
+uniform int pert_iters;    // the records available, min(PERT_MAX, n); 0 = off (the direct march, exactly as before)
 uniform vec4 pert_a[20];   // the record, ReferenceOrbit.PERT_MAX = 20 iterations
 uniform vec4 pert_b[20];
 uniform vec4 pert_c[20];
 uniform vec4 pert_d[20];
-uniform vec4 pert_end;     // X_k, the handoff point
+uniform vec4 pert_x[21];   // X_0 .. X_PERT_MAX: the point a ray hands off to after h perturbed iterations
 
 const int PERT_MAX = 20;
+// A ray hands off once |dl| reaches this (FractalParams.PERT_HANDOFF; shader_test checks they match).
+const float PERT_HANDOFF = 0.1;
 
 // ---- the perturbed steps: each turns the offset entering a step into the offset leaving it
 
@@ -2659,10 +2766,11 @@ vec4 pert_mb_fold(vec4 dl, vec4 a, vec4 b, float gr, int i) {
 	return pert_clamp(dl, a, b);
 }
 
-// ---- the perturbed estimates
+// ---- the perturbed estimates. Each runs the perturbed step while i < lim
+// (min(pert_iters, iters)) and |dl| < PERT_HANDOFF, then hands off at h.
 
 float de_pert_mandelbox(vec4 dl, vec3 p, int iters) {
-	int k = pert_iters;
+	int lim = min(pert_iters, iters);
 	// The pixel's c differs from the reference's by its own starting offset where
 	// c follows the point (Mandelbrot mode), by nothing where c is the Julia
 	// constant; w is the slice's own, the same for both.
@@ -2675,8 +2783,9 @@ float de_pert_mandelbox(vec4 dl, vec3 p, int iters) {
 	float fr2 = max(fixed_radius * fixed_radius, 1e-12);
 	float dz = 1.0;
 	bool rotating = mb_rotating();
+	int h = 0;
 	for (int i = 0; i < PERT_MAX; i++) {
-		if (i >= k) { break; }
+		if (i >= lim || dot(dl, dl) >= PERT_HANDOFF * PERT_HANDOFF) { break; }
 		vec4 ra = pert_a[i];
 		vec4 rb = pert_b[i];
 		vec4 rc = pert_c[i];
@@ -2692,22 +2801,25 @@ float de_pert_mandelbox(vec4 dl, vec3 p, int iters) {
 		float s = box_scale + scale_drift * float(i);
 		dl = s * dl + dc;
 		dz = dz * abs(s) + 1.0;
+		h = i + 1;
 	}
-	vec4 z = pert_end + dl;
-	vec4 c = mb_constant(vec4(p, w));   // 32-bit c: its rounding is shrunk by the magnification like everything else
-	mb_orbit(z, dz, c, k, max(iters, k));
+	vec4 z = pert_x[h] + dl;
+	// 32-bit c: about one eye-ulp off, against an offset of at least PERT_HANDOFF
+	vec4 c = mb_constant(vec4(p, w));
+	mb_orbit(z, dz, c, h, iters);
 	return length(z) / abs(dz);
 }
 
 float de_pert_kifs(vec4 dl, int iters) {
-	int k = pert_iters;
+	int lim = min(pert_iters, iters);
 	float s = kifs_scale;
 	float t = kifs_offset_2 * (s - 1.0);
 	bool rot1 = kifs_rot1_on();
 	bool rot2 = kifs_rot2_on();
 	int n = 0;
+	int h = 0;
 	for (int i = 0; i < PERT_MAX; i++) {
-		if (i >= k) { break; }
+		if (i >= lim || dot(dl, dl) >= PERT_HANDOFF * PERT_HANDOFF) { break; }
 		if (rot1) { dl = kifs_rot1(dl); }
 		if (kifs_fold == 1) {
 			dl = pert_diagonal(dl, pert_b[i]);
@@ -2719,27 +2831,30 @@ float de_pert_kifs(vec4 dl, int iters) {
 		dl = s * dl;   // the offset term -(s - 1) o cancels
 		if (kifs_fold == 0) { dl.z = pert_menger(dl.z, pert_c[i].x, t); }
 		n = i + 1;
+		h = i + 1;
 		vec4 zi = pert_d[i] + dl;   // the pixel's point: large, fine in 32 bits
 		if (dot(zi, zi) > 1.0e6) { return kifs_distance(zi, n); }   // the pixel escapes first
 	}
-	vec4 z = pert_end + dl;
-	kifs_orbit(z, n, k, max(iters, k));
+	vec4 z = pert_x[h] + dl;
+	kifs_orbit(z, n, h, iters);
 	return kifs_distance(z, n);
 }
 
 float de_pert_kleinian(vec4 dl, int iters) {
-	int k = pert_iters;
+	int lim = min(pert_iters, iters);
 	float kk = kleinian_radius * kleinian_radius;
 	float dr = 1.0;
+	int h = 0;
 	for (int i = 0; i < PERT_MAX; i++) {
-		if (i >= k) { break; }
+		if (i >= lim || dot(dl, dl) >= PERT_HANDOFF * PERT_HANDOFF) { break; }
 		dl = pert_clamp(dl, pert_a[i], pert_b[i]);
 		// the inversion: the sphere fold's template with no inner core and
 		// fixed_radius^2 = radius^2; the shift cancels
 		pert_sphere(dl, dr, pert_c[i], 1.0e30, pert_d[i].x, kk, kk);
+		h = i + 1;
 	}
-	vec4 z = pert_end + dl;
-	kleinian_orbit(z, dr, k, max(iters, k));
+	vec4 z = pert_x[h] + dl;
+	kleinian_orbit(z, dr, h, iters);
 	return kleinian_distance(z, dr);
 }
 
@@ -2834,11 +2949,11 @@ func _push_near() -> void:
 		_material.set_shader_parameter("pert_b", orbit.b)
 		_material.set_shader_parameter("pert_c", orbit.c)
 		_material.set_shader_parameter("pert_d", orbit.d)
-		_material.set_shader_parameter("pert_end", orbit.points[_pert_iters])
+		_material.set_shader_parameter("pert_x", orbit.points.slice(0, ReferenceOrbit.PERT_MAX + 1))
 		_pert_pushes += 1
 ```
 
-At the default view `orbit.distance` is `DistanceEstimator.estimate(eye)` exactly (the eye's doubles are its 32-bit origin), so `near_dist`, `coarse_iters` and `nf_weight` are bit-for-bit what they were.
+At the default view `orbit.distance` is `DistanceEstimator.estimate_at(eye64)` exactly, which is what Task 2's `_push_near` pushed, so `near_dist`, `coarse_iters` and `nf_weight` are bit-for-bit what they were.
 
 - [ ] **Step 8: Run `shader_test` and `fractal_view_test`, expect PASS.** A shader that fails to compile shows up as an empty uniform list: read Godot's error output for the line.
 
@@ -2847,7 +2962,7 @@ At the default view `orbit.distance` is `DistanceEstimator.estimate(eye)` exactl
 ```bash
 $WT/tests/run_all.sh; echo exit=$?
 git -C $WT add src/fractal/perturbation.gdshaderinc src/fractal/perturbation.gdshaderinc.uid src/fractal/mandelbox.gdshader src/fractal/kifs.gdshaderinc src/fractal/kleinian.gdshaderinc src/fractal/fractal_view.gd tests/shader_test.gd tests/fractal_view_test.gd
-git -C $WT commit -m "feat(shader): the perturbed march past the 32-bit floor" -m "de_pert iterates each pixel's offset from the CPU's reference orbit with per-fold difference formulas (the twin of tests/perturbation_port.gd), then hands off at X_k to the ordinary loop. Each shape's loop takes a start index; the direct path calls it from 0, the same arithmetic in the same order, and with pert_iters 0 every path is today's: the default view is unchanged. FractalView pushes pert_* from the orbit it builds at the 64-bit eye, the record only while on." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git -C $WT commit -m "feat(shader): the perturbed march past the 32-bit floor" -m "de_pert iterates each pixel's offset from the CPU's reference orbit with per-fold difference formulas (the twin of tests/perturbation_port.gd), each ray handing off on its own (records run out, or its offset reaches PERT_HANDOFF = 0.1) at X_h + dl to the ordinary loop; a far ray hands off at once, at today's eye + dir t. Each shape's loop takes a start index; the direct path calls it from 0, the same arithmetic in the same order, and with pert_iters 0 every path is today's: the default view is unchanged. FractalView pushes pert_* from the orbit it builds at the 64-bit eye, the record only while on." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ### Task 6: The fly camera's guard in 64-bit, and the speed floor
@@ -2896,28 +3011,32 @@ func _surface_within(origin: PackedFloat64Array, dir: Vector3, length: float, pa
   - Add `await _deep_flight()` after `await _zoom_floor_guard()` in `run()`, and the function:
 
 ```gdscript
-## On the default box, from below today's 32-bit floor (where the old guard
-## refused W), holding W closes in by more than ten times and stops at the new
-## floor, with the steps shrinking as the distance does.
+## On the default box, from 1e-6 short of the surface (below today's 32-bit
+## floor, where the old guard refused W), holding W closes in, stops at the new
+## floor with at_zoom_limit, and the speed follows the distance down: under 1e-9
+## per tick at the end. base_speed measures both its distances from the 64-bit eye.
 func _deep_flight() -> void:
 	var ctx := _fresh()
 	var params: FractalParams = ctx[0]
 	var cam: CameraState = ctx[1]
 	var fly: FlyCamera = ctx[2]
 	var s := SurfaceFixture.default_surface(params)
-	var f32 := params.floor32(PackedFloat64Array([s[0], s[1], s[2]]))
-	_place(cam, s, SurfaceFixture.back_for_distance(params, s, 0.5 * f32))
+	_place(cam, s, 1e-6)
 	var e0 := cam.eye64()
 	var d0 := DistanceEstimator.estimate_at(e0[0], e0[1], e0[2], params)
-	check(d0 < params.floor32(e0), "the camera starts below the 32-bit floor (%s < %s): the old guard refused W" % [d0, params.floor32(e0)])
+	check(d0 < params.floor32(e0), "1e-6 short of the surface is below the 32-bit floor (%s < %s): the old guard refused W" % [d0, params.floor32(e0)])
 	check(d0 > params.zoom_floor(e0), "and above the new one (%s)" % params.zoom_floor(e0))
+	var ray := CenterRay.new(params, cam)
+	fly.setup(params, cam, ray)
 	fly.enabled = true
 	var first_step := -1.0
 	var last_step := 0.0
+	var ticks := 0
 	Input.action_press("move_forward")
-	for _i in 2000:
+	for _i in DEEP_TICKS:
 		var before := cam.eye64()
 		await physics_frame
+		ticks += 1
 		if fly.at_zoom_limit:
 			break
 		var now := cam.eye64()
@@ -2925,18 +3044,22 @@ func _deep_flight() -> void:
 		if first_step <= 0.0:
 			first_step = last_step   # the first tick after the press may not have moved yet
 	Input.action_release("move_forward")
-	check(fly.at_zoom_limit, "holding W reaches the new zoom limit")
 	var e1 := cam.eye64()
 	var d1 := DistanceEstimator.estimate_at(e1[0], e1[1], e1[2], params)
+	check(fly.at_zoom_limit, "holding W reaches the new zoom limit (after %d ticks, at %s)" % [ticks, d1])
 	check(d1 < 0.1 * d0, "after closing in more than ten times (%s from %s)" % [d1, d0])
 	check(d1 >= params.zoom_floor(e1), "and stopping at the floor, not past it (%s over %s)" % [d1, params.zoom_floor(e1)])
-	check(last_step < 0.1 * first_step and last_step < 2e-7,
-		"the speed follows the distance: the last step %s against the first %s" % [last_step, first_step])
+	check(last_step < 1e-9 and last_step < 0.1 * first_step,
+		"the speed follows the distance: under 1e-9 per tick at the end (%s, the first %s)" % [last_step, first_step])
+	var want := clampf(minf(ray.distance(), FlyCamera.NEAR_CAP * d1), FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor
+	check_approx(fly.base_speed(), want, "base_speed there measures both distances from the 64-bit eye", want * 1e-9)
+	check(fly.base_speed() < 1e-6, "and is far below the old 1e-6 clamp (%s)" % fly.base_speed())
 	fly.enabled = false
 	fly.queue_free()
 	await frames(1)
 ```
 
+  and, after the file's `extends` line, `const DEEP_TICKS := 4000   # physics ticks the deep flight may take`.
 
 - [ ] **Step 2: Run, expect FAIL** (`SPEED_FLOOR` not found; `move_allowed` given `PackedFloat64Array`s; the deep flight stalls at the 1e-6 speed clamp).
 
@@ -3066,12 +3189,12 @@ In the speed row, right after `show_zoom_limit(_zoom_limit)`:
 
 ```gdscript
 	deep_label = Label.new()
-	deep_label.tooltip_text = "The renderer is past the 32-bit limit: each ray's first k iterations follow the camera's own orbit, worked out in 64-bit on the CPU, and the GPU iterates only the ray's small offset from it (perturbation). Hidden while off."
+	deep_label.tooltip_text = "The renderer is past the 32-bit limit: the camera's own orbit is worked out in 64-bit on the CPU, k iterations of it are handed to the GPU, and each ray iterates only its small offset from it (perturbation) until the offset is big enough for 32 bits. Hidden while off."
 	speed_row.add_child(deep_label)
 	show_deep(_deep_k)
 ```
 
-Update `zoom_label.tooltip_text` to: "The fly camera is as close to the surface as the renderer can draw: nearer, 32 iterations run out of detail or the perturbed march runs out of precision (for shapes it does not perturb, the 32-bit positions). Moving away is always allowed." Add:
+Update `zoom_label.tooltip_text` to: "The fly camera is as close to the surface as the renderer can draw: nearer, the perturbed march runs out of 32-bit precision after its last handoff (for shapes it does not perturb, the 32-bit positions run out). Moving away is always allowed." Add:
 
 ```gdscript
 ## The perturbed march's iteration count; the readout shows only while it is above 0.
@@ -3107,18 +3230,19 @@ git -C $WT commit -m "feat(console): Movement pane shows \"deep k=N\" while the 
 
 **Files:** Modify `README.md`.
 
-- [ ] **Step 1: Rewrite the Deep zoom section's "Zoom limit" bullet** into three bullets (keep "Coarse pass iterations" and "Lighting" as they are; update the section's opening line: four things now adjust themselves):
-  - **A 64-bit eye.** The camera's position is three 64-bit numbers; the 32-bit transform the renderer reads is their rounding. The fly step, the centre ray and saves use the 64-bit ones (a saved view keeps the eye to within one 64-bit rounding step).
-  - **Perturbation.** Plain words first: the CPU runs the camera's own orbit once per frame in 64-bit (`X_0` the eye, `X_1` its first iterate, ...); each pixel starts a small offset `δ_0 = dir × t` away, and for its first `k` iterations the GPU follows only `δ_{i+1} = f(X_i + δ_i) − f(X_i)`, never the pixel's own point. Each fold's difference is worked out from the gap between the crease and `X` (crease minus `X`, computed in 64-bit, small when precision matters), so nothing subtracts two nearly equal large numbers ("catastrophic cancellation": one line of explanation). Once the offset has grown by the magnification `λ_k` to `λ_k × d₀ ≥ 0.1`, the GPU adds it back to `X_k` and finishes with the ordinary loop. `k` is the smallest such, at most 20; it switches on within `10 ×` the 32-bit floor, where both marches agree, so there is no pop. The Movement pane shows `deep k=N` while it is on. Link the spec and Wikipedia's [perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation) section.
-  - **Zoom limit.** Two floors, the camera stops at the larger: `floor_pert = ulp32(max |X_K|) / (50 × eps × λ_K)` (the old 32-bit rule applied at the handoff point, `K = min(20, n)`) and `floor_iter = 0.25 / (eps × λ_32)` (where 32 iterations stop adding detail: inside the shape the estimate cannot fall below about a quarter over the 32-iteration magnification). Give the numbers: about `6e-7` for the default box (the old floor was about `1e-4`), `4e-8` for the ice field, `2e-6` for the terraces, far lower for the KIFS; the Kleinian has only `floor_pert`. Shapes it does not perturb (the octahedral fold, the KIFS polyfold, the Mandelbulb) keep the 32-bit floor `ulp32(largest |eye coordinate|) / (50 × eps)`. A noise field's displacement is still evaluated at the 32-bit position (a displaced surface is smooth below its displacement anyway). Going deeper than `floor_iter` needs more than 32 iterations (a follow-up). Keep the existing sentences about the `zoom limit` readout and moving away always being allowed.
-- [ ] **Step 2: Fly camera section:** the zoom-limit sentence links the new floors; mention the speed can fall to `1e-14`.
+- [ ] **Step 1: Rewrite the Deep zoom section's "Zoom limit" bullet** into four bullets (keep "Coarse pass iterations" and "Lighting" as they are; update the section's opening line: more things now adjust themselves):
+  - **A 64-bit eye.** The camera's position is three 64-bit numbers; the 32-bit transform the renderer reads is their rounding. The fly step, the centre ray, the fly speed and saves use the 64-bit ones (a saved view keeps the eye to within one 64-bit rounding step), and the camera's distance to the surface is measured from them, down to `1e-14`.
+  - **Perturbation.** Plain words first: the CPU runs the camera's own orbit once per frame in 64-bit (`X_0` the eye, `X_1` its first iterate, ...); each pixel starts a small offset `δ_0 = dir × t` away, and the GPU follows only `δ_{i+1} = f(X_i + δ_i) − f(X_i)`, never the pixel's own point. Each fold's difference is worked out from the gap between the crease and `X` (crease minus `X`, computed in 64-bit, small when precision matters), so nothing subtracts two nearly equal large numbers ("catastrophic cancellation": one line of explanation). Each ray hands off on its own: once its offset has grown (by the magnification) to `0.1`, or the 20 recorded iterations run out, it adds the offset back to `X_i` in 32 bits and finishes with the ordinary loop. A ray that starts `0.1` or more from the eye hands off at once, so distant parts of the picture are drawn exactly as before. It switches on within `10 ×` the 32-bit floor, where both marches agree, so there is no pop. The Movement pane shows `deep k=N` (the iterations recorded) while it is on. Link the spec and Wikipedia's [perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation) section.
+  - **Zoom limit.** `floor_pert = ulp32(max |X_K|) / (50 × eps × λ_K)`: the old 32-bit rule applied at the last handoff point (`K = min(20, n)`), where the view is `λ_K` times bigger. About `3e-11` to `3e-10` on the default box (the old floor was about `1e-4`). Shapes it does not perturb (the octahedral fold, the KIFS polyfold, the Mandelbulb) keep the 32-bit floor `ulp32(largest |eye coordinate|) / (50 × eps)`. A noise field's displacement is still evaluated at the 32-bit position (a displaced surface is smooth below its displacement anyway). Keep the existing sentences about the `zoom limit` readout and moving away always being allowed.
+  - **Where 32 iterations run out.** Say plainly what the user sees, without promising a depth: with 32 iterations the surface has only so much detail, and past that point (which varies enormously from place to place) the hit test can no longer be met; rays run out of steps and the picture darkens, the same look as the old coarse-pass problem. The camera is not stopped there. Measured by `perturbation_test.gd` (64-bit march, the shader's hit threshold, 128 steps): at the default view's centre point the surface stops resolving between `1e-7` and `1e-8`, so the default box gains about two to three decades there, not the seven the floor allows; neighbouring points of the same view resolve to `1e-9` .. `1e-12`; the Menger sponge and the Kleinian resolve to `1e-12`; the terraces save stops near `1e-6`. More iterations are a follow-up.
+- [ ] **Step 2: Fly camera section:** the zoom-limit sentence links the new floor; mention the speed can fall to `1e-14` and follows the distance measured from the 64-bit eye.
 - [ ] **Step 3: Saved views section:** the eye is written at full precision (search the section for "significant" or "7" and adjust any statement that all numbers are tidied).
-- [ ] **Step 4: Testing section:** add a paragraph: `perturbation_test.gd` (a GDScript port of the shader's perturbed step run in emulated float32: each fold's difference formula case by case, whole orbits in 64-bit against the direct orbit, and the march at 1e-5, 1e-6 and 1e-7 from five fixtures, where today's float32 march gets under 30% of rays right and the perturbed one at least 90%); `reference_orbit_test.gd` (the reference orbit's distance is the estimator's exactly).
+- [ ] **Step 4: Testing section:** add a paragraph: `perturbation_test.gd` (a GDScript port of the shader's perturbed step run in emulated float32: each fold's difference formula case by case, whole orbits in 64-bit against the direct orbit, the march at 1e-5, 1e-6 and 1e-7 from five fixtures, where today's float32 march gets under 30% of rays right and the perturbed one at least 90%, and a printout of where the 64-bit march itself stops hitting); `reference_orbit_test.gd` (the reference orbit's distance is the estimator's exactly).
 - [ ] **Step 5: Run `$WT/tests/run_all.sh` (unchanged code, still green) and commit.**
 
 ```bash
 git -C $WT add README.md
-git -C $WT commit -m "docs(readme): deep zoom: the 64-bit eye, perturbation, the handoff and the two floors" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git -C $WT commit -m "docs(readme): deep zoom: the 64-bit eye, perturbation, the per-ray handoff and the zoom floor" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ### Task 9: The `deep-zoom` viz pane (last)
@@ -3131,19 +3255,19 @@ git -C $WT commit -m "docs(readme): deep zoom: the 64-bit eye, perturbation, the
 
 - [ ] **Step 2: Pin the commit.** `git -C $WT rev-parse HEAD` after Task 8 (the branch's final code). `pinNote: "perturbation branch, unpushed: links 404 until it is pushed"`. Read every cited line at that commit (`git -C $WT show HEAD:<path>`).
 
-- [ ] **Step 3: Get the Measured table.** `godot4 --headless --path $WT -s tests/perturbation_test.gd | grep MEASURED`: these rows are tab 8's data (copy the numbers; the tab's note says they come from `perturbation_test.gd` at the pinned commit).
+- [ ] **Step 3: Get the Measured table.** `godot4 --headless --path $WT -s tests/perturbation_test.gd | grep -E 'MEASURED|REFERENCE FLOOR'`: these rows are tab 8's data (copy the numbers; the tab's note says they come from `perturbation_test.gd` at the pinned commit, and states the reference-floor parameters the test prints).
 
 - [ ] **Step 4: Write the pane**, id `deep-zoom`, short `Deep zoom`. `ctx`: `cpu` (64-bit CPU, hue 1), `bridge` (the uniforms, hue 4), `gpu` (float32 GPU, hue 2), `test` (tests, hue 6). The ten tabs, in order (each tab one diagram):
-  1. **Architecture** (graph, first, carries title and subtitle): zones *64-bit CPU* (`CameraState` eye64, `FlyCamera`, `CenterRay`, `ReferenceOrbit`, `Workspace`, `FractalParams` pert_iters / floors), *the bridge* (`pert_iters`, `pert_a..d`, `pert_end`, `near_dist`, `coarse_iters`, `nf_weight`), *float32 GPU* (`fragment`, `march_de`, `de` / `de_pert`, `true_normal` / `calc_normal_pert`). Edges link the calls (`_push_near` → `ReferenceOrbit.build`, `move_allowed` → `zoom_floor_for`, `set_shader_parameter`, ...).
-  2. **Why 32-bit breaks** (live figure): a log slider for the camera distance `d` (1e-3 .. 1e-10); draw the float32 grid near the eye (`ulp32(2) ≈ 2.4e-7`), the view's width in grid steps (`2 d tan 20°` / ulp), the hit threshold `eps × d`, and the same view after `k` perturbed iterations (`λ_k × d`), with `k` from the default box's λ (port `ReferenceOrbit`'s Mandelbox loop in JS doubles).
+  1. **Architecture** (graph, first, carries title and subtitle): zones *64-bit CPU* (`CameraState` eye64, `FlyCamera`, `CenterRay`, `ReferenceOrbit`, `Workspace`, `FractalParams` pert_iters / zoom floor), *the bridge* (`pert_iters`, `pert_a..d`, `pert_x`, `near_dist`, `coarse_iters`, `nf_weight`), *float32 GPU* (`fragment`, `march_de`, `de` / `de_pert`, `true_normal` / `calc_normal_pert`). Edges link the calls (`_push_near` → `ReferenceOrbit.build`, `move_allowed` → `zoom_floor_for`, `set_shader_parameter`, ...).
+  2. **Why 32-bit breaks** (live figure): a log slider for the camera distance `d` (1e-3 .. 1e-10); draw the float32 grid near the eye (`ulp32(2) ≈ 2.4e-7`), the view's width in grid steps (`2 d tan 20°` / ulp), the hit threshold `eps × d`, and the same view after `i` perturbed iterations (`λ_i × d`), with λ from the default box (port `ReferenceOrbit`'s Mandelbox loop in JS doubles), marking where the offset reaches `PERT_HANDOFF` (0.1).
   3. **One frame at depth** (seq): camera `changed` → `FractalView._on_camera_changed` → `_push_near` → `ReferenceOrbit.build` → `FractalParams.pert_iters` → `set_shader_parameter` (pert_*) → `fragment`: `box_intersect`, coarse loop (`march_de`), fine loop, `true_normal`, shade.
   4. **The reference orbit** (live figure): per save (default box, ice field, terraces; the JS port finds each surface point from the default eye as `SurfaceFixture.surface_from` does), the eye's 32 iterates, `λ_i` on a log axis, and the hoverable per-iteration record (`a`, `b`, `c`, `d` with what each slot means).
   5. **δ step by step** (stepper, the mandelbox pane's pattern): one pixel's offset through the iterations; the frame read beside the frame written; Step / Back / Reset; each stage (fold, sphere fold, rotate, scale, add) with its shader line (`perturbation.gdshaderinc`) and GDScript line (`tests/perturbation_port.gd`); three columns: 64-bit exact (JS doubles), float32 perturbed and float32 direct (`Math.fround` after every operation, as the port's `r()`); crossings flagged. A JS port of `pert_clamp`, `pert_sphere` and the Mandelbox `de_pert` loop.
   6. **Crossing a fold** (figure): the clamp-difference formula on a draggable axis (`X`, `δ`, the two creases, the 3 × 3 case table lighting up), and the sphere fold's three regimes with the `m' − m` row for the current pair.
-  7. **Handoff and floors** (live figure + table, grouped): `λ_k` against `k` per save on a log axis with the `PERT_HANDOFF` (0.1) line and the chosen `k` for a slider'd `d`; a table of `floor32`, `floor_pert`, `floor_iter` per save computed by the port.
-  8. **Measured** (table): the MEASURED rows from Step 3.
+  7. **Handoff and floors** (live figure + table, grouped): `|δ_i| ≈ λ_i × t` against `i` for three rays of one view (a near wall, the centre hit, a far ray) on a log axis, with the `PERT_HANDOFF` line at 0.1 (the spec's text says 1e-2 here; its constant is 0.1) and where each ray hands off (the far ray at once); a table of `floor32` and `floor_pert` per save computed by the port.
+  8. **Measured** (two tables, grouped): the MEASURED agreement rows, and the REFERENCE FLOOR rows (per fixture, hits within 128 / 2000 steps by depth; the 9 rays of the default view and the deepest depth each resolves), with the parameters in the note.
   9. **Coarse pass and lighting** (live figure): `coarse_iters(near)` and `nf_weight(near)` against `d` on a log axis, with the formulas (`FractalParams.coarse_iters`, `nf_weight`).
-  10. **Cards**: invariants (hue 3: the default view is bit-for-bit; `pert_iters == 0` is today's path; `eye()` is the rounded shadow; `ReferenceOrbit.distance` equals the estimator exactly), gotchas (hue 2: `Vector3` is 32-bit; `Workspace._tidy` and JSON's 15 digits; the old 1e-6 speed clamp; the WebGL uniform budget (80 `vec4`s); folds that keep the 32-bit floor; noise at 32-bit; `iters < k` resumes to `max(iters, k)`), history (hue 6: the self-similar substitution note; the two-float option; `floor_iter`'s radius recalibrated from `bound_half`; the sort formula corrected), open (hue 4: polyfold and octahedral folds, the Mandelbulb, more than 32 iterations past `floor_iter`, the orbit camera, the `perturbation-design` pane).
+  10. **Cards**: invariants (hue 3: the default view is bit-for-bit; `pert_iters == 0` is today's path; `eye()` is the rounded shadow; `ReferenceOrbit.distance` equals the estimator exactly), gotchas (hue 2: `Vector3` is 32-bit; `Workspace._tidy` and JSON's 15 digits (and Godot's parser one ulp off); the old 1e-6 speed clamp and `NEAR_FLOOR`; the WebGL uniform budget (101 `vec4`s); folds that keep the 32-bit floor; noise at 32-bit), history (hue 6: the self-similar substitution note; the two-float option; the per-frame handoff `k` replaced by the per-ray one; `PERT_HANDOFF` 1e-2 → 0.1 from the measured grid; the dropped iteration-floor guard; the sort formula corrected), open (hue 4: polyfold and octahedral folds, the Mandelbulb, the 32-iteration floor and more iterations past it, the orbit camera, the `perturbation-design` pane).
 
 - [ ] **Step 5: Glossary entries** in `docs/viz/glossary.js` (ids new; check the existing ids first: `orbit` and `ulp` exist, so match `reference orbit` as a phrase and do not re-add `ulp`):
   - `perturbation`: "Following a pixel's small difference from a nearby reference instead of the pixel itself. Here the reference is the camera's own orbit, worked out once per frame in 64-bit on the CPU; the GPU iterates only each pixel's offset from it, which 32-bit floats hold precisely because it is small. Deep Mandelbrot-set zoomers use the same trick." Links: Wikipedia's perturbation section (URL above), then a friendlier explainer if one is found.
@@ -3155,7 +3279,7 @@ git -C $WT commit -m "docs(readme): deep zoom: the 64-bit eye, perturbation, the
 
 - [ ] **Step 6: Verify as the skill says:** `node tools/viz/check.mjs --print --pane deep-zoom` exits 0 and every printed line is the one its tooltip describes; open every tab (`#deep-zoom/1` .. `/10`) in the in-app browser (or headless Chrome with the skill's command), `VIZ.errors` is `[]`, screenshot each and fix overlaps; `VIZ.frameMs` well under 16 ms on the live tabs and about 0 on the others; the new glossary marks land on the right words.
 
-- [ ] **Step 7: Final verification of the branch.** `$WT/tests/run_all.sh; echo exit=$?`: every suite PASSED, exit 0. Report the counts and the perturbation table. The windowed check is the user's: `tests/screenshots.sh` must show the default view pixel-identical before and after, and a flight on the default box down to its new floor (about `6e-7`) and on the Menger sponge to `1e-8` must show detail, not speckle.
+- [ ] **Step 7: Final verification of the branch.** `$WT/tests/run_all.sh; echo exit=$?`: every suite PASSED, exit 0. Report the counts and the perturbation table. The windowed check is the user's: `tests/screenshots.sh` must show the default view pixel-identical before and after, and a flight on the Menger sponge to `1e-8` must show detail, not speckle. On the default box at its default view the picture is expected to darken past about `1e-7` (32 iterations run out there; see the README), though the camera may go on to about `3e-10`.
 
 - [ ] **Step 8: Commit.**
 
