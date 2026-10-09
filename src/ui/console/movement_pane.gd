@@ -4,31 +4,24 @@ extends VBoxContainer
 ## a "0" button, speed, two key-capture buttons and a remove button), an "Add
 ## axis" button, the clock readout and the fly camera's speed-factor readout
 ## (with "zoom limit" beside it while the camera is held at the zoom floor)
-## beside a Reset camera button, and a Save keymap / Save keymap as… / Load
-## keymap… strip for the keymap file. The pane sits under the tabs, always in
-## view, so the strip names the keymap in every label: a bare "Save as…" there
-## was taken for the view's, and views went out as keymaps. It is a view over
-## Keymap: it writes through the rebind API and refreshes on `Keymap.changed`.
+## beside a Reset camera button. The keys and axes have no file of their own any
+## more — they are saved inside the level (the View tab's Save level…). It is a
+## view over Keymap: it writes through the rebind API and refreshes on
+## `Keymap.changed`.
 
 ## The Reset camera button was pressed; Main owns the camera and does the reset.
 signal reset_camera_requested
-
-const KEYMAP_FILTER := "*.json ; Keymaps"
 
 var _keymap: Keymap
 var _clock: Clock
 ## Optional `Callable() -> float`: the fly camera's speed factor, for a readout.
 var _speed_source: Callable = Callable()
-var _files: WorkspaceFiles
 
 var _list: VBoxContainer
 var _add_button: Button
 var _clock_label: Label
 var _speed_label: Label
 var reset_camera_button: Button
-var save_button: Button
-var save_as_button: Button
-var load_button: Button
 ## The governor's load-shed level, shown only while it is above 0.
 var shed_label: Label
 var _shed_level := 0
@@ -36,7 +29,6 @@ var _shed_level := 0
 ## refusing to go nearer the surface (FlyCamera.at_zoom_limit).
 var zoom_label: Label
 var _zoom_limit := false
-var _status: Label
 ## id -> {label, value, zero, speed, pos, neg, remove}
 var _lines: Dictionary = {}
 var _updating := false
@@ -94,35 +86,6 @@ func _ready() -> void:
 	add_child(shed_label)
 	show_shed_level(_shed_level)
 
-	add_child(HSeparator.new())
-
-	var files_row := HBoxContainer.new()
-	save_button = _flat_button("Save keymap", "Save the keymap (keys and axes, not the view) over its current file. The View tab saves views.")
-	save_as_button = _flat_button("Save keymap as…", "Save the keymap (keys and axes, not the view) to a new file in saves/. The View tab saves views.")
-	load_button = _flat_button("Load keymap…", "Load a keymap (keys and axes, not a view) from saves/. The View tab loads views.")
-	files_row.add_child(save_button)
-	files_row.add_child(save_as_button)
-	files_row.add_child(load_button)
-	add_child(files_row)
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_status.visible = false
-	add_child(_status)
-
-	_files = WorkspaceFiles.new()
-	_files.name = "KeymapFiles"
-	_files.subdir = ""
-	_files.quick_save_enabled = false
-	_files.file_filter = KEYMAP_FILTER
-	_files.noun = "keymap"
-	_files.default_name = Keymap.DEFAULT_FILE
-	add_child(_files)
-	_files.save_to.connect(_save_keymap_to)
-	_files.load_from.connect(_load_keymap_from)
-	save_button.pressed.connect(_on_save_pressed)
-	save_as_button.pressed.connect(_files.prompt_save)
-	load_button.pressed.connect(_files.prompt_load)
-
 	if _keymap != null:
 		_keymap.changed.connect(_on_keymap_changed)
 	_rebuild()
@@ -134,10 +97,6 @@ func _process(_delta: float) -> void:
 
 func add_button() -> Button:
 	return _add_button
-
-
-func status_label() -> Label:
-	return _status
 
 
 ## The widgets of one axis line, for tests: {label, value, zero, speed, pos, neg, remove}.
@@ -317,37 +276,3 @@ func _refresh_readouts() -> void:
 			_speed_label.text = "speed x%.2f" % float(_speed_source.call())
 		else:
 			_speed_label.text = ""
-
-
-# ------------------------------------------------------------------ files
-
-func _on_save_pressed() -> void:
-	if _keymap.current_path == "":
-		_files.prompt_save()
-		return
-	var err := _keymap.save_file()
-	_show_status("Saved %s" % _keymap.current_path.get_file() if err == OK else "Save failed (error %d)" % err)
-
-
-func _save_keymap_to(path: String) -> void:
-	var err := _keymap.save_file(path)
-	if err != OK:
-		_show_status("Save failed (error %d)" % err)
-		return
-	_files.note_saved(path)
-	_show_status("Saved %s" % path.get_file())
-
-
-func _load_keymap_from(path: String) -> void:
-	var result := _keymap.load_file(path)
-	if not result["ok"]:
-		_show_status("Load failed: %s" % result["warnings"][0])
-		return
-	_files.note_loaded(path)
-	_rebuild()
-	_show_status("Loaded %s" % path.get_file())
-
-
-func _show_status(text: String) -> void:
-	_status.text = text
-	_status.visible = text != ""

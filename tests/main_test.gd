@@ -207,18 +207,18 @@ func run() -> void:
 	var tmp := "user://main_test_view.json"
 	main.table().set_default(&"fold_limit", 0.72)
 	main.camera.speed_factor = 2.0
-	main.save_view_to(tmp)
+	main.save_level_to(tmp)
 	check_eq(files.current_path, tmp, "a save that worked becomes current")
 	check_eq(vp.file_label.text, "main_test_view.json", "and the View tab names it")
 	main.table().set_default(&"fold_limit", 0.3)
 	main.camera.speed_factor = 1.0
-	main.load_view_from(tmp)
+	main.load_level_from(tmp)
 	check_approx(main.table().get_default(&"fold_limit"), 0.72, "loading restores the shape table")
 	await frames(1)
 	check_approx(main.params.fold_limit, 0.72, "and the resolve pushes it into params")
 	check_approx(main.camera.speed_factor, 2.0, "and the camera")
 	check(vp.status_label.text.begins_with("Loaded"), "the View tab reports the load: %s" % vp.status_label.text)
-	main.load_view_from("user://no_such_view.json")
+	main.load_level_from("user://no_such_view.json")
 	check_eq(files.current_path, tmp, "a failed load does not change the current file")
 
 	# Reset camera goes back to the current file's camera and speed factor, from
@@ -235,7 +235,7 @@ func run() -> void:
 	# a save makes the saved camera the new reset point
 	main.camera.transform = file_view.translated(Vector3(0, 0, 1))
 	var resaved: Transform3D = main.camera.transform
-	main.save_view_to(tmp)
+	main.save_level_to(tmp)
 	main.camera.transform = file_view
 	main.reset_camera()
 	check(main.camera.transform.is_equal_approx(resaved), "after a save, Reset camera goes to the saved camera")
@@ -354,12 +354,12 @@ func run() -> void:
 	nw.graph().connect_ports(vn, 0, nw.graph().output_id(), 0)
 	await frames(1)
 	var ntmp := "user://main_noise_view.json"
-	main.save_view_to(ntmp)
+	main.save_level_to(ntmp)
 	var ndata: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ntmp))
 	check(ndata.has("noise"), "a view save embeds the noise graph under a 'noise' key")
 	nw.editor().new_requested.emit()
 	await frames(1)
-	main.load_view_from(ntmp)
+	main.load_level_from(ntmp)
 	await frames(1)
 	check_eq(nw.graph().nodes.size(), 3, "loading the view restored the noise graph")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ntmp))

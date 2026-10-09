@@ -124,20 +124,9 @@ func run() -> void:
 	console.show_zoom_limit(false)
 	check(not movement.zoom_label.visible, "and false hides it again")
 
-	# --- Movement pane: its file panels say keymap, so they cannot pass for the view's ---
-	var keymap_files: WorkspaceFiles = movement.get_node("KeymapFiles")
-	check_eq(keymap_files.save_dialog().title, "Save keymap", "the keymap save panel is titled for keymaps")
-	check_eq(keymap_files.load_dialog().title, "Load keymap", "and so is the load panel")
-	keymap_files.prompt_save()
-	check_eq(keymap_files.save_dialog().current_file, "keymap.json", "it offers keymap.json, not view.json")
-	keymap_files.save_dialog().hide()
-	# macOS takes the text after "*." as the extension; "keymap*.json" mangled names
-	for f in keymap_files.save_dialog().filters:
-		check(f.strip_edges().begins_with("*."), "the keymap filter is a plain *.ext pattern (%s)" % f)
-
-	# Its strip sits under the tabs, always in view, so its buttons say keymap too.
-	for b in [movement.save_button, movement.save_as_button, movement.load_button]:
-		check((b as Button).text.to_lower().contains("keymap"), "the strip's '%s' button says keymap" % (b as Button).text)
+	# --- Movement pane: the keymap-file strip is gone (keys travel in the level) ---
+	check_eq(movement.get_node_or_null("KeymapFiles"), null, "the Movement pane has no keymap file panel")
+	check(not (&"save_button" in movement), "and no Save keymap button")
 
 	# --- Movement pane: Add axis grows the keymap ---
 	var before := km.axes().list().size()

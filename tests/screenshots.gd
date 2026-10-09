@@ -98,12 +98,12 @@ func _run() -> void:
 	var np := FractalParams.new()
 	var ncam := CameraState.make_default()
 	var ntable := AttributeTable.new(ShapeCatalogue.specs())
-	var naxes := Axes.new()
-	var loaded := Workspace.load_file("res://saves/noiseRidges.json", ntable, naxes, np, ncam)
+	var nkm := Keymap.new()
+	var loaded := Workspace.load_file("res://saves/noiseRidges.json", ntable, nkm, np, ncam)
 	if not loaded["ok"]:
 		_fail("noise_ridges", "load_failed:%s" % loaded["warnings"])
 	else:
-		np.apply_resolved(BindingResolver.resolve(ntable, naxes.values(), 0.0))
+		np.apply_resolved(BindingResolver.resolve(ntable, nkm.axes().values(), 0.0))
 		view.setup(np, ncam)
 		view.set_render_scale(1.0)
 		var noise: Variant = loaded.get("noise", null)

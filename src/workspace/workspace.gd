@@ -1,29 +1,34 @@
 class_name Workspace
 extends RefCounted
-## Saving and loading a view as JSON, version 2: the shape as an AttributeTable
-## (defaults + active bindings), the axis values, the non-shape preference
-## fields, and the camera. The clock and the keymap are deliberately not saved
-## (a level loads a view and a keymap separately, and the same view plays under
-## different key pairs).
+## Saving and loading a level as JSON, version 3: the shape as an AttributeTable
+## (defaults + active bindings), the keymap (its axes, keys, speeds and values),
+## the non-shape preference fields, the camera, and the noise graph. There is one
+## file type — the level — tagged `"kind": "level"`; `"kind": "sequence"` is
+## reserved for the level-sequence editor to come, and such a file is refused by
+## name here. The clock and anything derivable (the orbit centre, the governor's
+## render scale, rendered pixels) are not saved.
+##
+## The keys and axes travel with the level: `axes` is a list of entries
+## {id, label, speed, positive, negative, value} (keys by name, "" for none),
+## read and written through Keymap.to_list() / apply_list(). Loading a level
+## replaces the keymap in hand with the file's axes; until a level is loaded the
+## keymap is the shipped default (E / Q).
 ##
 ## What else is saved under "fractal": fast controls, the camera mode, the mouse
 ## sensitivity and the renderer options (level of detail, step budget and
-## minimum render scale). What is not: anything derivable (the orbit centre, the
-## governor's render scale, rendered pixels).
+## minimum render scale).
 ##
-## Loading never fails on unfamiliar content: an unknown shape id or axis id is
-## skipped with a warning, and a key the file lacks leaves the current value
-## alone — except the fractal (`shape`), which a file from before there was a
-## choice lacks, and which then loads as the Mandelbox it was saved from. A
-## version-1 file (the old flat "fractal" section) is migrated to the new ids
-## without a warning. A saved light_shininess (from before Roughness replaced it)
-## becomes roughness = sqrt(2 / (shininess + 2)) with no warning; a binding on
-## light_shininess is dropped with one. The one file refused outright is a keymap (keys and
-## axes, which the Movement pane writes into the same saves/ folder): it holds
-## no view, so the load fails by name instead of reporting "Loaded", and
-## changes nothing. Saving always writes version 2.
+## Loading never fails on unfamiliar content: an unknown shape id is skipped with
+## a warning, and a key the file lacks leaves the current value alone — except
+## the fractal (`shape`), which a file from before there was a choice lacks, and
+## which then loads as the Mandelbox it was saved from. Version 1 (the old flat
+## "fractal" section) and version 2 (axes as a dict of id→value, keys left alone)
+## both still load as levels, without warnings. A saved light_shininess (from
+## before Roughness replaced it) becomes roughness = sqrt(2 / (shininess + 2))
+## with no warning; a binding on light_shininess is dropped with one. Saving
+## always writes version 3.
 
-const VERSION := 2
+const VERSION := 3
 
 ## The preference and renderer fields kept under "fractal" (everything that is
 ## not a shape knob), in file order.
@@ -34,8 +39,8 @@ const FRACTAL_KEYS: Array[String] = [
 const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
 
 
-## Snapshot the view. Pure: it reads, it does not change anything.
-static func capture(table: AttributeTable, axes: Axes, params: FractalParams, camera: CameraState, noise := {}) -> Dictionary:
+## Snapshot the level. Pure: it reads, it does not change anything.
+static func capture(table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Dictionary:
 	var fractal := {}
 	for key in FRACTAL_KEYS:
 		var value: Variant = params.get(key)
@@ -44,8 +49,9 @@ static func capture(table: AttributeTable, axes: Axes, params: FractalParams, ca
 		fractal[key] = value
 	var out := {
 		"version": VERSION,
+		"kind": "level",
 		"shape": table.to_dict(),
-		"axes": axes.values_by_string(),
+		"axes": keymap.to_list(),
 		"fractal": fractal,
 		"camera": {
 			"eye": _vec_to_array(camera.eye()),
@@ -59,15 +65,17 @@ static func capture(table: AttributeTable, axes: Axes, params: FractalParams, ca
 	return out
 
 
-## Apply a capture (already in version-2 shape). Returns the warnings.
-static func restore(data: Dictionary, table: AttributeTable, axes: Axes, params: FractalParams, camera: CameraState) -> Array:
+## Apply a capture. Accepts version 3 ("axes" a list of entries, which replaces
+## the keymap) and version 2 ("axes" a dict of id→value, applied onto the axes in
+## hand, keys left alone). Returns the warnings.
+static func restore(data: Dictionary, table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState) -> Array:
 	var warnings: Array = []
 
 	var shape: Variant = data.get("shape", {})
 	if shape is Dictionary:
 		# An old save's light_shininess becomes the new roughness (see below).
 		shape = _migrate_shininess(shape as Dictionary, warnings)
-		# Views saved before there was a choice of fractal are all Mandelboxes.
+		# Levels saved before there was a choice of fractal are all Mandelboxes.
 		var defaults: Variant = (shape as Dictionary).get("defaults", {})
 		if defaults is Dictionary and not (defaults as Dictionary).has("shape") and table.has(&"shape"):
 			table.set_default(&"shape", FractalParams.Shape.MANDELBOX)
@@ -76,14 +84,20 @@ static func restore(data: Dictionary, table: AttributeTable, axes: Axes, params:
 	else:
 		warnings.append("Malformed shape section ignored")
 
-	var axis_values: Variant = data.get("axes", {})
-	if axis_values is Dictionary:
-		for key in axis_values:
+	var axis_data: Variant = data.get("axes", {})
+	if axis_data is Array:
+		# Version 3: the file's axes (keys and all) replace the keymap in hand.
+		for w in keymap.apply_list(axis_data):
+			warnings.append(w)
+	elif axis_data is Dictionary:
+		# Version 2: values by id onto whichever axes already exist; keys stay.
+		var axes := keymap.axes()
+		for key in axis_data:
 			var id := StringName(key)
 			if not axes.has(id):
 				warnings.append("Axis value for unknown axis '%s' dropped" % key)
 				continue
-			var v: Variant = axis_values[key]
+			var v: Variant = axis_data[key]
 			if v is float or v is int:
 				axes.set_value(id, float(v))
 			else:
@@ -114,20 +128,21 @@ static func restore(data: Dictionary, table: AttributeTable, axes: Axes, params:
 	return warnings
 
 
-static func save_file(path: String, table: AttributeTable, axes: Axes, params: FractalParams, camera: CameraState, noise := {}) -> Error:
+static func save_file(path: String, table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Error:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(capture(table, axes, params, camera, noise), "\t", false))
+	file.store_string(JSON.stringify(capture(table, keymap, params, camera, noise), "\t", false))
 	file.close()
 	return OK
 
 
-## Read `path` and restore it. Never throws. A version-1 file is migrated to the
-## version-2 shape before restoring, without a warning.
-static func load_file(path: String, table: AttributeTable, axes: Axes, params: FractalParams, camera: CameraState) -> Dictionary:
+## Read `path` and restore it as a level. Never throws. A version-1 file is
+## migrated before restoring, without a warning; a version-2 file loads as is. A
+## sequence save, or an old keymap file, is refused by name and changes nothing.
+static func load_file(path: String, table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState) -> Dictionary:
 	if not FileAccess.file_exists(path):
-		return _failure("No saved view at %s" % path)
+		return _failure("No level at %s" % path)
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return _failure("Could not read %s (error %d)" % [path, FileAccess.get_open_error()])
@@ -137,60 +152,45 @@ static func load_file(path: String, table: AttributeTable, axes: Axes, params: F
 	if json.parse(text) != OK:
 		return _failure("%s is not valid JSON (line %d: %s)" % [path, json.get_error_line(), json.get_error_message()])
 	var data: Variant = json.data
-	if not (data is Dictionary):
-		return _failure("%s does not contain a saved view" % path)
-	if is_keymap(data):
-		return _failure("%s is a keymap (keys and axes), not a view: load it with the Movement pane's Load keymap…; views are saved with the View tab's Save view…" % path.get_file())
+	match kind_of(data):
+		"sequence":
+			return _failure("%s is a sequence save, not a level; the sequence editor will load those" % path.get_file())
+		"keymap":
+			return _failure("%s is an old keymap file; keys are now saved inside each level, so load a level instead" % path.get_file())
+		"level":
+			pass
+		_:
+			return _failure("%s does not contain a level" % path)
 	var version := int((data as Dictionary).get("version", 0))
 	if version == 1:
 		data = _migrate_v1(data)
-	elif version != VERSION:
-		return _failure("Save version %d is not supported (this build reads version %d)" % [version, VERSION])
+	elif version != 2 and version != VERSION:
+		return _failure("Save version %d is not supported (this build reads up to version %d)" % [version, VERSION])
 	var noise: Variant = (data as Dictionary).get("noise", null)
 	if not (noise is Dictionary):
 		noise = null
-	return {"ok": true, "warnings": restore(data, table, axes, params, camera), "noise": noise}
+	return {"ok": true, "warnings": restore(data, table, keymap, params, camera), "noise": noise}
 
 
-## A graph-only noise file: {"version": VERSION, "noise": {...}}.
-static func save_noise_file(path: String, noise_dict: Dictionary) -> Error:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify({"version": VERSION, "noise": noise_dict}, "\t", false))
-	file.close()
-	return OK
-
-
-## Read a graph-only noise file. Returns {ok, warnings, noise}. Accepts version
-## 1 and 2 (the noise section is the same in both).
-static func load_noise_file(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		return {"ok": false, "warnings": ["No noise graph at %s" % path], "noise": {}}
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return {"ok": false, "warnings": ["Could not read %s" % path], "noise": {}}
-	var text := file.get_as_text()
-	file.close()
-	var json := JSON.new()
-	if json.parse(text) != OK:
-		return {"ok": false, "warnings": ["%s is not valid JSON" % path], "noise": {}}
-	var data: Variant = json.data
+## Classify parsed JSON by the one save family it belongs to: "level" (this
+## build's save, or a version-1/2 file with a shape/fractal section), "sequence"
+## (reserved, tagged kind), "keymap" (an old keys-and-axes file: an "axes" list
+## with no kind/shape/fractal) or "unknown". A version-3 level is distinguished
+## from an old keymap by its "kind"/"shape"/"fractal", never by "axes" alone,
+## since both carry an "axes" list.
+static func kind_of(data: Variant) -> String:
 	if not (data is Dictionary):
-		return {"ok": false, "warnings": ["%s does not contain a noise graph" % path], "noise": {}}
-	var version := int((data as Dictionary).get("version", 0))
-	if version != 1 and version != VERSION:
-		return {"ok": false, "warnings": ["Noise file version %d is not supported" % version], "noise": {}}
-	var noise: Variant = (data as Dictionary).get("noise", {})
-	if not (noise is Dictionary):
-		return {"ok": false, "warnings": ["%s has no noise section" % path], "noise": {}}
-	return {"ok": true, "warnings": [], "noise": noise}
-
-
-## Whether parsed JSON is a keymap file (Keymap.save_file's shape: an "axes"
-## list) rather than a view (whose "axes" is a dictionary of values).
-static func is_keymap(data: Variant) -> bool:
-	return data is Dictionary and (data as Dictionary).get("axes") is Array
+		return "unknown"
+	var d := data as Dictionary
+	var kind := str(d.get("kind", ""))
+	if kind == "level" or kind == "sequence":
+		return kind
+	if kind == "":
+		if d.has("shape") or d.has("fractal"):
+			return "level"
+		if d.get("axes") is Array:
+			return "keymap"
+	return "unknown"
 
 
 static func _failure(message: String) -> Dictionary:
@@ -219,7 +219,8 @@ static func _migrate_shininess(shape: Dictionary, warnings: Array) -> Dictionary
 
 
 ## Turn a version-1 file (flat "fractal" section with the old ids) into the
-## version-2 shape. Unknown/new ids are mapped; the clock and axes had no v1.
+## version-3 shape. Unknown/new ids are mapped; v1 had no axes or keymap, so the
+## keymap in hand (the default) is left alone (an empty "axes" dict).
 static func _migrate_v1(data: Dictionary) -> Dictionary:
 	var old: Dictionary = data.get("fractal", {}) if data.get("fractal", {}) is Dictionary else {}
 	var defaults := {}
@@ -242,6 +243,7 @@ static func _migrate_v1(data: Dictionary) -> Dictionary:
 			fractal[k] = old[k]
 	var out := {
 		"version": VERSION,
+		"kind": "level",
 		"shape": {"defaults": defaults, "bindings": {}},
 		"axes": {},
 		"fractal": fractal,
