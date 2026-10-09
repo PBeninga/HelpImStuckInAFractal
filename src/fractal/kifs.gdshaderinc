@@ -70,15 +70,24 @@ float kifs_box_distance(vec4 p) {
 	return length(max(q, 0.0)) + min(max(max(q.x, q.y), max(q.z, q.w)), 0.0);
 }
 
-float kifs_de(vec4 p, int iters) {
+bool kifs_rot1_on() {
+	return (abs(kifs_rot1_xy) + abs(kifs_rot1_xz) + abs(kifs_rot1_xw)
+		+ abs(kifs_rot1_yz) + abs(kifs_rot1_yw) + abs(kifs_rot1_zw)) > 1e-6;
+}
+
+bool kifs_rot2_on() {
+	return (abs(kifs_rot2_xy) + abs(kifs_rot2_xz) + abs(kifs_rot2_xw)
+		+ abs(kifs_rot2_yz) + abs(kifs_rot2_yw) + abs(kifs_rot2_zw)) > 1e-6;
+}
+
+// Iterations first..iters-1 of the KIFS orbit p; n counts the iterations run. The
+// direct kifs_de runs them all from 0, the perturbed de_pert from its handoff.
+void kifs_orbit(inout vec4 p, inout int n, int first, int iters) {
 	float s = kifs_scale;
 	vec4 o = vec4(kifs_offset_0, kifs_offset_1, kifs_offset_2, kifs_offset_3);
-	bool rot1 = (abs(kifs_rot1_xy) + abs(kifs_rot1_xz) + abs(kifs_rot1_xw)
-		+ abs(kifs_rot1_yz) + abs(kifs_rot1_yw) + abs(kifs_rot1_zw)) > 1e-6;
-	bool rot2 = (abs(kifs_rot2_xy) + abs(kifs_rot2_xz) + abs(kifs_rot2_xw)
-		+ abs(kifs_rot2_yz) + abs(kifs_rot2_yw) + abs(kifs_rot2_zw)) > 1e-6;
-	int n = 0;
-	for (int i = 0; i < 32; i++) {
+	bool rot1 = kifs_rot1_on();
+	bool rot2 = kifs_rot2_on();
+	for (int i = first; i < 32; i++) {
 		if (i >= iters) { break; }
 		if (rot1) { p = kifs_rot1(p); }
 		if (kifs_fold == 1) {
@@ -98,6 +107,16 @@ float kifs_de(vec4 p, int iters) {
 		n = i + 1;
 		if (dot(p, p) > 1.0e6) { break; }
 	}
+}
+
+// The distance from the orbit's end point, shrunk by the scale once per iteration.
+float kifs_distance(vec4 p, int n) {
 	float d = kifs_fold == 0 ? kifs_box_distance(p) : length(p);
-	return d * pow(s, -float(n));
+	return d * pow(kifs_scale, -float(n));
+}
+
+float kifs_de(vec4 p, int iters) {
+	int n = 0;
+	kifs_orbit(p, n, 0, iters);
+	return kifs_distance(p, n);
 }

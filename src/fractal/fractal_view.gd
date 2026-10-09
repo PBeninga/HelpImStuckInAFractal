@@ -46,6 +46,12 @@ var _base_code := ""
 var _noise_graph: NoiseGraph
 var _shed: Dictionary = LoadShedder.settings(0)
 var _center_ray: CenterRay
+## The perturbed march's iteration count last pushed (0: off). Main shows it in
+## the Movement pane as "deep N".
+var _pert_iters := 0
+## How many times the per-iteration record was pushed: never while perturbation
+## is off, once per camera or shape change while it is on (the tests read it).
+var _pert_pushes := 0
 
 
 func _ready() -> void:
@@ -101,6 +107,11 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 ## speed and the dot come from one march. null before setup().
 func center_ray() -> CenterRay:
 	return _center_ray
+
+
+## How many iterations the shader perturbs for the current camera (0: off).
+func pert_iters() -> int:
+	return _pert_iters
 
 
 ## Show a noise field on the fractal. The view listens to the graph: a structural
@@ -361,13 +372,26 @@ func _push_camera() -> void:
 
 ## The camera's distance to the nearest surface, which the level-of-detail range
 ## is measured in, and the coarse pass's iteration count and the shading
-## crossfade that follow from it. They depend on both the camera and the shape,
-## so both pushes refresh them.
+## crossfade that follow from it; and the perturbed march's iteration count and
+## record. All come from one ReferenceOrbit built at the 64-bit eye (its distance
+## is the estimate, so nothing is computed twice). They depend on both the camera
+## and the shape, so both pushes refresh them. The record arrays are pushed only
+## while perturbation is on.
 func _push_near() -> void:
 	if _material == null or _params == null or _camera == null:
 		return
 	var e := _camera.eye64()
-	var near := maxf(DistanceEstimator.estimate_at(e[0], e[1], e[2], _params), FractalParams.NEAR_FLOOR)
+	var orbit := ReferenceOrbit.build(_params, e[0], e[1], e[2])
+	var near := maxf(orbit.distance, FractalParams.NEAR_FLOOR)
 	_material.set_shader_parameter("near_dist", near)
 	_material.set_shader_parameter("coarse_iters", _params.coarse_iters(near))
 	_material.set_shader_parameter("nf_weight", FractalParams.nf_weight(near))
+	_pert_iters = _params.pert_iters(orbit, orbit.distance)
+	_material.set_shader_parameter("pert_iters", _pert_iters)
+	if _pert_iters > 0:
+		_material.set_shader_parameter("pert_a", orbit.a)
+		_material.set_shader_parameter("pert_b", orbit.b)
+		_material.set_shader_parameter("pert_c", orbit.c)
+		_material.set_shader_parameter("pert_d", orbit.d)
+		_material.set_shader_parameter("pert_x", orbit.points.slice(0, ReferenceOrbit.PERT_MAX + 1))
+		_pert_pushes += 1

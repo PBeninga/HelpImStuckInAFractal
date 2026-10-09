@@ -11,7 +11,8 @@ extends "res://tests/test_case.gd"
 const RENDERER_UNIFORMS := ["eye", "cam_right", "cam_up", "cam_forward",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
 	"coarse_steps", "coarse_iters", "nf_weight", "fine_steps", "fog_dist", "fog_color",
-	"probe_on", "probe_point", "probe_radius"]
+	"probe_on", "probe_point", "probe_radius",
+	"pert_iters", "pert_a", "pert_b", "pert_c", "pert_d", "pert_x"]
 
 
 func run() -> void:
@@ -53,3 +54,14 @@ func run() -> void:
 				"uniform '%s' defaults to the catalogue's %s" % [id, table.get_default(id)], 1e-9)
 		with_default += 1
 	check_eq(with_default, FractalParams.LOOK_KEYS.size(), "every look uniform declares its default")
+
+	# the record arrays are as long as ReferenceOrbit's record, the handoff points
+	# one longer, and the shader hands off where FractalParams says
+	var inc := FileAccess.get_file_as_string("res://src/fractal/perturbation.gdshaderinc")
+	for arr in ["pert_a", "pert_b", "pert_c", "pert_d", "pert_x"]:
+		var m := RegEx.create_from_string("uniform vec4 %s\\[(\\d+)\\];" % arr).search(inc)
+		var entries := ReferenceOrbit.PERT_MAX + (1 if arr == "pert_x" else 0)
+		check(m != null and int(m.get_string(1)) == entries, "%s has %d entries" % [arr, entries])
+	var h := RegEx.create_from_string("const float PERT_HANDOFF = ([0-9.]+);").search(inc)
+	check(h != null and is_equal_approx(h.get_string(1).to_float(), FractalParams.PERT_HANDOFF),
+		"the shader's PERT_HANDOFF is FractalParams.PERT_HANDOFF")

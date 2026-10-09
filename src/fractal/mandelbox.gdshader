@@ -11,6 +11,8 @@ shader_type canvas_item;
 // iteration) and add. Each shape uniform is named exactly as its catalogue id
 // (src/fractal/shape_catalogue.gd), so the uniform set equals
 // ShapeCatalogue.catalogue_ids() plus the renderer's own camera uniforms.
+// Past the 32-bit floor the march runs perturbed (perturbation.gdshaderinc); with
+// pert_iters 0 every path is exactly the direct one.
 
 uniform vec3 eye;
 uniform vec3 cam_right;
@@ -291,6 +293,16 @@ vec4 mb_constant(vec4 z0) {
 		(julia_all || julia_3) ? c_3 : z0.w);
 }
 
+// Iterations first..iters-1 of the Mandelbox orbit: the direct de() runs them all
+// from 0 (exactly the loop it always ran), the perturbed de_pert() from its handoff.
+void mb_orbit(inout vec4 z, inout float dz, vec4 c, int first, int iters) {
+	bool rotating = mb_rotating();
+	for (int i = first; i < 32; i++) {
+		if (i >= iters) { break; }
+		mb_step(z, dz, c, rotating, i);
+	}
+}
+
 #include "res://src/fractal/kifs.gdshaderinc"
 #include "res://src/fractal/kleinian.gdshaderinc"
 #include "res://src/fractal/mandelbulb.gdshaderinc"
@@ -318,11 +330,7 @@ float de(vec3 p, int iters) {
 	vec4 c = mb_constant(z0);
 	vec4 z = z0;
 	float dz = 1.0;
-	bool rotating = mb_rotating();
-	for (int i = 0; i < 32; i++) {
-		if (i >= iters) { break; }
-		mb_step(z, dz, c, rotating, i);
-	}
+	mb_orbit(z, dz, c, 0, iters);
 	return length(z) / abs(dz) + noise_displace(p);
 }
 
@@ -358,6 +366,8 @@ vec3 calc_nf(vec3 v, vec3 h) {
 		field(v + vec3(0.0, 0.0, 0.01)) - lw) / 0.01;
 	return normalize(g);
 }
+
+#include "res://src/fractal/perturbation.gdshaderinc"
 
 // Six-segment rainbow ramp: red->yellow->green->cyan->blue->magenta->red.
 vec3 hue(float q) {
@@ -440,7 +450,7 @@ void fragment() {
 		for (int i = 0; i < 384; i++) {
 			if (left_cube || i >= coarse_steps) { break; }
 			vec3 pos = eye + dir * total;
-			float d = de(pos, n_coarse);
+			float d = march_de(pos, dir * total, n_coarse);
 			if (d < hit_eps(total) * 2.0) { n1 = i; break; }
 			total += d * noise_step_scale();
 			if (total > t_exit) { left_cube = true; break; }
@@ -453,7 +463,7 @@ void fragment() {
 			for (int i = 0; i < 128; i++) {
 				if (i >= fine_steps) { break; }
 				vec3 pos = eye + dir * total;
-				float d = de(pos, 32);
+				float d = march_de(pos, dir * total, 32);
 				if (d < hit_eps(total)) { n2 = i; break; }
 				total += d * noise_step_scale();
 				if (total > t_exit) { left_cube = true; break; }
@@ -486,16 +496,16 @@ void fragment() {
 				if (nf_weight >= 1.0) {
 					n = calc_nf(v, h);
 				} else if (nf_weight <= 0.0) {
-					n = calc_normal(v, delta);
+					n = true_normal(v, dir * total, delta);
 				} else {
 					vec3 nf = calc_nf(v, h);
-					vec3 m = mix(calc_normal(v, delta), nf, nf_weight);
+					vec3 m = mix(true_normal(v, dir * total, delta), nf, nf_weight);
 					// The two can point nearly opposite ways (NF is not a gradient);
 					// a blend that cancels to nothing keeps NF rather than a NaN.
 					n = dot(m, m) > 1e-12 ? normalize(m) : nf;
 				}
 			} else {
-				n = calc_normal(v, delta);
+				n = true_normal(v, dir * total, delta);
 			}
 
 			vec3 ldir = normalize(2.0 * eh - h);

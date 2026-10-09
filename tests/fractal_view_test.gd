@@ -16,6 +16,11 @@ func run() -> void:
 	view.setup(params, cam)
 	await frames(1)
 
+	# perturbation is off at the default view, and nothing of it is pushed
+	check_eq(view.pert_iters(), 0, "the default view does not perturb")
+	check_eq(int(view._material.get_shader_parameter("pert_iters")), 0, "and pushes pert_iters 0")
+	check_eq(view._pert_pushes, 0, "and never pushes the record arrays")
+
 	# the shader material is wired and compiled
 	var names: Array = []
 	for u in view.shader_uniform_names():
@@ -123,6 +128,32 @@ func run() -> void:
 		"a camera 1e-8 short of the surface pushes its own distance (%s)" % dnear)
 	check(float(mat.get_shader_parameter("near_dist")) < 1e-7, "not the old 1e-6 clamp")
 	cam.transform = home   # back from the 1e-8 camera
+
+	# a camera 1e-5 short of the surface perturbs: the record and the handoff points are pushed, once
+	# (the close camera above, 1e-3 short, already perturbed, so count from here)
+	var sdeep := SurfaceFixture.default_surface(params)
+	var edeep := SurfaceFixture.backed(sdeep, 1e-5)
+	var pushes_before := view._pert_pushes
+	cam.set_eye64(edeep[0], edeep[1], edeep[2])
+	var orbit := ReferenceOrbit.build(params, edeep[0], edeep[1], edeep[2])
+	var kdeep := params.pert_iters(orbit, orbit.distance)
+	check_eq(kdeep, mini(ReferenceOrbit.PERT_MAX, orbit.n), "precondition: 1e-5 from the surface uses every record (k %d)" % kdeep)
+	check_eq(view.pert_iters(), kdeep, "the view reports k")
+	check_eq(int(mat.get_shader_parameter("pert_iters")), kdeep, "and pushes it")
+	for arr in ["pert_a", "pert_b", "pert_c", "pert_d"]:
+		check_eq((mat.get_shader_parameter(arr) as PackedVector4Array).size(), ReferenceOrbit.PERT_MAX,
+			"%s has PERT_MAX entries" % arr)
+	check_eq(mat.get_shader_parameter("pert_a"), orbit.a, "the record is the orbit's")
+	var handoff_points: PackedVector4Array = mat.get_shader_parameter("pert_x")
+	check_eq(handoff_points.size(), ReferenceOrbit.PERT_MAX + 1, "pert_x has PERT_MAX + 1 entries")
+	check_eq(handoff_points, orbit.points.slice(0, ReferenceOrbit.PERT_MAX + 1), "they are X_0 .. X_PERT_MAX")
+	var pushes := view._pert_pushes
+	check_eq(pushes, pushes_before + 1, "one camera move pushes the arrays once")
+	await frames(3)
+	check_eq(view._pert_pushes, pushes, "a still frame pushes nothing more")
+	cam.transform = home
+	check_eq(view.pert_iters(), 0, "back home: off again")
+	check_eq(int(mat.get_shader_parameter("pert_iters")), 0, "and pert_iters 0 is pushed")
 
 	# the shape switch reaches the shader, and the bounding cube follows the shape
 	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbox marches in its cube of half-side 2")
