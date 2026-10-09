@@ -60,7 +60,9 @@ as good as exact, and the GPU hands off to today's loop for the remaining
   surface is smooth below the displacement's size, so there is nothing to zoom
   into; the test and the readme say so.
 - Orbit camera: out of scope (it cannot approach the surface).
-- Iterations beyond 32 past the iteration floor: out of scope (follow-up).
+- The 32-iteration floor (where the estimate stops resolving) as a guard, and
+  iterations beyond 32 past it: out of scope, see part 5 (follow-up, needs
+  measurement).
 
 ## Design
 
@@ -97,9 +99,18 @@ steps away.
   `o + dir × t` in doubles; the `Vector3` overload calls it): all in 64-bit.
   `DistanceEstimator.estimate(Vector3)` stays for the callers that do not
   care.
-- `FlyCamera.base_speed`'s clamp floor drops from `1e-6` to `1e-14`
-  (`SPEED_FLOOR`). The speed is about the distance to the surface, so below
-  `1e-6` the camera would otherwise outrun its own stop.
+- `FlyCamera.base_speed` measures both of its distances from the 64-bit eye:
+  its own estimate (`estimate_at` on `eye64()`) and `CenterRay.distance()`,
+  whose `_update` marches from `eye64()` scalars. Its clamp floor drops from
+  `1e-6` to `1e-14` (`SPEED_FLOOR`). The speed is about the distance to the
+  surface, so below `1e-6` the camera would otherwise outrun its own stop,
+  and a distance measured from the rounded eye would be wrong by more than
+  the distance itself.
+- `FractalParams.NEAR_FLOOR` drops from `1e-6` to `1e-14`. It clamps `near`
+  in `FractalView._push_near`, `hit_epsilon` and `CenterRay.march`, so with
+  it at `1e-6` the level of detail, the fog, `coarse_iters` and the
+  switch-on rule below would all stop following the camera exactly where the
+  perturbation starts to matter. It only ever guarded against a zero.
 - `Workspace.capture` writes `"eye"` from `eye64()` at full precision (no
   `_tidy`, which rounds to 7 significant figures; `forward` and `up` keep it).
   `restore` reads the three doubles and calls `set_eye64`, then sets the basis
@@ -116,7 +127,8 @@ var orbit := ReferenceOrbit.build(params, ex, ey, ez)
 orbit.distance   # == DistanceEstimator.estimate_at(ex, ey, ez, params), exactly
 orbit.n          # iterations run before a KIFS bailout or Kleinian fixed point (32 otherwise)
 orbit.mag        # PackedFloat64Array, λ_0 .. λ_32 (λ_0 = 1): the magnification after i iterations
-orbit.points     # PackedVector4Array, X_0 .. X_32 (32-bit copies; X_k is the handoff point)
+orbit.points     # PackedVector4Array, X_0 .. X_32 (32-bit copies; the first PERT_MAX + 1 are
+                 # pushed as pert_x: the point a ray hands off to after i perturbed iterations)
 orbit.a, .b, .c, .d   # PackedVector4Array of PERT_MAX entries each: the per-iteration record
 orbit.perturbable     # false for the octahedral fold, the poly fold, and shapes without support
 ```
@@ -135,7 +147,7 @@ multiplier that only needs relative precision):
 | shape | `a` | `b` | `c` | `d` |
 |---|---|---|---|---|
 | Mandelbox | lower-crease gaps `lo − X` per component | upper gaps `hi − X` | the sphere fold's input point | (`\|Xs\|² − min_radius²`, `\|Xs\|² − fixed_radius²`, the reference's sphere factor `m`, the cylinder fold's radial gap `r_xy − fold_limit`) |
-| KIFS | abs-fold gaps `−X` (after R1) | the three sort gaps (`X_x − X_y`, then `X_x − X_z`, `X_y − X_z`, each from the state at that comparison), or the four diagonal gaps `X_a + X_b` | `.x`: the Menger-correction gap `X_z + t/2` after the scale | unused |
+| KIFS | abs-fold gaps `−X` (after R1) | the three sort gaps (`X_x − X_y`, then `X_x − X_z`, `X_y − X_z`, each from the state at that comparison), or the four diagonal gaps `X_a + X_b` | `.x`: the Menger-correction gap `X_z + t/2` after the scale | the next point `X_{i+1}`, for the pixel's own bailout test `\|X_{i+1} + δ'\|² > 1e6` |
 | Kleinian | box gaps `−b − X` | `b − X` | the post-fold point | (`\|Xs\|² − radius²`, the reference's factor `m`, 0, 0) |
 
 For the Mandelbox the clamp gaps use the fold's own interval: `±fold_limit`
@@ -144,28 +156,41 @@ hybrid interval `[lo, hi]` on a hybrid iteration (the cylinder fold's xy
 pair uses the radial gap in `d.w` instead; the octahedral fold is not
 perturbed). With `fold_order` 1 (sphere first) the sphere gaps are of the
 pre-fold point and the clamp gaps of the post-sphere point; the record's `c`
-is always the sphere fold's input, and the GPU recovers whatever else it
-needs from `c`, `m` and the radial gap (the cylinder fold's pre-fold xy is
-`c.xy` scaled back by `(L + gap_r) / (L − gap_r)` in fold order 0, or `c.xy
-× m` in fold order 1).
+is always the sphere fold's input. The cylinder fold's xy pair has no clamp
+gaps, so the record carries its pre-fold xy in those two slots (`a.xy`)
+rather than recovering it from `c` (the recovery divides by `L − gap_r`,
+which is 0 at `r = 2L`).
 
 ### 3. The perturbed step (GPU)
 
-New uniforms: `int pert_iters` (0 = off), `vec4 pert_a[PERT_MAX]`,
-`pert_b`, `pert_c`, `pert_d` (`PERT_MAX = 20`), `vec4 pert_end` (`X_k`).
-Uniform arrays compile in a `canvas_item` shader under GL Compatibility and
-take a `PackedVector4Array` (checked headless on 4.6.1). 80 `vec4`s plus the
-existing ~110 scalars stay well inside WebGL 2's 224-vector minimum.
+New uniforms: `int pert_iters` (0 = off, else the number of records
+available), `vec4 pert_a[PERT_MAX]`, `pert_b`, `pert_c`, `pert_d`
+(`PERT_MAX = 20`), and `vec4 pert_x[PERT_MAX + 1]` (`X_0 … X_PERT_MAX`, the
+handoff points). Uniform arrays compile in a `canvas_item` shader under GL
+Compatibility and take a `PackedVector4Array` (checked headless on 4.6.1).
+101 `vec4`s plus the existing ~110 scalars come to about 190 of WebGL 2's
+224-vector minimum if a driver packs no scalars into shared rows (they
+normally pack four to a row). Only the user's web export can confirm the
+link; `PERT_MAX` is the knob if it fails.
 
 `float de_pert(vec3 off, int iters)`, where `off = dir × t` (the shader never
-forms `eye + off` on this path): run `min(pert_iters, iters)` perturbed
-iterations on `δ` (a `vec4`, `δ.w = 0`), then `z = pert_end + δ`, `dz` as
-accumulated, and continue with the existing loop body from iteration `k` to
-`iters`. To share that body, each shape's loop moves into a function taking a
-start index (`mb_orbit(z, dz, c, first, iters)` and the like); the direct
-path calls it with `first = 0`, which is the same arithmetic in the same
-order, so the default view stays bit-for-bit (the user's screenshot check
-confirms).
+forms `eye + off` on this path): iterate `δ` (a `vec4`, `δ.w = 0`) with the
+perturbed step while `i < min(pert_iters, iters)` **and** `|δ|² <
+PERT_HANDOFF²`; at the first iteration `i` where either fails, form
+`z = pert_x[i] + δ` in float32, keep the accumulated `dz`, and continue with
+the existing loop body from iteration `i` to `iters`. The handoff is per ray,
+because rays in one frame need different counts: a ray hitting a wall at
+`t ≈ near` needs the most help, one reaching the centre hit at `t = d ≫ near`
+less, and a far ray with `|δ_0| = t ≥ PERT_HANDOFF` hands off at `i = 0`,
+where `pert_x[0] + δ_0` is `eye + dir × t`, today's expression. In
+Mandelbrot mode the constant after the handoff is `mb_constant(vec4(eye +
+off, w))` formed in float32: an error of about one eye-ulp in `c`, against a
+`δ` of at least `PERT_HANDOFF`, which the note's "c follows" runs showed is
+harmless. To share the loop body, each shape's loop moves into a function
+taking a start index (`mb_orbit(z, dz, c, first, iters)` and the like); the
+direct path calls it with `first = 0`, which is the same arithmetic in the
+same order, so the default view stays bit-for-bit (the user's screenshot
+check confirms).
 
 The difference formulas, per step kind. `X` is the reference's point at that
 step (from the record), `P = X + δ` the pixel's.
@@ -191,11 +216,15 @@ step (from the record), `P = X + δ` the pixel's.
   the same template with `m = (2L − r)/r`. The pixel's `dz` (or `dr`)
   multiplies by `m'`, as the direct path's does.
 - **Sorts and diagonal swaps** (KIFS): the pixel swaps when
-  `δ_a − δ_b < −gap` (sort) or `δ_a + δ_b < −gap` (diagonal). Both or neither
-  swap: `δ` swapped or not. Only the pixel swaps (sort): `δ'_a = δ_b − gap`,
-  `δ'_b = δ_a + gap`; only the reference: `δ'_a = δ_b + gap`, `δ'_b = δ_a −
-  gap`; diagonal: `δ'_a = −gap − δ_b`, `δ'_b = −gap − δ_a` (and the mirror
-  case with `+gap`).
+  `δ_a − δ_b < −gap` (sort, `gap = X_a − X_b`) or `δ_a + δ_b < −gap`
+  (diagonal, `gap = X_a + X_b`). Sort, both or neither swap: `δ` swapped or
+  not; only the pixel: `δ'_a = δ_b − gap`, `δ'_b = δ_a + gap`; only the
+  reference: `δ'_a = δ_a + gap`, `δ'_b = δ_b − gap`. Diagonal, both swap:
+  `δ' = (−δ_b, −δ_a)` (swapped and negated); neither: `δ`; only the pixel:
+  `δ'_a = −gap − δ_b`, `δ'_b = −gap − δ_a`; only the reference: `δ'_a = δ_a +
+  gap`, `δ'_b = δ_b + gap`. (Each is `f_P(X + δ) − f_X(X)` written out; the
+  implementation plan's Task 1 checks every case against the direct
+  difference in 64-bit.)
 - **Menger correction** (KIFS): `δ'_z = δ_z + t × ([P crosses] − [X
   crosses])`, crossing decided by `δ_z` against the gap.
 - **Rotations, twist, scale, offset**: linear. The existing shader functions
@@ -218,47 +247,63 @@ code.
 ### 4. When, and how many iterations
 
 ```
-PERT_MAX     = 20      # uniform array length; k never exceeds it
+PERT_MAX     = 20      # uniform array length; no ray runs more perturbed iterations
 PERT_ON      = 10.0    # switch on at 10 × today's floor, where both paths still agree
-PERT_HANDOFF = 1e-2    # hand off once λ_k × near reaches this (the note's rule)
+PERT_HANDOFF = 0.1     # a ray hands off once |δ| reaches this (the note's λ_k × d rule, per ray;
+                       # measured: at 1e-2 four default-box rays at d = 1e-6 landed 0.15–0.5% off
+                       # from a slightly early handoff, at 0.1 every cell scored 100%)
 
 pert_iters(orbit, near):
     0 if not orbit.perturbable or near >= PERT_ON × floor32(eye)   # floor32 = today's zoom_floor formula
-    else the smallest k in 1..min(PERT_MAX, orbit.n) with orbit.mag[k] × near >= PERT_HANDOFF,
-         or min(PERT_MAX, orbit.n) if none reaches it
+    else min(PERT_MAX, orbit.n)
 ```
 
-Switching on an order of magnitude before the 32-bit path breaks means the
-two paths agree within the hit threshold at the switch, so there is no pop.
+`pert_iters` only says how many records the GPU may use; each ray decides
+its own handoff from `|δ|` (part 3). Switching on an order of magnitude
+before the 32-bit path breaks means the two paths agree within the hit
+threshold at the switch, so there is no pop. The note's rule picked `k` from
+`λ_k × d` for a camera placed `d` back from its hit point; `|δ_i| ≈ λ_i × t`
+is the same quantity for a ray at distance `t`, so the per-ray test is the
+note's rule applied where it is exact instead of once per frame with a
+single stand-in for `t`.
 
 `FractalView._push_near()` builds the orbit from `eye64()` (its `distance` is
 `near`, so the estimate is not computed twice), pushes `near_dist`,
 `coarse_iters`, `nf_weight` as today, plus `pert_iters`; when it is positive,
-the four arrays and `pert_end = orbit.points[k]`. The arrays are pushed only
-while on (a still frame at depth pushes once).
+the five arrays. The arrays are pushed only while on (a still frame at depth
+pushes once).
 
 ### 5. The zoom guard, moved
 
-`FractalParams.zoom_floor(eye64)` becomes `max(floor_pert, floor_iter)`,
-computed from a `ReferenceOrbit` at `eye`:
+`FractalParams.zoom_floor(eye64)` becomes, for a perturbable shape,
 
-- `floor_pert = ulp32(max |X_K|) / (ZOOM_FLOOR_DIVISOR × eps × λ_K)`, with
-  `K = min(PERT_MAX, orbit.n)`: today's formula applied at the handoff point,
-  where the view is `λ_K` times bigger. About `1e-11` for the default box.
-- `floor_iter = bound_half / (eps × λ_32)`: where 32 iterations stop
-  resolving. Inside the shape the estimate `|z_32| / dz_32` cannot fall below
-  about `bound_half / λ_32` (the orbit stays bounded, the derivative does
-  not), and a ray only hits where the estimate is under `eps × t`, so the
-  camera needs `t > bound_half / (eps × λ_32)`. This is an estimate; its
-  test measures where a 64-bit march actually stops hitting rather than
-  pinning a number. The note's figures put the terraces save at about `5e-6`
-  and the default box far lower.
-- Shapes that are not perturbable keep today's formula.
+```
+floor_pert = ulp32(max |X_K|) / (ZOOM_FLOOR_DIVISOR × eps × λ_K),   K = min(PERT_MAX, orbit.n)
+```
+
+computed from a `ReferenceOrbit` at `eye`: today's formula applied at the
+last handoff point, where the view is `λ_K` times bigger. For the default
+box it comes out between `3e-11` and `3e-10` depending on how large `X_20`
+is at that eye (a JS port of the orbit measured it), seven orders below
+today. Shapes that are not perturbable keep today's formula.
+
+**Not guarded: the 32-iteration floor.** Inside the shape the estimate
+`|z_32| / dz_32` cannot fall below some floor set by how much 32 iterations
+magnify, and past it rays stop hitting (the picture darkens as they run out
+of steps). An earlier draft estimated it as `bound_half / (eps × λ_32)` from
+the eye's orbit; that is wrong by orders of magnitude, because the eye is
+outside the shape and its orbit escapes (`λ_32` of `1e10` to `1e13` at the
+default view, against `6e12` to `6e14` at the points its rays hit), and a
+64-bit march from the default view still hits 8 or 9 rays of 9 at
+`d = 1e-10`. A guard that stops the camera a thousand times too early is
+worse than none, so this spec ships without one; `perturbation_test` prints
+where the 64-bit reference stops hitting per fixture, as data for the
+follow-up (which probably wants more iterations rather than a stop).
 
 `FlyCamera.move_allowed` is unchanged in shape (accept if `d_to >= floor(to)`
 or `d_to >= d_from`), now in 64-bit. The Movement pane's `zoom limit` readout
-stays; its tooltip says the limit is now where 32 iterations run out of
-detail or the perturbed march runs out of precision.
+stays; its tooltip says the limit is now where the perturbed march runs out
+of 32-bit precision after its last handoff.
 
 ### 6. Console
 
@@ -292,9 +337,10 @@ skill after the code lands (its `file:line` links pin a commit). Ten tabs:
 6. **Crossing a fold** (figure): the clamp-difference formula on a draggable
    axis (`X`, `δ`, the two creases, the 3×3 case table lighting up), and the
    radial fold's three regimes with the `m' − m` formula per pair.
-7. **Handoff and floors** (live figure + table): `λ_k` against `k` per save
-   on a log axis with the `1e-2` line and the chosen `k` for a slider'd `d`;
-   today's floor, `floor_pert`, `floor_iter` per save, computed by the port.
+7. **Handoff and floors** (live figure + table): `|δ_i| ≈ λ_i × t` against
+   `i` for three rays of one view (a near wall, the centre hit, a far ray)
+   on a log axis with the `1e-2` handoff line and where each hands off;
+   today's floor and `floor_pert` per save, computed by the port.
 8. **Measured** (table): the agreement numbers from `perturbation_test.gd`.
 9. **Coarse pass and lighting** (live figure): `coarse_iters(near)` and
    `nf_weight(near)` against `d` on a log axis, with the formulas (the
@@ -303,8 +349,9 @@ skill after the code lands (its `file:line` links pin a commit). Ten tabs:
     today's path; `eye()` is the rounded shadow), gotchas (`Vector3` is
     32-bit; `_tidy`; the speed clamp; the WebGL uniform budget; folds that
     keep the old floor; noise at 32-bit), history (the substitution note, the
-    two-float option), open (poly and octahedral folds, Mandelbulb, more than
-    32 iterations, orbit camera).
+    two-float option, the dropped iteration-floor guard), open (poly and
+    octahedral folds, Mandelbulb, the iteration floor and more than 32
+    iterations, orbit camera).
 
 Glossary entries to add: perturbation, reference orbit, catastrophic
 cancellation, magnification, piecewise-linear map, double-float (two-float).
@@ -328,10 +375,13 @@ Headless, `tests/` TestCase style, nothing windowed.
   directions within the field of view). Agreement as in the note: same class
   (hit / beyond / no hit) and, for hits, distance within 0.1%. Checks: the
   direct float32 march agrees on under 30% at `1e-6` (today's failure), the
-  perturbed march on at least 90% at every depth, and the perturbed step in
-  64-bit reproduces the reference exactly (the algebra check). Prints the
-  table for the viz's Measured tab. This runs before any shader work and
-  proves the formulas.
+  perturbed march (per-ray handoff at `PERT_HANDOFF`, `PERT_MAX` records) on
+  at least 90% at every depth, and the perturbed step in 64-bit reproduces
+  the reference exactly (the algebra check). Prints the table for the viz's
+  Measured tab, and per fixture the depth (powers of ten down to `1e-12`) at
+  which the 64-bit reference itself stops hitting: the data for the
+  iteration-floor follow-up. This runs before any shader work and proves the
+  formulas.
 - `reference_orbit_test.gd`: `distance` equals `DistanceEstimator.estimate_at`
   exactly for every shape fixture; `mag` is non-decreasing; `n` is 32 for the
   Mandelbox and under 32 for a KIFS point that bails out; `perturbable` is
@@ -342,20 +392,21 @@ Headless, `tests/` TestCase style, nothing windowed.
 - `workspace_test.gd`: a capture with an eye `1e-9` from a surface point
   restores it exactly; `saves/default.json` loads to the same camera as before.
 - `fractal_params_test.gd`: `pert_iters` is 0 at the default view and at
-  `1e-3`, positive at `1e-5`, rising as `d` falls, never above 20;
-  `zoom_floor` at the surface fixture is below `1e-8` for the default box;
-  `floor_iter`'s prediction brackets the measured stop (a 64-bit march from
-  `10 × floor_iter` hits, from `floor_iter / 10` it does not).
+  `1e-3`, `min(PERT_MAX, n)` at `1e-5`, 0 for an octahedral-fold shape at
+  any depth; `zoom_floor` at the surface fixture is below `1e-9` for the
+  default box and is today's value for the octahedral fold; `NEAR_FLOOR` is
+  `1e-14`.
 - `fly_camera_test.gd`: a camera at `1e-6` with W held moves closer (refused
   today) and stops at the new floor with `at_zoom_limit`; the eye moves by
   less than `1e-9` per tick there (the speed follows the distance).
 - `center_ray_test.gd`: the scalar march agrees with the `Vector3` one at
   the default view and resolves a hit at `1e-8` that the `Vector3` one cannot.
 - `fractal_view_test.gd`: at the default view `pert_iters` is 0 and no array
-  is pushed; at a deep camera `pert_iters` is positive and `pert_a` has
-  `PERT_MAX` entries.
+  is pushed; at a deep camera `pert_iters` is positive, `pert_a` has
+  `PERT_MAX` entries and `pert_x` has `PERT_MAX + 1`; `near_dist` at a camera
+  `1e-8` from the surface is about `1e-8`, not clamped to `1e-6`.
 - `shader_test.gd`: `RENDERER_UNIFORMS` gains `pert_iters`, `pert_a`,
-  `pert_b`, `pert_c`, `pert_d`, `pert_end`; the shader compiles.
+  `pert_b`, `pert_c`, `pert_d`, `pert_x`; the shader compiles.
 - `console_test.gd` / `ui_console_test.gd` / `main_test.gd`: the `deep k=N`
   readout shows with `k`, hides at 0.
 - `deep_zoom_test.gd`: unchanged.
