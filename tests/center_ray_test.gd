@@ -34,6 +34,11 @@ func run() -> void:
 	check(kr[1] and kr[0] < kl.view_distance(), "and the Kleinian, inside its view distance")
 	kl.kleinian_view_distance = 1e-3
 	check(not CenterRay.march(lcam.eye(), lcam.forward(), kl)[1], "nothing past the view distance is hit")
+	var bulb := FractalParams.new(); bulb.shape = FractalParams.Shape.MANDELBULB
+	var bcam := CameraState.new()
+	bcam.transform = Transform3D(Basis.IDENTITY, Vector3(2.2, 1.6, 1.2)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+	var br := CenterRay.march(bcam.eye(), bcam.forward(), bulb)
+	check(br[1] and br[0] < bcam.eye().length() - 0.5, "the centre ray hits the Mandelbulb, short of its middle")
 
 	# --- the cached ray follows the camera and the shape ---
 	var ray := CenterRay.new(params, cam)

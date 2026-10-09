@@ -11,7 +11,7 @@ extends Resource
 
 enum CameraMode { FLY, ORBIT }
 ## Which fractal de() draws: the `shape` catalogue row.
-enum Shape { MANDELBOX, KIFS, KLEINIAN }
+enum Shape { MANDELBOX, KIFS, KLEINIAN, MANDELBULB }
 
 ## Colour-mode ids in the dropdown's order (ids match the site).
 ## Palette (20) is this project's own, past the site's range.
@@ -34,7 +34,9 @@ const RESOLVED_KEYS: Array[StringName] = [
 	&"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw", &"kleinian_box_0",
 	&"kleinian_box_1", &"kleinian_box_2", &"kleinian_box_3", &"kleinian_radius",
 	&"kleinian_shift_0", &"kleinian_shift_1", &"kleinian_shift_2", &"kleinian_shift_3",
-	&"kleinian_thickness", &"kleinian_view_distance", &"precision", &"color_mode",
+	&"kleinian_thickness", &"kleinian_view_distance", &"mandelbulb_power",
+	&"mandelbulb_phase_theta", &"mandelbulb_phase_phi", &"mandelbulb_julia", &"mandelbulb_c_0",
+	&"mandelbulb_c_1", &"mandelbulb_c_2", &"precision", &"color_mode",
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
 	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess", &"light_yaw",
 	&"light_pitch", &"exposure", &"saturation", &"palette_a_r", &"palette_a_g", &"palette_a_b",
@@ -180,6 +182,22 @@ var _suppress := false
 	set(v): kleinian_thickness = v; _emit()
 @export var kleinian_view_distance: float = 10.0:
 	set(v): kleinian_view_distance = v; _emit()
+
+# --- Mandelbulb (see MandelbulbShape) ---
+@export var mandelbulb_power: float = 8.0:
+	set(v): mandelbulb_power = v; _emit()
+@export var mandelbulb_phase_theta: float = 0.0:
+	set(v): mandelbulb_phase_theta = v; _emit()
+@export var mandelbulb_phase_phi: float = 0.0:
+	set(v): mandelbulb_phase_phi = v; _emit()
+@export var mandelbulb_julia: bool = false:
+	set(v): mandelbulb_julia = v; _emit()
+@export var mandelbulb_c_0: float = -0.2:
+	set(v): mandelbulb_c_0 = v; _emit()
+@export var mandelbulb_c_1: float = 0.6:
+	set(v): mandelbulb_c_1 = v; _emit()
+@export var mandelbulb_c_2: float = 0.4:
+	set(v): mandelbulb_c_2 = v; _emit()
 
 # --- Render ---
 @export var precision: float = 0.000025:
@@ -337,11 +355,18 @@ const COARSE_BOX_HALF := 2.0
 ## magnifies only inside the sphere, by a varying amount), so it always gets
 ## the full 32; its loop stops early anyway once the point settles. (With a
 ## scale drift the Mandelbox's rate changes along the orbit; |box_scale| is the
-## rate it starts at.)
+## rate it starts at.) The Mandelbulb's orbit near its surface has radius about
+## 1, where each iteration stretches by about the power, so the rule runs on
+## mandelbulb_power.
 func coarse_iters(near: float) -> int:
-	if shape == Shape.KLEINIAN:
-		return DistanceEstimator.ITERATIONS
-	var s := absf(kifs_scale if shape == Shape.KIFS else box_scale)
+	var s := absf(box_scale)
+	match shape:
+		Shape.KLEINIAN:
+			return DistanceEstimator.ITERATIONS
+		Shape.KIFS:
+			s = absf(kifs_scale)
+		Shape.MANDELBULB:
+			s = absf(mandelbulb_power)
 	if s <= 1.0:
 		return DistanceEstimator.ITERATIONS
 	var gap := maxf(2.0 * precision / detail * maxf(near, 0.0), 1e-300)
@@ -460,9 +485,13 @@ func julia_enabled() -> bool:
 ## grow to about hi (measured: 3.2 at mix 0.5, 5.6 at 0.75, 13 at 0.9; capped
 ## at 20); for the KIFS a margin over its offset, which its attractor lies
 ## within; for the Kleinian, which fills space, a cube too large to matter
-## (view_distance() ends its rays instead).
+## (view_distance() ends its rays instead); for the Mandelbulb its escape
+## radius (MandelbulbEstimator.escape_radius: 2^(1/7), about 1.1, at power 8),
+## which every point of it lies within, or 2 if larger.
 func bound_half() -> float:
 	match shape:
+		Shape.MANDELBULB:
+			return maxf(2.0, MandelbulbEstimator.escape_radius(self))
 		Shape.KIFS:
 			var o := sqrt(kifs_offset_0 * kifs_offset_0 + kifs_offset_1 * kifs_offset_1
 				+ kifs_offset_2 * kifs_offset_2 + kifs_offset_3 * kifs_offset_3)

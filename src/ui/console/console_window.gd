@@ -58,7 +58,7 @@ const MIN_SIZE := Vector2i(700, 400)
 ## The zoom levels Cmd+= and Cmd+- step through, browser style.
 const ZOOM_STEPS: Array[float] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0]
 
-const SELF_SIMILAR_TOOLTIP := "Whether this shape is exactly self-similar: every deep region is a magnified copy of a shallower region of the same shape, so a deep zoom could be rendered from the shallower copy. On the Mandelbox only Julia mode with c fixed in x, y and z, an iteration that magnifies, no scale drift and no noise displacement qualify; the KIFS qualifies without a twist, the Kleinian always (both without noise). Read-only; nothing renders differently. See docs/reference/self-similar-substitution.md."
+const SELF_SIMILAR_TOOLTIP := "Whether this shape is exactly self-similar: every deep region is a magnified copy of a shallower region of the same shape, so a deep zoom could be rendered from the shallower copy. On the Mandelbox only Julia mode with c fixed in x, y and z, an iteration that magnifies, no scale drift and no noise displacement qualify; the KIFS qualifies without a twist, the Kleinian always (both without noise); the Mandelbulb never (its power map stretches unevenly). Read-only; nothing renders differently. See docs/reference/self-similar-substitution.md."
 
 ## Multiplies UiScale's factor for this window; 1 is the default size.
 var zoom := 1.0

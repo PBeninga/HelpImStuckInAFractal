@@ -3,8 +3,8 @@ extends RefCounted
 ## CPU copy of the shader's distance estimators, N = 32 (the high-precision
 ## variant) unless a smaller iteration count is asked for, as the shader's
 ## coarse pass does (FractalParams.coarse_iters): estimate_at() dispatches on
-## params.shape to the Mandelbox core below, KifsEstimator or
-## KleinianEstimator. The Mandelbox core mirrors mandelbox.gdshader's mb_step
+## params.shape to the Mandelbox core below, KifsEstimator,
+## KleinianEstimator or MandelbulbEstimator. The Mandelbox core mirrors mandelbox.gdshader's mb_step
 ## in 64-bit scalars (zx, zy, zz, zw): the fold (box, cylinder or octahedral,
 ## or the box-to-abs hybrid fold), the sphere fold, optional 4D iteration
 ## rotation, scale (drifting with the iteration) and add, carrying the running
@@ -34,6 +34,8 @@ static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
 			return KifsEstimator.estimate_at(px, py, pz, params, iters)
 		FractalParams.Shape.KLEINIAN:
 			return KleinianEstimator.estimate_at(px, py, pz, params, iters)
+		FractalParams.Shape.MANDELBULB:
+			return MandelbulbEstimator.estimate_at(px, py, pz, params, iters)
 	return mandelbox_at(px, py, pz, params, iters)
 
 

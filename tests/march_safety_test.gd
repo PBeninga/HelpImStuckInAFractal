@@ -69,3 +69,14 @@ func run() -> void:
 	_safe("rotated Menger", p, 3.0)
 	p = FractalParams.new(); p.shape = FractalParams.Shape.KLEINIAN
 	_safe("Kleinian", p, 3.0)
+	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB
+	_safe("Mandelbulb", p, 3.0)
+	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_power = 3.0
+	_safe("Mandelbulb power 3", p, 3.0)
+	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_power = 16.0
+	_safe("Mandelbulb power 16", p, 3.0)
+	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB
+	p.mandelbulb_phase_theta = 40.0; p.mandelbulb_phase_phi = 30.0
+	_safe("phased Mandelbulb", p, 3.0)
+	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_julia = true
+	_safe("Julia Mandelbulb", p, 3.0)

@@ -1,13 +1,13 @@
 extends "res://tests/test_case.gd"
 ## The shape catalogue: every spec has tooltip and effects, defaults in range,
-## ids unique, every group has a heading, and the id set is the expected 83
+## ids unique, every group has a heading, and the id set is the expected 90
 ## catalogue ids; the lighting defaults are the site's constants; the Palette
 ## mode's rows show only in that mode; each shape's rows show only while that
 ## shape is drawn; the console's two tabs between them show every group
 ## exactly once; self_similarity() says which shapes are exactly self-similar
 ## (on the Mandelbox: Julia with c fixed in x, y and z, a magnifying iteration,
-## no drift, no noise displacement; the KIFS without a twist; the Kleinian)
-## and why.
+## no drift, no noise displacement; the KIFS without a twist; the Kleinian;
+## never the Mandelbulb) and why. W hides on the Mandelbulb, which is 3D.
 
 const EXPECTED_IDS := [
 	&"shape", &"w", &"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order",
@@ -20,7 +20,9 @@ const EXPECTED_IDS := [
 	&"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw", &"kleinian_box_0",
 	&"kleinian_box_1", &"kleinian_box_2", &"kleinian_box_3", &"kleinian_radius",
 	&"kleinian_shift_0", &"kleinian_shift_1", &"kleinian_shift_2", &"kleinian_shift_3",
-	&"kleinian_thickness", &"kleinian_view_distance", &"precision", &"color_mode",
+	&"kleinian_thickness", &"kleinian_view_distance", &"mandelbulb_power",
+	&"mandelbulb_phase_theta", &"mandelbulb_phase_phi", &"mandelbulb_julia", &"mandelbulb_c_0",
+	&"mandelbulb_c_1", &"mandelbulb_c_2", &"precision", &"color_mode",
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
 	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess", &"light_yaw",
 	&"light_pitch", &"exposure", &"saturation", &"palette_a_r", &"palette_a_g", &"palette_a_b",
@@ -33,7 +35,7 @@ func run() -> void:
 	var specs := ShapeCatalogue.specs()
 	var tips := ShapeCatalogue.group_tooltips()
 
-	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids are the expected 83, in order")
+	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids are the expected 90, in order")
 
 	var seen := {}
 	for s in specs:
@@ -119,28 +121,38 @@ func run() -> void:
 	var shape := table.spec(&"shape")
 	check_eq(shape.type, AttributeSpec.Type.ENUM, "shape is an enum")
 	check_eq(table.get_default(&"shape"), FractalParams.Shape.MANDELBOX, "the Mandelbox by default")
-	check_eq(shape.enum_labels, ["Mandelbox", "KIFS", "Kleinian"], "the three shapes")
+	check_eq(shape.enum_labels, ["Mandelbox", "KIFS", "Kleinian", "Mandelbulb"], "the four shapes")
 	var as_mb := {&"shape": FractalParams.Shape.MANDELBOX}
 	var as_kifs := {&"shape": FractalParams.Shape.KIFS}
 	var as_kl := {&"shape": FractalParams.Shape.KLEINIAN}
+	var as_bulb := {&"shape": FractalParams.Shape.MANDELBULB}
 	var own := {
 		"Box": as_mb, "Julia": as_mb, "Iteration rotation": as_mb,
-		"KIFS": as_kifs, "KIFS rotation": as_kifs, "Kleinian": as_kl,
+		"KIFS": as_kifs, "KIFS rotation": as_kifs, "Kleinian": as_kl, "Mandelbulb": as_bulb,
 	}
 	for s in specs:
 		if own.has(s.group):
 			var mine: Dictionary = own[s.group]
-			for other in [as_mb, as_kifs, as_kl]:
+			for other in [as_mb, as_kifs, as_kl, as_bulb]:
 				if other != mine:
 					check(not s.is_shown(other), "'%s' hides off its shape (%s)" % [s.id, other[&"shape"]])
-		else:
-			for any_shape in [as_mb, as_kifs, as_kl]:
+		elif s.id != &"w":
+			for any_shape in [as_mb, as_kifs, as_kl, as_bulb]:
 				var v: Dictionary = any_shape.duplicate()
 				v[&"color_mode"] = Palette.MODE_ID
 				check(s.is_shown(v), "shared row '%s' shows on shape %s" % [s.id, any_shape[&"shape"]])
 	check(table.spec(&"box_scale").is_shown(as_mb), "box_scale shows on the Mandelbox")
 	check(table.spec(&"kifs_scale").is_shown(as_kifs), "kifs_scale shows on the KIFS")
 	check(table.spec(&"kleinian_view_distance").is_shown(as_kl), "the view distance shows on the Kleinian")
+	check(table.spec(&"mandelbulb_power").is_shown(as_bulb), "the power shows on the Mandelbulb")
+	var w_row := table.spec(&"w")
+	for any_shape in [as_mb, as_kifs, as_kl]:
+		check(w_row.is_shown(any_shape), "W shows on the 4D shape %s" % any_shape[&"shape"])
+	check(not w_row.is_shown(as_bulb), "W hides on the Mandelbulb, which is 3D")
+	var bc := table.spec(&"mandelbulb_c_1")
+	check(not bc.is_shown(as_bulb), "the Mandelbulb's constant hides while Julia is off")
+	check(bc.is_shown({&"shape": FractalParams.Shape.MANDELBULB, &"mandelbulb_julia": true}), "and shows while it is on")
+	check(not bc.is_shown({&"shape": FractalParams.Shape.MANDELBOX, &"mandelbulb_julia": true}), "but never off the Mandelbulb")
 	# Julia constants keep their own condition on top of the shape's.
 	check(not c0.is_shown({&"shape": 0, &"julia_all": false, &"julia_0": false}), "c_0 still needs its toggle")
 	check(c0.is_shown({&"shape": 0, &"julia_0": true}), "c_0 shows with its toggle on the Mandelbox")
@@ -151,11 +163,14 @@ func run() -> void:
 
 	for id in [&"shape", &"fold_shape", &"hybrid_every", &"kifs_fold"]:
 		check(not table.spec(id).bindable, "'%s' is not bindable" % id)
-	for id in [&"hybrid_mix", &"scale_drift", &"kifs_scale", &"kifs_poly_k", &"kifs_rot1_xy", &"kleinian_radius", &"kleinian_view_distance"]:
+	for id in [&"hybrid_mix", &"scale_drift", &"kifs_scale", &"kifs_poly_k", &"kifs_rot1_xy", &"kleinian_radius", &"kleinian_view_distance",
+			&"mandelbulb_power", &"mandelbulb_phase_phi", &"mandelbulb_c_0"]:
 		check(table.spec(id).bindable, "'%s' is bindable" % id)
 	check(table.spec(&"kifs_rot2_zw").wrap, "the KIFS rotations wrap")
 	check(table.spec(&"kleinian_view_distance").log_scale, "the view distance is logarithmic")
 	check(table.spec(&"kifs_scale").hard_min > 1.0, "the KIFS scale stays above 1")
+	check(table.spec(&"mandelbulb_power").hard_min > 1.0, "the Mandelbulb's power stays above 1")
+	check(table.spec(&"mandelbulb_phase_theta").wrap, "the Mandelbulb's phases wrap")
 	check_eq(ShapeCatalogue.SHAPE_GROUPS[0], "Fractal", "the Shape tab opens on the Fractal group")
 
 	_self_similarity(table)
@@ -240,5 +255,12 @@ func _self_similarity(table: AttributeTable) -> void:
 	kl[&"shape"] = FractalParams.Shape.KLEINIAN
 	check(ShapeCatalogue.self_similarity(kl)["qualifies"], "the Kleinian qualifies")
 	check(not ShapeCatalogue.self_similarity(kl, true)["qualifies"], "unless noise displaces it")
+	var bulb := defaults.duplicate()
+	bulb[&"shape"] = FractalParams.Shape.MANDELBULB
+	r = ShapeCatalogue.self_similarity(bulb)
+	check(not r["qualifies"] and String(r["reason"]).begins_with("Mandelbulb"), "the Mandelbulb never qualifies (%s)" % r["reason"])
+	bulb[&"mandelbulb_julia"] = true
+	r = ShapeCatalogue.self_similarity(bulb)
+	check(not r["qualifies"] and String(r["reason"]).contains("unevenly"), "not even as a Julia bulb (%s)" % r["reason"])
 	check(not ShapeCatalogue.self_similarity(defaults)["qualifies"] and ShapeCatalogue.self_similarity(defaults)["reason"] == "c follows the point",
 		"the shape row's default (Mandelbox) keeps the Mandelbox's rule")

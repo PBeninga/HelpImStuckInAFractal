@@ -126,6 +126,11 @@ func run() -> void:
 	check_approx(float(mat.get_shader_parameter("box_half")), FractalParams.KLEINIAN_BOUND, "the Kleinian has no real cube")
 	check_eq(int(mat.get_shader_parameter("coarse_iters")), DistanceEstimator.ITERATIONS,
 		"and no steady magnification, so its coarse pass runs all 32 iterations")
+	params.apply_resolved({&"shape": FractalParams.Shape.MANDELBULB, &"mandelbulb_power": 5.0, &"mandelbulb_julia": true})
+	check_eq(int(mat.get_shader_parameter("shape")), FractalParams.Shape.MANDELBULB, "the Mandelbulb reaches the shader")
+	check_approx(float(mat.get_shader_parameter("mandelbulb_power")), 5.0, "and its power")
+	check(bool(mat.get_shader_parameter("mandelbulb_julia")), "and its Julia switch")
+	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbulb marches in the cube of half-side 2")
 	params.apply_resolved({&"shape": FractalParams.Shape.MANDELBOX, &"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL})
 	check_eq(int(mat.get_shader_parameter("fold_shape")), MandelboxShape.FoldShape.OCTAHEDRAL, "a fold option reaches the shader")
 	params.apply_resolved({&"fold_shape": MandelboxShape.FoldShape.BOX})
