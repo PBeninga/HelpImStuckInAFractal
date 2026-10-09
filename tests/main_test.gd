@@ -291,6 +291,9 @@ func run() -> void:
 	vp.noise_button.pressed.emit()
 	check(nw.visible, "the View Noise button opens the editor")
 	check(not main.is_mouse_captured(), "with the mouse free")
+	# WASD in it goes back to the game: closed, mouse recaptured
+	nw.game_focus_requested.emit()
+	check(not nw.visible and main.is_mouse_captured(), "WASD in the noise editor closes it and recaptures the mouse")
 	nw.close()
 	main._free_requested = false
 	main._update_mouse()
