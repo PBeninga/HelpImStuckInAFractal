@@ -148,15 +148,35 @@ func run() -> void:
 	check(rn2["noise"] == null, "a file without a noise key reports null")
 	check(not FileAccess.get_file_as_string(TMP).contains("\"noise\""), "…and no empty noise key is written")
 
-	# --- every committed view save loads cleanly (keymap.json is not a view) ---
+	# --- a keymap file is refused by name, and changes nothing ---
+	# (The Movement pane's strip writes keymaps into the same saves/ folder, so
+	# a keymap handed to the view loader must say so instead of "Loaded".)
+	_write(TMP, JSON.stringify({"version": 1, "axes": [{"id": "a", "label": "Axis A", "speed": 1.0, "positive": "E", "negative": "Q"}]}))
+	var kept := _table()
+	kept.set_default(&"shape", FractalParams.Shape.KLEINIAN)
+	var kc := CameraState.make_default()
+	kc.speed_factor = 7.0
+	var rk := Workspace.load_file(TMP, kept, Axes.new(), FractalParams.new(), kc)
+	check(not rk["ok"], "a keymap file does not load as a view")
+	check(rk["warnings"].size() == 1 and String(rk["warnings"][0]).contains("keymap") and String(rk["warnings"][0]).contains("Movement"),
+		"and the message says it is a keymap and where to load it: %s" % [rk["warnings"]])
+	check_eq(kept.get_default(&"shape"), FractalParams.Shape.KLEINIAN, "the shape is left alone")
+	check_approx(kc.speed_factor, 7.0, "and so is the camera")
+
+	# --- every view save in saves/ loads cleanly; keymaps there are refused ---
 	var dir := DirAccess.open("res://saves")
 	check(dir != null, "res://saves exists")
 	if dir != null:
 		for f in dir.get_files():
-			if f.get_extension() != "json" or f == "keymap.json":
+			if f.get_extension() != "json":
 				continue
+			var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://saves/" + f))
+			var is_keymap := parsed is Dictionary and (parsed as Dictionary).get("axes") is Array
 			var r := Workspace.load_file("res://saves/" + f, _table(), Axes.new(), FractalParams.new(), CameraState.make_default())
-			check(r["ok"] and r["warnings"].is_empty(), "saves/%s loads with no warnings %s" % [f, r["warnings"]])
+			if is_keymap:
+				check(not r["ok"], "saves/%s is a keymap and is refused as a view" % f)
+			else:
+				check(r["ok"] and r["warnings"].is_empty(), "saves/%s loads with no warnings %s" % [f, r["warnings"]])
 
 	# --- the fractal: saved and restored; a file without one is a Mandelbox ---
 	var kt := _table()

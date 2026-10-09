@@ -378,7 +378,7 @@ const arch = {
       blurb: "A ScrollContainer of group headings and one AttributeRow per spec, built once from the table. There are two over the one table: the Shape tab limited to SHAPE_GROUPS, and the Colour tab limited to COLOUR_GROUPS with the palette window as a header that scrolls with the rows. Owns no state: forwards the Source list and each frame's resolved values to the rows; both stay in step through the table's `changed`.",
       links: [RL("inspector", 59, "_populate"), RL("console", 86, "Shape tab"), RL("console", 97, "Colour tab"), RL("inspector", 91, "set_resolved"), RL("tConsole", 48, "one row per spec across the tabs")] },
     { id: "movement", label: "MovementPane", sub: "axis lines · clock · keymap files", ctx: "ui", zone: "ui", x: 570, y: 800, w: 200, ...R("movement", 1),
-      blurb: "One line per axis (label, id, live value, 0, speed, two key-capture buttons, ✕), Add axis, the clock and speed-factor readouts beside a Reset camera button, the load-shed level, and Save / Save as… / Load… for the keymap. A view over Keymap: writes through the rebind API, rebuilds on a structural `changed`.",
+      blurb: "One line per axis (label, id, live value, 0, speed, two key-capture buttons, ✕), Add axis, the clock and speed-factor readouts beside a Reset camera button, the load-shed level, and Save keymap / Save keymap as… / Load keymap… for the keymap (named in full: the strip is always in view, and a bare Save as… passed for the view's). A view over Keymap: writes through the rebind API, rebuilds on a structural `changed`.",
       links: [RL("movement", 149, "_build_line"), RL("movement", 262, "_on_keymap_changed"), RL("movement", 285, "readouts")] },
     { id: "row", label: "AttributeRow", sub: "value + source · gain · wave", ctx: "ui", zone: "ui", x: 830, y: 680, w: 210, ...R("row", 1),
       blurb: "Fractacular's wide row: label, slider + spin (or a CheckBox / OptionButton), and for bindable specs Source ▾ (None, Time, each axis), Gain, Waveform ▾, Period. Every edit goes to the table; the row re-reads itself on `changed`. While a binding is active it shows `→ value`, the resolved value this frame.",
@@ -1076,9 +1076,9 @@ const consoleFig = {
     ro2("load shed 2/4", 277, "the load-shed level", "Shown only while the governor sheds quality (level > 0).", true);
     y += 6;
     mx = LX;
-    mw(52, "Save", { title: "Save", ...R("movement", 299), blurb: "Over the keymap's current file (saves/keymap.json at start), or the panel if there is none." });
-    mw(76, "Save as…", { title: "Save as…", ...R("movement", 106), blurb: "A WorkspaceFiles with subdir \"\" filtered to keymap*.json.", links: [RL("movement", 97, "the file panels")] });
-    mw(60, "Load…", { title: "Load…", ...R("movement", 316), blurb: "`Keymap.load_file(path)`. A failed load still resets the keymap to the default (see the gotcha cards)." });
+    mw(88, "Save keymap", { title: "Save keymap", ...R("movement", 304), blurb: "Over the keymap's current file (saves/keymap.json at start), or the panel if there is none." });
+    mw(112, "Save keymap as…", { title: "Save keymap as…", ...R("movement", 111), blurb: "A WorkspaceFiles with subdir \"\", noun keymap, filtered to *.json.", links: [RL("movement", 97, "the file panels")] });
+    mw(96, "Load keymap…", { title: "Load keymap…", ...R("movement", 321), blurb: "`Keymap.load_file(path)`. A missing or malformed file still resets the keymap to the default (see the gotcha cards); a saved view is refused by name and changes nothing." });
     winRect.setAttribute("height", y + 44 - Y0);
 
     // ---- the Colour tab, on the right
@@ -1284,8 +1284,8 @@ const kmApi = {
     { cells: ["bind(id, positive, negative)", "Repoints the pair; either may be KEY_NONE. The actions' events are erased and re-added.", "key capture buttons"], tip: { ...R("keymap", 60), links: [RL("movement", 258, "_on_key_captured"), RL("tAxes", 30, "the test")] } },
     { cells: ["set_speed(id, units_per_second)", "", "the speed spin"], tip: { ...R("keymap", 68), links: [RL("movement", 249, "the spin")] } },
     { cells: ["set_label(id, text)", "", "the label field"], tip: { ...R("keymap", 73), links: [RL("movement", 241, "the field")] } },
-    { cells: ["load_file(path = \"\") → {ok, warnings}", "Missing or malformed: the default axis, and current_path still becomes `path`.", "Main._ready; Load…"], tip: { ...R("keymap", 113), links: [RL("main", 66, "_ready"), RL("movement", 317, "Load…")] } },
-    { cells: ["save_file(path = \"\") → Error", "To `path`, else current_path, else the default file. Keys by name.", "Save; Save as…"], tip: { ...R("keymap", 159), links: [RL("movement", 303, "Save"), RL("movement", 308, "Save as…")] } },
+    { cells: ["load_file(path = \"\") → {ok, warnings}", "Missing or malformed: the default axis, and current_path still becomes `path`. A saved view: refused, nothing changes.", "Main._ready; Load keymap…"], tip: { ...R("keymap", 113), links: [RL("main", 66, "_ready"), RL("movement", 317, "Load…")] } },
+    { cells: ["save_file(path = \"\") → Error", "To `path`, else current_path, else the default file. Keys by name.", "Save keymap; Save keymap as…"], tip: { ...R("keymap", 171), links: [RL("movement", 308, "Save keymap"), RL("movement", 313, "Save keymap as…")] } },
     { cells: ["pos_action(id) / neg_action(id)", "\"axis_<id>_pos\" / \"axis_<id>_neg\"", "AxisController; tests"], tip: { ...R("keymap", 78), links: [RL("axisCtl", 25, "AxisController"), RL("tMain", 88, "hold(&\"axis_a_pos\")")] } },
     { cells: ["axes() → Axes", "The values, for the resolver and saves.", "Main; Workspace"], tip: { ...R("keymap", 23), links: [RL("main", 245, "the resolve"), RL("main", 255, "save")] } },
   ],
@@ -1379,9 +1379,9 @@ const cards = {
     { title: "Loading a view never unbinds", tag: "gotcha", hue: 2, ...R("table", 123),
       links: [RL("table", 108, "to_dict writes only active bindings"), RL("ws", 61, "restore")],
       body: "A file lists only its active bindings and apply_dict sets only what is listed, so loading saves/default.json while Scale is bound to Axis A keeps the binding (and its drive on top of the loaded default). Same for axis values the file omits, and for the 24 colour, lighting and palette ids: the committed saves predate them, so loading one keeps whatever lighting and palette you had. Consistent with 'loading is additive', but surprising." },
-    { title: "A failed keymap Load… still replaces the axes", tag: "gotcha", hue: 2, ...R("keymap", 117),
+    { title: "A failed keymap Load keymap… still replaces the axes", tag: "gotcha", hue: 2, ...R("keymap", 120),
       links: [RL("keymap", 120, "current_path = path anyway"), RL("movement", 318, "the pane says Load failed"), RL("keymap", 180, "_clear_all")],
-      body: "load_file falls back to the default axis on a missing or malformed file AND points current_path at the bad file, so a later Save overwrites it with the default. Any keymap load also zeroes every axis value (the axes are rebuilt), snapping bound knobs back to their defaults." },
+      body: "load_file falls back to the default axis on a missing or malformed file AND points current_path at the bad file, so a later Save overwrites it with the default (a saved view handed to it is the one exception: refused by name, nothing changes). Any keymap load also zeroes every axis value (the axes are rebuilt), snapping bound knobs back to their defaults." },
     { title: "Dragging a bound Julia constant", tag: "gotcha", hue: 2, ...R("marker", 60),
       links: [RL("resolver", 35, "the drive is added on top")],
       body: "The marker writes the mouse position as the table DEFAULT. If c_0..2 is bound, the next resolve adds gain × wave on top, so the ring sits off the cursor by the drive." },

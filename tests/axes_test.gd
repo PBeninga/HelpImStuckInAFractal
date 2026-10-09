@@ -72,6 +72,23 @@ func run() -> void:
 	check_eq(km3.positive_key(&"a"), KEY_E, "on E")
 	check_eq(km3.negative_key(&"a"), KEY_Q, "and Q")
 
+	# --- a saved view is refused by name, and the keymap in hand is kept ---
+	# (Views and keymaps share saves/, and the View tab's panel can be handed
+	# either; a view must not wipe the keys back to the default.)
+	var view_file := "user://axes_test_view.json"
+	var vf := FileAccess.open(view_file, FileAccess.WRITE)
+	vf.store_string(JSON.stringify({"version": 2, "shape": {"defaults": {}, "bindings": {}}, "axes": {}, "fractal": {}, "camera": {}}))
+	vf.close()
+	var km4 := Keymap.new()
+	km4.add_axis(&"b", "Axis B", 2.0, KEY_T, KEY_G)
+	var wrong := km4.load_file(view_file)
+	check(not wrong["ok"], "a view file does not load as a keymap")
+	check(wrong["warnings"].size() == 1 and String(wrong["warnings"][0]).contains("view") and String(wrong["warnings"][0]).contains("View tab"),
+		"and the message says it is a view and where to load it: %s" % [wrong["warnings"]])
+	check(km4.axes().has(&"b") and not km4.axes().has(&"a"), "the keymap in hand is left alone")
+	check_eq(km4.positive_key(&"b"), KEY_T, "keys and all")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(view_file))
+
 	# --- AxisController moves an axis under a held action, not while typing ---
 	var controller := AxisController.new()
 	var le := LineEdit.new()

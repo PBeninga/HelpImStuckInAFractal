@@ -118,6 +118,10 @@ func run() -> void:
 	for f in keymap_files.save_dialog().filters:
 		check(f.strip_edges().begins_with("*."), "the keymap filter is a plain *.ext pattern (%s)" % f)
 
+	# Its strip sits under the tabs, always in view, so its buttons say keymap too.
+	for b in [movement.save_button, movement.save_as_button, movement.load_button]:
+		check((b as Button).text.to_lower().contains("keymap"), "the strip's '%s' button says keymap" % (b as Button).text)
+
 	# --- Movement pane: Add axis grows the keymap ---
 	var before := km.axes().list().size()
 	movement.add_button().pressed.emit()

@@ -108,37 +108,46 @@ func _erase_actions(id: StringName) -> void:
 
 # --------------------------------------------------------------- files
 
+enum _Load { LOADED, USE_DEFAULT, REFUSED }
+
 ## Load a keymap JSON file. A missing or malformed file yields the shipped
-## default (one axis on Q/E) with a warning. Returns {ok, warnings}.
+## default (one axis on Q/E) with a warning. A saved view (the View tab's file,
+## which shares saves/) is refused by name and leaves the keymap in hand, and
+## the current path, alone. Returns {ok, warnings}.
 func load_file(path: String = "") -> Dictionary:
 	if path == "":
 		path = _default_path()
 	var warnings: Array = []
-	var ok := _load_into(path, warnings)
-	if not ok:
+	var outcome := _load_into(path, warnings)
+	if outcome == _Load.REFUSED:
+		return {"ok": false, "warnings": warnings}
+	if outcome == _Load.USE_DEFAULT:
 		_apply_default()
 	current_path = path
-	return {"ok": ok, "warnings": warnings}
+	return {"ok": outcome == _Load.LOADED, "warnings": warnings}
 
 
-func _load_into(path: String, warnings: Array) -> bool:
+func _load_into(path: String, warnings: Array) -> _Load:
 	if not FileAccess.file_exists(path):
 		warnings.append("No keymap at %s; using the default" % path)
-		return false
+		return _Load.USE_DEFAULT
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		warnings.append("Could not read %s; using the default" % path)
-		return false
+		return _Load.USE_DEFAULT
 	var text := file.get_as_text()
 	file.close()
 	var json := JSON.new()
 	if json.parse(text) != OK:
 		warnings.append("%s is not valid JSON; using the default" % path)
-		return false
+		return _Load.USE_DEFAULT
 	var data: Variant = json.data
+	if data is Dictionary and _is_view(data):
+		warnings.append("%s is a saved view, not a keymap: load it with the View tab's Load view…" % path.get_file())
+		return _Load.REFUSED
 	if not (data is Dictionary) or not (data as Dictionary).get("axes") is Array:
 		warnings.append("%s is not a keymap; using the default" % path)
-		return false
+		return _Load.USE_DEFAULT
 	_clear_all()
 	for entry in (data as Dictionary)["axes"]:
 		if not (entry is Dictionary):
@@ -153,7 +162,13 @@ func _load_into(path: String, warnings: Array) -> bool:
 		var pos := _key_from_name(str(entry.get("positive", "")))
 		var neg := _key_from_name(str(entry.get("negative", "")))
 		add_axis(id, label, speed, pos, neg)
-	return true
+	return _Load.LOADED
+
+
+## A view file (Workspace's shape): a "shape" or "fractal" section, or an
+## "axes" dictionary of values where a keymap has a list of axes.
+static func _is_view(data: Dictionary) -> bool:
+	return data.has("shape") or data.has("fractal") or data.get("axes") is Dictionary
 
 
 func save_file(path: String = "") -> Error:

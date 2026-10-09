@@ -14,8 +14,12 @@ extends RefCounted
 ## Loading never fails on unfamiliar content: an unknown shape id or axis id is
 ## skipped with a warning, and a key the file lacks leaves the current value
 ## alone — except the fractal (`shape`), which a file from before there was a
-## choice lacks, and which then loads as the Mandelbox it was saved from. A version-1 file (the old flat "fractal" section) is migrated to the
-## new ids without a warning. Saving always writes version 2.
+## choice lacks, and which then loads as the Mandelbox it was saved from. A
+## version-1 file (the old flat "fractal" section) is migrated to the new ids
+## without a warning. The one file refused outright is a keymap (keys and
+## axes, which the Movement pane writes into the same saves/ folder): it holds
+## no view, so the load fails by name instead of reporting "Loaded", and
+## changes nothing. Saving always writes version 2.
 
 const VERSION := 2
 
@@ -131,6 +135,8 @@ static func load_file(path: String, table: AttributeTable, axes: Axes, params: F
 	var data: Variant = json.data
 	if not (data is Dictionary):
 		return _failure("%s does not contain a saved view" % path)
+	if is_keymap(data):
+		return _failure("%s is a keymap (keys and axes), not a view: load it with the Movement pane's Load keymap…; views are saved with the View tab's Save view…" % path.get_file())
 	var version := int((data as Dictionary).get("version", 0))
 	if version == 1:
 		data = _migrate_v1(data)
@@ -175,6 +181,12 @@ static func load_noise_file(path: String) -> Dictionary:
 	if not (noise is Dictionary):
 		return {"ok": false, "warnings": ["%s has no noise section" % path], "noise": {}}
 	return {"ok": true, "warnings": [], "noise": noise}
+
+
+## Whether parsed JSON is a keymap file (Keymap.save_file's shape: an "axes"
+## list) rather than a view (whose "axes" is a dictionary of values).
+static func is_keymap(data: Variant) -> bool:
+	return data is Dictionary and (data as Dictionary).get("axes") is Array
 
 
 static func _failure(message: String) -> Dictionary:

@@ -298,9 +298,12 @@ waveform(source)`, shown as a live readout while a binding is active.
 **Movement pane.** One line per virtual axis — an editable label, its id, the
 live value, a **0** button, the push **speed**, two key-capture buttons (click,
 then press a key) and a remove button — plus **Add axis**, the clock readout,
-the fly camera's speed factor beside a **Reset camera** button, and **Save** /
-**Save as…** / **Load…** for the keymap file. Key pairs push an axis at its speed; a Shape row bound to that axis
-reads the value, so the row's gain is the key's sensitivity.
+the fly camera's speed factor beside a **Reset camera** button, and **Save
+keymap** / **Save keymap as…** / **Load keymap…** for the keymap file (keys and
+axes only; views are saved and loaded from the View tab, and either loader
+refuses the other's file by name). Key pairs push an axis at its speed; a Shape
+row bound to that axis reads the value, so the row's gain is the key's
+sensitivity.
 
 **⌘S** (Ctrl+S elsewhere) saves the view over the current file without a panel;
 with no current file it opens the Save panel.
