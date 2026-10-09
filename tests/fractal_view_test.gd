@@ -114,6 +114,22 @@ func run() -> void:
 	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "and moving back restores 16")
 	check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and the probe's lighting")
 
+	# the shape switch reaches the shader, and the bounding cube follows the shape
+	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbox marches in its cube of half-side 2")
+	params.apply_resolved({&"shape": FractalParams.Shape.KIFS, &"kifs_scale": 2.5, &"kifs_rot2_yz": 12.0})
+	check_eq(int(mat.get_shader_parameter("shape")), FractalParams.Shape.KIFS, "the shape reaches the shader")
+	check_approx(float(mat.get_shader_parameter("kifs_scale")), 2.5, "a KIFS knob reaches its uniform")
+	check_approx(float(mat.get_shader_parameter("kifs_rot2_yz")), 12.0, "so does a KIFS rotation")
+	check_approx(float(mat.get_shader_parameter("box_half")), params.bound_half(), "the KIFS's bound is pushed")
+	params.apply_resolved({&"shape": FractalParams.Shape.KLEINIAN, &"kleinian_view_distance": 7.0})
+	check_approx(float(mat.get_shader_parameter("kleinian_view_distance")), 7.0, "the view distance reaches the shader")
+	check_approx(float(mat.get_shader_parameter("box_half")), FractalParams.KLEINIAN_BOUND, "the Kleinian has no real cube")
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), DistanceEstimator.ITERATIONS,
+		"and no steady magnification, so its coarse pass runs all 32 iterations")
+	params.apply_resolved({&"shape": FractalParams.Shape.MANDELBOX, &"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL})
+	check_eq(int(mat.get_shader_parameter("fold_shape")), MandelboxShape.FoldShape.OCTAHEDRAL, "a fold option reaches the shader")
+	params.apply_resolved({&"fold_shape": MandelboxShape.FoldShape.BOX})
+
 	view.queue_free()
 	await frames(1)
 

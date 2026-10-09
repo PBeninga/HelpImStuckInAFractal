@@ -112,7 +112,7 @@ func run() -> void:
 	check_eq(beats[0], 3, "and emits changed once, not four times")
 
 	# --- the numbers live in the shape table, so they save with the view ---
-	var table := AttributeTable.new(MandelboxShape.specs())
+	var table := AttributeTable.new(ShapeCatalogue.specs())
 	var t := Palette.new(table)
 	check(t.table() == table, "a palette works over the table it is given")
 	t.c = Vector3(2.0, 3.0, 0.5)
@@ -120,14 +120,14 @@ func run() -> void:
 	table.set_default(&"palette_a_b", 0.2)
 	check_approx(t.a.z, 0.2, "and a table edit (a Palette row) reads back as A.b")
 	var saved: Dictionary = JSON.parse_string(JSON.stringify(table.to_dict()))
-	var reloaded := AttributeTable.new(MandelboxShape.specs())
+	var reloaded := AttributeTable.new(ShapeCatalogue.specs())
 	reloaded.apply_dict(saved)
 	var t2 := Palette.new(reloaded)
 	check_eq(t2.c, t.c, "C round-trips through the table's JSON")
 	check_eq(t2.color_at(0.42), t.color_at(0.42), "so the colours match")
 	check_eq(Palette.ids().size(), 12, "twelve ids")
 	for pid in Palette.ids():
-		check(MandelboxShape.catalogue_ids().has(pid), "'%s' is a catalogue id (so a shader uniform)" % pid)
+		check(ShapeCatalogue.catalogue_ids().has(pid), "'%s' is a catalogue id (so a shader uniform)" % pid)
 
 	# --- in_use follows the Colour mode ---
 	check(not t.in_use(), "the palette is not in use in the default Ice Fractal mode")

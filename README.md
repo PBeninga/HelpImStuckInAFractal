@@ -3,10 +3,13 @@
 A from-scratch Godot 4.6 Mandelbox viewer that emulates the renderer at
 [icefractal.com/mandelbox/](https://icefractal.com/mandelbox/): the same default
 view, the four shape sliders, the thirteen colour modes, the precision control,
-Julia mode and an orbit camera. On top of the site it adds a distance-scaled
+Julia mode and an orbit camera. On top of the site it adds two more fractals
+ported from Fractacular — a kaleidoscopic IFS (the Menger sponge, the
+Sierpinski tetrahedron and their kin) and a pseudo-Kleinian limit set — and
+cylinder, octahedral and abs-fold hybrid folds for the Mandelbox, a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
 while you move, and a **console** window — a Shape inspector of every
-Mandelbox knob with Fractacular's binding model, a Colour tab with
+fractal knob with Fractacular's binding model, a Colour tab with
 Fractacular's cosine-palette window and a tunable light, and a Movement pane of
 virtual axes driven by key pairs. It is built on the **GL Compatibility** renderer
 (WebGL 2) so it is web-exportable.
@@ -104,8 +107,10 @@ so the picture there is exactly the site's.
   the picture darkens and dark pits open. So the coarse count rises with your
   distance `d₀` to the nearest surface, to
   `ceil(log(2 / (2 × eps × d₀)) / log|scale|)` kept between 16 and 32
-  (`eps = precision / detail`): 24 at `d₀ = 0.001`, 32 by about `3e-6`.
-- **Lighting.** The Ice Fractal colour modes (1 to 9, outside Julia mode) light
+  (`eps = precision / detail`): 24 at `d₀ = 0.001`, 32 by about `3e-6`. The
+  KIFS runs the same rule on its own Scale; the Kleinian, which has no steady
+  magnification per iteration, always marches its coarse pass at 32.
+- **Lighting.** The Ice Fractal colour modes (1 to 9, on the Mandelbox outside Julia mode) light
   the surface with their own normal, which samples the formula 0.01 units from
   the hit point. Up close 0.01 spans far more than a pixel and that shading
   turns to noise, so between `d₀ = 2` and `d₀ = 0.1` it fades smoothly
@@ -169,7 +174,11 @@ wall at your elbow cannot carry you sideways through the wall, and a ray that
 hits nothing takes that cap. The load shedder's speed cap still applies on top.
 It will not fly closer to the surface than the 32-bit zoom limit (see
 [Deep zoom](#deep-zoom)); the Movement pane shows `zoom limit` while it is
-holding you there.
+holding you there. The centre ray marches whichever fractal is drawn, in that
+fractal's own bounds, and on the Kleinian it stops at the View distance just as
+the picture does (anything further is a miss, so the cap applies).
+`fly_camera_test` holds W at every fractal and fold option and checks no
+frame's step jumps a surface.
 
 ### Orbit camera
 
@@ -195,22 +204,45 @@ controls, a step at a time from 50% to 200%, and **⌘0** resets; the window kee
 its size and the panes reflow. The zoom is remembered between runs.
 
 **Shape tab.** A read-only **Self-similar: yes / no (reason)** line heads the
-tab: whether the current shape is exactly self-similar (Julia mode with the
-constant fixed in x, y and z, an iteration that magnifies, no noise
-displacement), following the shape and the noise graph live. It is
-information only; [docs/reference/self-similar-substitution.md](docs/reference/self-similar-substitution.md)
-explains what it means for deep zoom. Below it, one row per Mandelbox knob,
-grouped **Box** / **Julia** / **Iteration rotation** / **Render**:
+tab: whether the current shape is exactly self-similar, following the shape and
+the noise graph live. On the Mandelbox that is Julia mode with the constant
+fixed in x, y and z, an iteration that magnifies, no scale drift and no noise
+displacement; the KIFS qualifies without a twist, the Kleinian always (both
+without noise). It is information only;
+[docs/reference/self-similar-substitution.md](docs/reference/self-similar-substitution.md)
+explains what it means for deep zoom. Below it, one row per knob of the fractal
+being drawn, grouped **Fractal**, that fractal's own groups, then **Render**.
+Rows and headings of the fractals not chosen are hidden.
 
-- **Box** — Scale, Fold limit, Min radius, Fixed radius, Fold order (Box→Sphere
-  or Sphere→Box) and **W**, the fourth coordinate of the 4D sample point (0 is
-  today's 3D box).
+- **Fractal** — which fractal: **Mandelbox**, **KIFS** or **Kleinian**, and
+  **W**, the fourth coordinate of the 4D sample point (0 is the 3D shape). The
+  camera stays where it is when the fractal changes.
+- **Box** (Mandelbox) — Scale, Fold limit, Min radius, Fixed radius, Fold order
+  (Box→Sphere or Sphere→Box), **Fold shape** (Box, Cylinder — the xy radius
+  folded — or Octahedral — reflected through |x|+|y|+|z| ≤ Fold limit),
+  **Hybrid mix** and **Hybrid every** (on every 1st, 2nd or 3rd iteration, morph
+  the fold from the box fold toward the abs fold, KIFS's fold into the positive
+  corner: 0 is off, 1 swaps it outright, and the shape grows through the middle
+  of the range; bind the mix to sweep) and **Scale drift** (iteration i scales by
+  Scale + drift × i).
 - **Julia** — a master **Julia (all)** toggle and four per-component toggles,
   each revealing its **Constant** (the rows collapse until Julia is on). While
   Julia is on, a white ring marks the point in the view; drag it (with the mouse
   free) to move Constants x/y/z, which survives the next resolve.
-- **Iteration rotation** — the six 4D plane angles applied inside every
-  iteration (they change the fractal itself, not just the view).
+- **Iteration rotation** (Mandelbox) — the six 4D plane angles applied inside
+  every iteration (they change the fractal itself, not just the view).
+- **KIFS** — Scale (3 with the Coordinate fold is the Menger sponge), **Fold set**
+  (Coordinate: cube symmetry; Diagonal: the Sierpinski tetrahedron at scale 2;
+  Polyfold: k-fold mirror symmetry in xy, with its **Polyfold k**), **Twist**
+  (an xy turn growing with the iteration) and the 4D **Offset** the copies
+  scale away from. Ported from Fractacular, with its diagonal fold fixed to
+  actually fire and a mirror polyfold that a ray march can trust.
+- **KIFS rotation** — R1 (before the fold) and R2 (after it), six 4D plane
+  angles each.
+- **Kleinian** — Knighty's pseudo-Kleinian: the fold **Box** (one half-width
+  per axis), **Inversion radius**, 4D **Shift**, **Thickness** of the sheets, and
+  **View distance**: the set fills space, so rays stop at this distance (10 by
+  default) and the last third fades into the background.
 - **Render** — the ray-march Precision (log slider).
 
 **Colour tab.** Fractacular's Colour window at the top of one scrolling list,
@@ -291,8 +323,9 @@ Load edit this file; a missing or malformed file falls back to the default.
 A save is a small JSON file, **version 2**:
 
 - **`shape`** — `AttributeTable.to_dict()`: a `defaults` map (every catalogue id
-  to its value) and a `bindings` map (only active bindings, each a source /
-  gain / waveform / period).
+  to its value, the fractal among them) and a `bindings` map (only active
+  bindings, each a source / gain / waveform / period). A file from before the
+  fractal could be chosen has no `shape` id and loads as a Mandelbox.
 - **`axes`** — every virtual axis value by id.
 - **`fractal`** — the non-shape preferences: `fast_controls`, `camera_mode`
   (`"fly"`/`"orbit"`) and `mouse_sensitivity`.
@@ -384,7 +417,11 @@ tests/screenshots.sh  # windowed render check (writes PNGs to screenshots/)
 ```
 
 `tests/run_all.sh` imports the project (refreshing the class cache) and then runs
-each `tests/*_test.gd` headlessly; it exits non-zero if any test fails. Because
+each `tests/*_test.gd` headlessly; it exits non-zero if any test fails. The CPU
+distance estimators (`DistanceEstimator`, `KifsEstimator`, `KleinianEstimator`)
+are pinned by captured fixtures, and `march_safety_test.gd` checks every
+fractal and fold option is safe to sphere-trace: a full-step march never jumps
+a surface that a quarter-step march finds. Because
 the headless renderer produces no pixels, the actual render is verified by
 `tests/screenshots.sh`, which launches Godot windowed **without stealing focus**
 (via `open -g`), renders the default view, each colour mode, a

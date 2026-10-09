@@ -1,13 +1,15 @@
 shader_type canvas_item;
-// Mandelbox raymarcher. Written from the design spec's algorithm; nothing is
-// copied from icefractal.com. All float math is highp (WebGL 2 => float32),
-// which is Godot's canvas_item default.
+// The fractal raymarcher: the Mandelbox (written from the design spec's
+// algorithm; nothing is copied from icefractal.com), and through `shape` the
+// KIFS and Kleinian of kifs.gdshaderinc and kleinian.gdshaderinc. All float
+// math is highp (WebGL 2 => float32), which is Godot's canvas_item default.
 //
-// One Mandelbox iteration (mb_step) runs for both de() and field(): box fold,
-// sphere fold, optional per-iteration 4D rotation, scale and add. Each shape
-// uniform is named exactly as its catalogue id (src/fractal/mandelbox_shape.gd),
-// so the uniform set equals MandelboxShape.catalogue_ids() plus the renderer's
-// own camera uniforms.
+// One Mandelbox iteration (mb_step) runs for both de() and field(): the fold
+// (box, cylinder or octahedral, or the box-to-abs hybrid fold),
+// sphere fold, optional per-iteration 4D rotation, scale (drifting with the
+// iteration) and add. Each shape uniform is named exactly as its catalogue id
+// (src/fractal/shape_catalogue.gd), so the uniform set equals
+// ShapeCatalogue.catalogue_ids() plus the renderer's own camera uniforms.
 
 uniform vec3 eye;
 uniform vec3 cam_right;
@@ -42,11 +44,16 @@ uniform vec3 probe_point;
 uniform float probe_radius;
 
 // --- shape uniforms (names == catalogue ids) ---
+uniform int shape;            // 0 Mandelbox, 1 KIFS, 2 Kleinian
 uniform float box_scale;
 uniform float fold_limit;
 uniform float min_radius;
 uniform float fixed_radius;
 uniform int fold_order;       // 0 box -> sphere, 1 sphere -> box
+uniform int fold_shape;       // 0 box, 1 cylinder, 2 octahedral
+uniform float hybrid_mix;     // 0 off; box fold -> abs fold on hybrid iterations
+uniform int hybrid_every;     // the hybrid iterations: i % every == every - 1
+uniform float scale_drift;    // iteration i scales by box_scale + scale_drift * i
 uniform float w;              // the sample point's fourth coordinate
 
 uniform bool julia_all;
@@ -181,6 +188,71 @@ vec4 mb_rot_plane(vec4 p, int a, int b, float deg) {
 	return p - pa * ea - pb * eb + (pa * c - pb * s) * ea + (pa * s + pb * c) * eb;
 }
 
+// Reflect the xy pair through the circle of radius L (r -> 2L - r outside it);
+// z and w get the plain box fold.
+vec4 mb_cylinder_fold(vec4 p) {
+	float r = length(p.xy);
+	if (r > fold_limit) { p.xy *= (2.0 * fold_limit - r) / r; }
+	p.zw = clamp(p.zw, -fold_limit, fold_limit) * 2.0 - p.zw;
+	return p;
+}
+
+// Reflect xyz through the octahedron |x| + |y| + |z| <= L: twice its nearest
+// point minus the point (the box fold is the same rule for the cube). The
+// nearest point soft-thresholds every |component| by the theta that lands it on
+// the surface. w gets the plain box fold.
+vec4 mb_octahedral_fold(vec4 p) {
+	float lim = max(fold_limit, 0.0);
+	vec3 a = abs(p.xyz);
+	float sum = a.x + a.y + a.z;
+	if (sum > lim) {
+		float u1 = max(a.x, max(a.y, a.z));
+		float u3 = min(a.x, min(a.y, a.z));
+		float u2 = sum - u1 - u3;
+		float theta = u1 - lim;
+		float t2 = (u1 + u2 - lim) / 2.0;
+		if (u2 > t2) {
+			theta = t2;
+			float t3 = (sum - lim) / 3.0;
+			if (u3 > t3) { theta = t3; }
+		}
+		p.xyz = 2.0 * sign(p.xyz) * max(a - theta, 0.0) - p.xyz;
+	}
+	p.w = clamp(p.w, -fold_limit, fold_limit) * 2.0 - p.w;
+	return p;
+}
+
+// KIFS's coordinate fold: into the positive orthant, then sort x >= y >= z.
+vec4 menger_fold(vec4 p) {
+	p = abs(p);
+	if (p.x < p.y) { p.xy = p.yx; }
+	if (p.x < p.z) { p.xz = p.zx; }
+	if (p.y < p.z) { p.yz = p.zy; }
+	return p;
+}
+
+// The hybrid fold: reflect each component through [lo, hi], sliding from the
+// box fold's [-L, L] at mix 0 to [0, infinity) at mix 1, the abs fold. (Mixing
+// the two folds' results would cancel far out; see DistanceEstimator.)
+vec4 mb_hybrid_fold(vec4 p) {
+	float lo = -fold_limit * (1.0 - hybrid_mix);
+	float hi = (fold_limit + hybrid_mix) / max(1.0 - hybrid_mix, 1e-6);
+	return clamp(p, vec4(lo), vec4(hi)) * 2.0 - p;
+}
+
+// The fold step of iteration i: the chosen fold, or the hybrid fold on a
+// hybrid iteration. Each reflects through a convex set's boundary, so each is
+// 1-Lipschitz and the running derivative needs no factor.
+vec4 mb_fold(vec4 p, int i) {
+	if (hybrid_mix > 0.0) {
+		int every = max(hybrid_every, 1);
+		if (i % every == every - 1) { return mb_hybrid_fold(p); }
+	}
+	if (fold_shape == 1) { return mb_cylinder_fold(p); }
+	if (fold_shape == 2) { return mb_octahedral_fold(p); }
+	return mb_box_fold(p);
+}
+
 // The six per-iteration angles, fixed order xy, xz, xw, yz, yw, zw.
 vec4 mb_iter_rotate(vec4 p) {
 	p = mb_rot_plane(p, 0, 1, iter_rot_xy);
@@ -197,13 +269,15 @@ bool mb_rotating() {
 		+ abs(iter_rot_yz) + abs(iter_rot_yw) + abs(iter_rot_zw)) > 1e-6;
 }
 
-// One Mandelbox iteration on the 4D orbit point z with running derivative dz.
-void mb_step(inout vec4 z, inout float dz, vec4 c, bool rotating) {
-	if (fold_order == 0) { z = mb_box_fold(z); mb_sphere_fold(z, dz); }
-	else                 { mb_sphere_fold(z, dz); z = mb_box_fold(z); }
+// Iteration i of the Mandelbox on the 4D orbit point z with running
+// derivative dz.
+void mb_step(inout vec4 z, inout float dz, vec4 c, bool rotating, int i) {
+	if (fold_order == 0) { z = mb_fold(z, i); mb_sphere_fold(z, dz); }
+	else                 { mb_sphere_fold(z, dz); z = mb_fold(z, i); }
 	if (rotating) { z = mb_iter_rotate(z); }
-	z = box_scale * z + c;
-	dz = dz * abs(box_scale) + 1.0;
+	float s = box_scale + scale_drift * float(i);
+	z = s * z + c;
+	dz = dz * abs(s) + 1.0;
 }
 
 // Per component: the Julia constant where it is checked, the point's own
@@ -216,8 +290,27 @@ vec4 mb_constant(vec4 z0) {
 		(julia_all || julia_3) ? c_3 : z0.w);
 }
 
-// Mandelbox distance estimate, up to `iters` iterations (<= 32).
+#include "res://src/fractal/kifs.gdshaderinc"
+#include "res://src/fractal/kleinian.gdshaderinc"
+
+// The Kleinian's rays stop at its View distance (0: no limit for the others).
+float view_limit() {
+	return shape == 2 ? kleinian_view_distance : 0.0;
+}
+
+// How far past the start of the view distance's horizon a hit at t is: 0 clear,
+// 1 at the limit, where it has faded fully into the background.
+float view_fade(float t) {
+	float vd = view_limit();
+	if (vd <= 0.0) { return 0.0; }
+	return smoothstep(0.67 * vd, vd, t);
+}
+
+// The distance estimate for the shape being drawn, up to `iters` iterations
+// (<= 32). The Mandelbox's is below; DistanceEstimator is the CPU copy.
 float de(vec3 p, int iters) {
+	if (shape == 1) { return kifs_de(vec4(p, w), iters) + noise_displace(p); }
+	if (shape == 2) { return kleinian_de(vec4(p, w), iters) + noise_displace(p); }
 	vec4 z0 = vec4(p, w);
 	vec4 c = mb_constant(z0);
 	vec4 z = z0;
@@ -225,7 +318,7 @@ float de(vec3 p, int iters) {
 	bool rotating = mb_rotating();
 	for (int i = 0; i < 32; i++) {
 		if (i >= iters) { break; }
-		mb_step(z, dz, c, rotating);
+		mb_step(z, dz, c, rotating, i);
 	}
 	return length(z) / abs(dz) + noise_displace(p);
 }
@@ -238,7 +331,7 @@ float field(vec3 q) {
 	float dz = 1.0;
 	bool rotating = mb_rotating();
 	for (int i = 0; i < 16; i++) {
-		mb_step(z, dz, c, rotating);
+		mb_step(z, dz, c, rotating, i);
 	}
 	return length(z) - 8.0 + noise_displace(q);
 }
@@ -331,6 +424,9 @@ void fragment() {
 		if (fog_dist > 0.0) {
 			t_exit = min(t_exit, fog_dist * near_dist);  // nothing past the fog is marched
 		}
+		if (view_limit() > 0.0) {
+			t_exit = min(t_exit, view_limit());  // nor past the view distance
+		}
 		float total = max(tb.x, 0.0);
 		bool left_cube = total > t_exit;
 
@@ -362,7 +458,7 @@ void fragment() {
 		}
 
 		if (left_cube) {
-			COLOR = vec4(bg, 1.0);  // the only misses: leaving the cube, or reaching the fog
+			COLOR = vec4(bg, 1.0);  // the only misses: leaving the cube, the fog or the view distance
 		} else {
 			// Step-count shading stays on the original 128-step scale whatever the
 			// budget, so a ray that hits looks the same; one that ran out is 1.
@@ -370,18 +466,20 @@ void fragment() {
 			float inv = 1.0 - ce;
 			if (color_mode == 0) {
 				// Grayscale needs no normal: stay cheap
-				COLOR = vec4(probe_dot(mix(vec3(inv), fog_color, fog_amount(total)), eye + dir * total), 1.0);
+				COLOR = vec4(mix(probe_dot(mix(vec3(inv), fog_color, fog_amount(total)), eye + dir * total),
+					bg, view_fade(total)), 1.0);
 			} else {
 				vec3 v = eye + dir * total;
 			vec3 h = v * 0.5;
 			vec3 eh = eye * 0.5;
 			float delta = hit_eps(total) * 40.0;
 
-			// Normal: NF for modes 1..9 outside Julia mode, N otherwise. Up close NF
+			// Normal: NF for modes 1..9 on the Mandelbox outside Julia mode (the NF
+			// field is the Mandelbox's own orbit), N otherwise. Up close NF
 			// crossfades to N by nf_weight; each end computes only its own normal,
 			// so a weight of exactly 1 (the default view) is the site's maths.
 			vec3 n;
-			if (color_mode >= 1 && color_mode <= 9 && !julia_all) {
+			if (shape == 0 && color_mode >= 1 && color_mode <= 9 && !julia_all) {
 				if (nf_weight >= 1.0) {
 					n = calc_nf(v, h);
 				} else if (nf_weight <= 0.0) {
@@ -456,7 +554,8 @@ void fragment() {
 					float luma = dot(col, vec3(0.299, 0.587, 0.114));
 					col = mix(vec3(luma), col, saturation);
 				}
-				COLOR = vec4(probe_dot(mix(noise_tint(col, v), fog_color, fog_amount(total)), v), 1.0);
+				COLOR = vec4(mix(probe_dot(mix(noise_tint(col, v), fog_color, fog_amount(total)), v),
+					bg, view_fade(total)), 1.0);
 			}
 		}
 	}

@@ -79,7 +79,7 @@ func _ready() -> void:
 	camera = CameraState.make_default()
 	_remember_home()
 
-	_table = AttributeTable.new(MandelboxShape.specs())
+	_table = AttributeTable.new(ShapeCatalogue.specs())
 	_keymap = Keymap.new()
 	_keymap.load_file()   # saves/keymap.json, or the shipped default
 
@@ -165,7 +165,7 @@ func _build_clock() -> void:
 func _build_console() -> void:
 	_console = ConsoleWindow.new()
 	_console.name = "ConsoleWindow"
-	_console.setup(_table, _keymap, _clock, MandelboxShape.group_tooltips(),
+	_console.setup(_table, _keymap, _clock, ShapeCatalogue.group_tooltips(),
 		func() -> float: return camera.speed_factor)
 	add_child(_console)
 	_console.toggle_requested.connect(_on_console_toggle)
@@ -391,7 +391,7 @@ func _resolve_once() -> void:
 	params.apply_resolved(values)
 	if _console != null and _console.visible:
 		_console.set_resolved(values)
-		_console.show_self_similarity(MandelboxShape.self_similarity(
+		_console.show_self_similarity(ShapeCatalogue.self_similarity(
 			values, NoiseCompiler.displaces(view.noise_graph())))
 
 

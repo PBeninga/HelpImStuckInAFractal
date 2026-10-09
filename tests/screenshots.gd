@@ -46,7 +46,7 @@ func _run() -> void:
 	# for one second (value 1.0) so box_scale resolves to -2.09 + 0.5 = -1.59.
 	# The picture must differ from the default view — the binding really drove
 	# the shape. Rendered through the same view, then the view is restored.
-	var bound_table := AttributeTable.new(MandelboxShape.specs())
+	var bound_table := AttributeTable.new(ShapeCatalogue.specs())
 	var bind := Binding.new(); bind.source = &"a"; bind.gain = 0.5
 	bound_table.set_binding(&"box_scale", bind)
 	var bound_axes := Axes.new(); bound_axes.add(&"a", "Axis A", 1.0); bound_axes.set_value(&"a", 1.0)
@@ -97,7 +97,7 @@ func _run() -> void:
 	params.color_mode = 1   # back to Ice Fractal before capturing the default again
 	var np := FractalParams.new()
 	var ncam := CameraState.make_default()
-	var ntable := AttributeTable.new(MandelboxShape.specs())
+	var ntable := AttributeTable.new(ShapeCatalogue.specs())
 	var naxes := Axes.new()
 	var loaded := Workspace.load_file("res://saves/noiseRidges.json", ntable, naxes, np, ncam)
 	if not loaded["ok"]:
@@ -131,8 +131,63 @@ func _run() -> void:
 			_check_noise(ridges, plain)
 		plain_view.queue_free()
 
+	await _shapes(view, def)
 	await _capture_windows(view)
 	view.queue_free()
+
+
+## One frame per new fractal and Mandelbox fold option: shape_<name>.png. Each
+## must not be (almost) blank and must differ from the default view.
+func _shapes(view: FractalView, def: Image) -> void:
+	view.set_noise_graph(null)   # the noise_ridges shot left its field wired
+	var shots := [
+		["kifs_menger", {&"shape": 1}, Vector3(3.2, 2.4, 1.9)],
+		["kifs_sierpinski", {&"shape": 1, &"kifs_fold": 1, &"kifs_scale": 2.0}, Vector3(3.5, -2.0, 2.2)],
+		["kifs_polyfold", {&"shape": 1, &"kifs_fold": 2, &"kifs_scale": 2.2}, Vector3(3.0, 2.2, 2.5)],
+		["kifs_rotated", {&"shape": 1, &"kifs_rot1_xy": 20.0, &"kifs_rot2_yz": 12.0, &"kifs_twist": 4.0}, Vector3(3.2, 2.4, 1.9)],
+		["kleinian", {&"shape": 2}, Vector3(2.5, 1.6, 1.2)],
+		["kleinian_far", {&"shape": 2, &"kleinian_view_distance": 30.0}, Vector3(2.5, 1.6, 1.2)],
+		["mb_cylinder", {&"fold_shape": 1}, CameraState.DEFAULT_EYE],
+		["mb_octahedral", {&"fold_shape": 2}, CameraState.DEFAULT_EYE],
+		["mb_hybrid", {&"hybrid_mix": 0.5, &"hybrid_every": 2}, CameraState.DEFAULT_EYE],
+		["mb_hybrid_full", {&"hybrid_mix": 1.0, &"hybrid_every": 2}, CameraState.DEFAULT_EYE],
+		["mb_scale_drift", {&"scale_drift": 0.02}, CameraState.DEFAULT_EYE],
+	]
+	for shot in shots:
+		var id: String = "shape_" + shot[0]
+		var sp := FractalParams.new()
+		sp.apply_resolved(shot[1])
+		var scam := CameraState.new()
+		var eye: Vector3 = shot[2]
+		scam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+		view.setup(sp, scam)
+		view.set_render_scale(1.0)
+		await _render(view)
+		var img := view._viewport.get_texture().get_image()
+		if img == null:
+			_fail(id, "no_image")
+			continue
+		img.save_png(ProjectSettings.globalize_path(SHOT_DIR + "/%s.png" % id))
+		var lit := _lit_fraction(img)
+		if lit < 0.03:
+			_fail(id, "blank (%.3f lit)" % lit)
+		elif def != null:
+			_check_differs(id, img, def)
+		else:
+			_pass(id)
+
+
+## The share of pixels that are not (almost) black.
+func _lit_fraction(img: Image) -> float:
+	var lit := 0
+	var total := 0
+	for y in range(0, img.get_height(), 4):
+		for x in range(0, img.get_width(), 4):
+			total += 1
+			var c := img.get_pixel(x, y)
+			if c.r + c.g + c.b > 0.06:
+				lit += 1
+	return float(lit) / float(maxi(total, 1))
 
 
 ## The console and the noise editor, rendered embedded in this one window (so
@@ -141,13 +196,13 @@ func _run() -> void:
 func _capture_windows(view: FractalView) -> void:
 	root.gui_embed_subwindows = true
 
-	var table := AttributeTable.new(MandelboxShape.specs())
+	var table := AttributeTable.new(ShapeCatalogue.specs())
 	var keymap := Keymap.new()
 	keymap.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	var console := ConsoleWindow.new()
-	console.setup(table, keymap, clock, MandelboxShape.group_tooltips(), func() -> float: return 1.0)
+	console.setup(table, keymap, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	console.open()
 	console.position = Vector2i.ZERO
