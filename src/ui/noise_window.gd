@@ -8,6 +8,11 @@ extends Window
 ## bar, closed with its ✕, drawn above the view). Main owns it: it opens and closes it
 ## (the N key and the console View tab's Noise editor… button), and reads its graph
 ## for a view save.
+##
+## W, A, S or D pressed here (outside a text edit; see TextFocus.is_game_key)
+## asks for the game (`game_focus_requested`): Main closes the window and
+## recaptures the mouse, as a click in the view does. A spin box commits what
+## was typed into it and the letter is not typed.
 
 ## In points (logical units); UiScale.px turns them into window pixels.
 const DEFAULT_SIZE := Vector2i(1100, 700)
@@ -17,6 +22,8 @@ const MIN_SIZE := Vector2i(500, 360)
 ## window gives it keyboard focus, and a focused window keeps keys from the main
 ## window, so Main runs these through its own dispatch.
 signal unhandled_key(event: InputEventKey)
+## W, A, S or D was pressed here outside a text edit: back to the game.
+signal game_focus_requested
 
 var _view: FractalView
 var _editor: NoiseEditor
@@ -104,6 +111,14 @@ func toggle() -> void:
 		close()
 	else:
 		open()
+
+
+# WASD is caught before the GUI, so a focused spin box cannot type it.
+func _input(event: InputEvent) -> void:
+	if visible and TextFocus.is_game_key(event, self):
+		gui_release_focus()   # a spin box applies its text as it loses focus
+		set_input_as_handled()
+		game_focus_requested.emit()
 
 
 ## While this window holds keyboard focus, N and Escape close it

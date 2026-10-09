@@ -377,4 +377,4 @@ func _wasd_leaves_for_game() -> void:
 	var cmd_s := ui.key_event(KEY_S, true)
 	cmd_s.meta_pressed = true
 	cmd_s.ctrl_pressed = OS.get_name() != "macOS"
-	check(not console.is_game_key(cmd_s), "Cmd/Ctrl+S is not a game key")
+	check(not TextFocus.is_game_key(cmd_s, console), "Cmd/Ctrl+S is not a game key")

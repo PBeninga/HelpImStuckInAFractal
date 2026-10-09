@@ -204,6 +204,7 @@ func _build_noise_window() -> void:
 	_noise.setup(view)
 	_noise.close_requested.connect(_update_mouse)
 	_noise.unhandled_key.connect(_on_window_key)
+	_noise.game_focus_requested.connect(return_to_game)
 	_focus_viewports()
 
 
@@ -521,9 +522,12 @@ func _on_console_toggle() -> void:
 	_update_mouse()
 
 
-## WASD pressed in the console: give the main window keyboard focus and, as a
-## click in the view would, recapture the mouse, so the key that asked flies.
+## WASD pressed in the console or the noise window: give the main window
+## keyboard focus and, as a click in the view would, close the noise editor and
+## recapture the mouse, so the key that asked flies.
 func return_to_game() -> void:
+	if _noise != null:
+		_noise.close()
 	get_window().grab_focus()
 	_free_requested = false
 	_update_mouse()

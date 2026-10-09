@@ -5,7 +5,8 @@ extends "res://tests/test_case.gd"
 ## Displace gives the view's shader the noise uniforms; a click on the node's
 ## Scale slider pushes a new uniform value without rebuilding the shader; the
 ## Extent spin box changes the previews; the wire menu disconnects; and the
-## toolbar's Save… and Load… panels round-trip the graph through user://.
+## toolbar's Save… and Load… panels round-trip the graph through user://; and
+## W in the Extent spin box commits it and asks for the game.
 
 const TMP := "user://ui_noise_test.json"
 ## The canvas a new Value noise node needs to its right and below (its title,
@@ -50,6 +51,7 @@ func run() -> void:
 		await _extent_changes_previews()
 		await _wire_menu_disconnects()
 		await _save_and_load()
+		await _wasd_leaves_for_game()
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TMP))
 	window.queue_free()
@@ -244,3 +246,17 @@ func _save_and_load() -> void:
 	check_eq(window.graph().nodes.size(), 3, "the load restores the saved graph")
 	check(_uniforms().has("n_%s_scale" % vn), "and the view's shader has the noise again")
 	check(view.noise_graph() == window.graph(), "the view follows the loaded graph")
+
+
+func _wasd_leaves_for_game() -> void:
+	var asked := [0]
+	window.game_focus_requested.connect(func(): asked[0] += 1)
+	var spin := editor.extent_spin()
+	await ui.type_text(spin.get_line_edit(), "6", false)
+	check(window.gui_get_focus_owner() == spin.get_line_edit(), "typing into Extent focuses its field")
+	await ui.gui_key(KEY_W, true)
+	await ui.gui_key(KEY_W, false)
+	check_eq(asked[0], 1, "W in the Extent spin box asks for the game")
+	check(window.gui_get_focus_owner() == null, "and the spin box lets go of focus")
+	check_approx(spin.value, 6.0, "committing what was typed")
+	check(not spin.get_line_edit().text.contains("w"), "and the W is not typed (%s)" % spin.get_line_edit().text)
