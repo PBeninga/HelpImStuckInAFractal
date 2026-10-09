@@ -31,9 +31,15 @@ var subdir := ""
 ## instances never both fire on one key press.
 var quick_save_enabled := true
 
-## The file-dialog filter. The view and noise editor keep the default; the
-## console's Movement pane narrows it to keymap files.
+## The file-dialog filter. On macOS the native panel takes the text after
+## "*." as an extension, so it must be a plain "*.ext" pattern: "keymap*.json"
+## became the extension "keymap*.json" and mangled every name typed.
 var file_filter := FILTER
+## What the panels call the file ("Save view", "Load view") and the name the
+## save panel offers when no file is current. The Movement pane makes them
+## "keymap", so its panel cannot pass for the view's.
+var noun := "view"
+var default_name := DEFAULT_NAME
 
 var _save_dialog: FileDialog
 var _load_dialog: FileDialog
@@ -64,9 +70,9 @@ func _init() -> void:
 
 func _ready() -> void:
 	_ensure_subdir()
-	_save_dialog = _make_dialog(FileDialog.FILE_MODE_SAVE_FILE, "Save view")
+	_save_dialog = _make_dialog(FileDialog.FILE_MODE_SAVE_FILE, "Save %s" % noun)
 	_save_dialog.file_selected.connect(_on_save_selected)
-	_load_dialog = _make_dialog(FileDialog.FILE_MODE_OPEN_FILE, "Load view")
+	_load_dialog = _make_dialog(FileDialog.FILE_MODE_OPEN_FILE, "Load %s" % noun)
 	_load_dialog.file_selected.connect(_on_load_selected)
 
 
@@ -102,7 +108,7 @@ func display_name() -> String:
 
 
 func prompt_save() -> void:
-	_open(_save_dialog, display_name() if current_path != "" else DEFAULT_NAME)
+	_open(_save_dialog, display_name() if current_path != "" else default_name)
 
 
 func prompt_load() -> void:
@@ -129,8 +135,10 @@ func note_loaded(path: String) -> void:
 
 func _make_dialog(mode: FileDialog.FileMode, title: String) -> FileDialog:
 	var dialog := FileDialog.new()
-	dialog.title = title
 	dialog.file_mode = mode
+	# Setting the mode replaces the title ("Open a File") unless told not to.
+	dialog.mode_overrides_title = false
+	dialog.title = title
 	# The native panel is only used with filesystem access; the other access
 	# modes fall back to Godot's own dialog.
 	dialog.access = FileDialog.ACCESS_FILESYSTEM

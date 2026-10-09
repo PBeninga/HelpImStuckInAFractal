@@ -11,7 +11,7 @@ extends VBoxContainer
 ## The Reset camera button was pressed; Main owns the camera and does the reset.
 signal reset_camera_requested
 
-const KEYMAP_FILTER := "keymap*.json ; Keymaps"
+const KEYMAP_FILTER := "*.json ; Keymaps"
 
 var _keymap: Keymap
 var _clock: Clock
@@ -93,7 +93,7 @@ func _ready() -> void:
 
 	var files_row := HBoxContainer.new()
 	var save_btn := _flat_button("Save", "Save the keymap over its current file.")
-	var save_as_btn := _flat_button("Save as…", "Save the keymap to a new file in saves/.")
+	var save_as_btn := _flat_button("Save as…", "Save the keymap (keys and axes, not the view) to a new file in saves/. The View tab saves views.")
 	var load_btn := _flat_button("Load…", "Load a keymap from saves/.")
 	files_row.add_child(save_btn)
 	files_row.add_child(save_as_btn)
@@ -109,6 +109,8 @@ func _ready() -> void:
 	_files.subdir = ""
 	_files.quick_save_enabled = false
 	_files.file_filter = KEYMAP_FILTER
+	_files.noun = "keymap"
+	_files.default_name = Keymap.DEFAULT_FILE
 	add_child(_files)
 	_files.save_to.connect(_save_keymap_to)
 	_files.load_from.connect(_load_keymap_from)
