@@ -54,8 +54,8 @@ as good as exact, and the GPU hands off to today's loop for the remaining
   and Kleinian (box fold, inversion, shift, fixed-point exit).
 - **Not perturbed**, keeping today's floor: the Mandelbox's octahedral fold and
   the KIFS poly fold (many-region piecewise maps whose crossing cases are not
-  worth enumerating now), and the Mandelbulb shape another branch is adding
-  (follow-up spec). With these `pert_iters` is 0 and `zoom_floor` is today's.
+  worth enumerating now), and the Mandelbulb shape (its power map is not
+  piecewise-linear; follow-up spec). With these `pert_iters` is 0 and `zoom_floor` is today's.
 - Noise displacement stays evaluated at the 32-bit position. A displaced
   surface is smooth below the displacement's size, so there is nothing to zoom
   into; the test and the readme say so.
