@@ -4,9 +4,10 @@ extends Node
 ## right, no roll) and WASD + Space/Backspace (up/down) movement whose speed
 ## follows how far away the surface straight ahead is (the CenterRay), capped
 ## by the distance to the nearest surface in any direction. Holding Shift
-## doubles the speed. A move that would take the camera below the 32-bit zoom
-## floor (FractalParams.zoom_floor) is refused. Reads and writes a shared
-## CameraState.
+## doubles the speed. A move that would take the camera below the zoom floor
+## (FractalParams.zoom_floor: where the perturbed march or 32 iterations run out,
+## or the 32-bit floor for shapes that are not perturbed) is refused. The eye
+## moves in 64-bit. Reads and writes a shared CameraState.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
@@ -16,6 +17,10 @@ const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg of
 const NEAR_CAP := 10.0
 ## Sprint ("sprint", Shift) multiplies the speed by this while held.
 const SPRINT_MULTIPLIER := 2.0
+## base_speed()'s lowest value. The speed is about the distance to the surface,
+## so it must be able to fall below any zoom floor or the camera would outrun its
+## own stop.
+const SPEED_FLOOR := 1e-14
 
 var enabled := false
 ## The load shedder's cap on travel speed: 1.0 normally, lower at its top level.
@@ -81,26 +86,25 @@ func _physics_process(delta: float) -> void:
 	# The step is added in 64-bit: below about 1e-6 a 32-bit origin could not move.
 	var step := current_speed() * delta
 	var e := _camera.eye64()
-	var nx: float = e[0] + dir.x * step
-	var ny: float = e[1] + dir.y * step
-	var nz: float = e[2] + dir.z * step
-	if not move_allowed(_camera.eye(), Vector3(nx, ny, nz)):   # Task 6 makes the guard 64-bit
+	var to := PackedFloat64Array([e[0] + dir.x * step, e[1] + dir.y * step, e[2] + dir.z * step])
+	if not move_allowed(e, to):
 		at_zoom_limit = true
 		return
 	at_zoom_limit = false
-	_camera.set_eye64(nx, ny, nz)
+	_camera.set_eye64(to[0], to[1], to[2])
 
 
-## Whether the camera may move from `from` to `to`: yes when `to` is at least
-## the zoom floor from the surface, or no closer than `from` is (backing away
-## is always allowed, so a camera already past the floor, say from a loaded
-## save, can leave). The speed already shrinks with the distance, so the last
-## accepted step before the floor is tiny and the stop does not pop.
-func move_allowed(from: Vector3, to: Vector3) -> bool:
-	var d_to := DistanceEstimator.estimate(to, _params)
-	if d_to >= _params.zoom_floor(PackedFloat64Array([to.x, to.y, to.z])):
+## Whether the camera may move from `from` to `to` (64-bit eyes): yes when `to` is
+## at least the zoom floor from the surface, or no closer than `from` is (backing
+## away is always allowed, so a camera already past the floor, say from a loaded
+## save, can leave). One ReferenceOrbit at `to` gives both its distance and its
+## floor. The speed already shrinks with the distance, so the last accepted step
+## before the floor is tiny and the stop does not pop.
+func move_allowed(from: PackedFloat64Array, to: PackedFloat64Array) -> bool:
+	var orbit := ReferenceOrbit.build(_params, to[0], to[1], to[2])
+	if orbit.distance >= _params.zoom_floor_for(orbit):
 		return true
-	return d_to >= DistanceEstimator.estimate(from, _params)
+	return orbit.distance >= DistanceEstimator.estimate_at(from[0], from[1], from[2], _params)
 
 
 ## Rotate the view by a mouse delta (pixels). Yaw turns the heading about world
@@ -149,9 +153,10 @@ func current_speed() -> float:
 ## nearest surface (a miss, at infinity, takes the cap), times the speed factor
 ## and the load shedder's speed_limit.
 func base_speed() -> float:
-	var near := DistanceEstimator.estimate(_camera.eye(), _params)
+	var e := _camera.eye64()
+	var near := DistanceEstimator.estimate_at(e[0], e[1], e[2], _params)
 	var d := minf(_ray.distance(), near * NEAR_CAP)
-	return clampf(d, 1e-6, 20.0) * _camera.speed_factor * speed_limit
+	return clampf(d, SPEED_FLOOR, 20.0) * _camera.speed_factor * speed_limit
 
 
 func scroll(up: bool) -> void:

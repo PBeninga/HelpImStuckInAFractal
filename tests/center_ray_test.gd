@@ -60,11 +60,11 @@ func run() -> void:
 	root.add_child(fly)
 	fly.setup(params, cam, ray)
 	var want := minf(ray.distance(), near * FlyCamera.NEAR_CAP)
-	check_approx(fly.base_speed(), clampf(want, 1e-6, 20.0) * cam.speed_factor,
+	check_approx(fly.base_speed(), clampf(want, FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor,
 		"base speed is min(ray, NEAR_CAP x near) x factor", 1e-9)
 	cam.transform = turned   # a miss: the cap alone
 	var near_turned := DistanceEstimator.estimate(cam.eye(), params)
-	check_approx(fly.base_speed(), clampf(near_turned * FlyCamera.NEAR_CAP, 1e-6, 20.0) * cam.speed_factor,
+	check_approx(fly.base_speed(), clampf(near_turned * FlyCamera.NEAR_CAP, FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor,
 		"a miss takes the NEAR_CAP x near speed", 1e-9)
 	cam.transform = CameraState.make_default().transform
 	fly.queue_free()
