@@ -3,9 +3,10 @@
 A from-scratch Godot 4.6 Mandelbox viewer that emulates the renderer at
 [icefractal.com/mandelbox/](https://icefractal.com/mandelbox/): the same default
 view, the four shape sliders, the thirteen colour modes, the precision control,
-Julia mode and an orbit camera. On top of the site it adds two more fractals
-ported from Fractacular — a kaleidoscopic IFS (the Menger sponge, the
-Sierpinski tetrahedron and their kin) and a pseudo-Kleinian limit set — and
+Julia mode and an orbit camera. On top of the site it adds three more fractals
+— a kaleidoscopic IFS (the Menger sponge, the Sierpinski tetrahedron and their
+kin) and a pseudo-Kleinian limit set, ported from Fractacular, and the
+Mandelbulb — and
 cylinder, octahedral and abs-fold hybrid folds for the Mandelbox, a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
 while you move, and a **console** window — a Shape inspector of every
@@ -108,8 +109,10 @@ so the picture there is exactly the site's.
   distance `d₀` to the nearest surface, to
   `ceil(log(2 / (2 × eps × d₀)) / log|scale|)` kept between 16 and 32
   (`eps = precision / detail`): 24 at `d₀ = 0.001`, 32 by about `3e-6`. The
-  KIFS runs the same rule on its own Scale; the Kleinian, which has no steady
-  magnification per iteration, always marches its coarse pass at 32.
+  KIFS runs the same rule on its own Scale and the Mandelbulb on its Power (an
+  iteration near its surface stretches by about the power); the Kleinian,
+  which has no steady magnification per iteration, always marches its coarse
+  pass at 32.
 - **Lighting.** The Ice Fractal colour modes (1 to 9, on the Mandelbox outside Julia mode) light
   the surface with their own normal, which samples the formula 0.01 units from
   the hit point. Up close 0.01 spans far more than a pixel and that shading
@@ -208,15 +211,17 @@ tab: whether the current shape is exactly self-similar, following the shape and
 the noise graph live. On the Mandelbox that is Julia mode with the constant
 fixed in x, y and z, an iteration that magnifies, no scale drift and no noise
 displacement; the KIFS qualifies without a twist, the Kleinian always (both
-without noise). It is information only;
+without noise), the Mandelbulb never (its power map stretches some directions
+more than others, so its deep copies are distorted). It is information only;
 [docs/reference/self-similar-substitution.md](docs/reference/self-similar-substitution.md)
 explains what it means for deep zoom. Below it, one row per knob of the fractal
 being drawn, grouped **Fractal**, that fractal's own groups, then **Render**.
 Rows and headings of the fractals not chosen are hidden.
 
-- **Fractal** — which fractal: **Mandelbox**, **KIFS** or **Kleinian**, and
-  **W**, the fourth coordinate of the 4D sample point (0 is the 3D shape). The
-  camera stays where it is when the fractal changes.
+- **Fractal** — which fractal: **Mandelbox**, **KIFS**, **Kleinian** or
+  **Mandelbulb**, and **W**, the fourth coordinate of the 4D sample point (0 is
+  the 3D shape; hidden on the Mandelbulb, which is 3D). The camera stays where
+  it is when the fractal changes.
 - **Box** (Mandelbox) — Scale, Fold limit, Min radius, Fixed radius, Fold order
   (Box→Sphere or Sphere→Box), **Fold shape** (Box, Cylinder — the xy radius
   folded — or Octahedral — reflected through |x|+|y|+|z| ≤ Fold limit),
@@ -243,6 +248,15 @@ Rows and headings of the fractals not chosen are hidden.
   per axis), **Inversion radius**, 4D **Shift**, **Thickness** of the sheets, and
   **View distance**: the set fills space, so rays stop at this distance (10 by
   default) and the last third fades into the background.
+- **Mandelbulb** — White and Nylander's triplex power: every iteration writes
+  the point in spherical coordinates, raises the radius to the **Power** (8, the
+  classic bulb) and multiplies both angles by it, then adds c. **Theta phase**
+  and **Phi phase** add a turn to the polar angle and the azimuth each
+  iteration (the lobes lean and swirl), and **Julia** swaps c for a fixed
+  **Constant** x/y/z. The distance is the escape-time estimate
+  0.5 · r · ln r / dr. The bulb lies within radius 2^(1/(Power − 1)) (about 1.1
+  at power 8), so it marches in the usual cube of half-side 2; fly in to about
+  2 from the origin to frame it.
 - **Render** — the ray-march Precision (log slider).
 
 **Colour tab.** Fractacular's Colour window at the top of one scrolling list,
@@ -418,8 +432,8 @@ tests/screenshots.sh  # windowed render check (writes PNGs to screenshots/)
 
 `tests/run_all.sh` imports the project (refreshing the class cache) and then runs
 each `tests/*_test.gd` headlessly; it exits non-zero if any test fails. The CPU
-distance estimators (`DistanceEstimator`, `KifsEstimator`, `KleinianEstimator`)
-are pinned by captured fixtures, and `march_safety_test.gd` checks every
+distance estimators (`DistanceEstimator`, `KifsEstimator`, `KleinianEstimator`,
+`MandelbulbEstimator`) are pinned by captured fixtures, and `march_safety_test.gd` checks every
 fractal and fold option is safe to sphere-trace: a full-step march never jumps
 a surface that a quarter-step march finds. Because
 the headless renderer produces no pixels, the actual render is verified by
