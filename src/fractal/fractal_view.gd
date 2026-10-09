@@ -12,6 +12,10 @@ const TAN_HALF_FOV := 0.36397023426620234  # tan(20 degrees), half of a 40 deg v
 ## The probe dot's radius as a fraction of its distance: about 5 px across the
 ## 800 px-high view's 40 deg field, whatever the distance.
 const PROBE_ANGULAR_RADIUS := 0.005
+## Frames the shed fog takes to go out when the level drops, instead of popping
+## to the full view distance. Fog coming in is never eased: that is the governor
+## buying frame time back now.
+const FOG_OUT_FRAMES := 6
 
 ## A noise rebuild failed to compile, or recovered. "" means all clear. The panel
 ## shows the message on its status line; the console gets it too.
@@ -45,6 +49,14 @@ var _base_shader: Shader
 var _base_code := ""
 var _noise_graph: NoiseGraph
 var _shed: Dictionary = LoadShedder.settings(0)
+# The fog on screen, as an inverse distance (1 / fog_dist, 0 = none) so a fog on
+# its way out recedes towards infinity in even steps. A fog leaving entirely
+# also thins (_fog_clear 0 -> 1) as it recedes.
+var _fog_inv := 0.0
+var _fog_clear := 0.0
+var _fog_from := 0.0
+var _fog_frame := FOG_OUT_FRAMES      # frames into the fog-out tween; done at FOG_OUT_FRAMES
+var _fog_stepped_on := -1             # the process frame the tween last stepped on
 var _center_ray: CenterRay
 
 
@@ -226,7 +238,44 @@ func set_load_level(level: int) -> void:
 		return
 	load_level = level
 	_shed = LoadShedder.settings(level)
+	var target := _fog_target()
+	if target >= _fog_inv:
+		_fog_inv = target
+		_fog_clear = 0.0
+		_fog_frame = FOG_OUT_FRAMES
+	else:
+		_fog_from = _fog_inv
+		_fog_frame = 0
+		_step_fog()
 	_push_params()
+
+
+## True while the fog is still easing out after a level drop.
+func fog_settling() -> bool:
+	return _fog_frame < FOG_OUT_FRAMES
+
+
+func _process(_delta: float) -> void:
+	if fog_settling() and _fog_stepped_on != Engine.get_process_frames():
+		_step_fog()
+		_push_fog()
+		request_frame()
+
+
+func _fog_target() -> float:
+	var fog: float = _shed["fog"]
+	return 1.0 / fog if fog > 0.0 else 0.0
+
+
+## One frame of the fog-out tween: recede towards the target level's fog and,
+## when the target is none, thin out on the way.
+func _step_fog() -> void:
+	_fog_frame += 1
+	_fog_stepped_on = Engine.get_process_frames()
+	var t := float(_fog_frame) / FOG_OUT_FRAMES
+	var target := _fog_target()
+	_fog_inv = lerpf(_fog_from, target, t)
+	_fog_clear = t if target == 0.0 and t < 1.0 else 0.0
 
 
 func request_frame() -> void:
@@ -344,9 +393,16 @@ func _push_params() -> void:
 	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _shed["steps"])))
 	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
 	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
-	_material.set_shader_parameter("fog_dist", _shed["fog"])
-	_material.set_shader_parameter("fog_color", _params.fog_color())
+	_push_fog()
 	_push_near()
+
+
+func _push_fog() -> void:
+	if _material == null or _params == null:
+		return
+	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 else 0.0)
+	_material.set_shader_parameter("fog_clear", _fog_clear)
+	_material.set_shader_parameter("fog_color", _params.fog_color())
 
 
 func _push_camera() -> void:

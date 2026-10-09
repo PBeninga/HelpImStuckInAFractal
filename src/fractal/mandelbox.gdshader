@@ -34,9 +34,12 @@ uniform int coarse_iters;
 // calc_nf's fixed 0.01 offset turns to noise (FractalParams.nf_weight).
 uniform float nf_weight;
 // The load shedder's distance fog: rays stop at fog_dist x near_dist and fade
-// into fog_color on the way there. fog_dist 0 is no fog.
+// into fog_color on the way there. fog_dist 0 is no fog. fog_clear (0..1) is
+// how far a fog on its way out has thinned: above 0 the march is no longer cut
+// at the fog, so the far geometry fades in through it rather than popping.
 uniform float fog_dist;
 uniform vec3 fog_color;
+uniform float fog_clear;
 // The centre-ray probe: a dot painted on the surface where the ray through the
 // middle of the screen hits (CenterRay, marched on the CPU). Off when the probe
 // is hidden or the ray misses.
@@ -131,7 +134,7 @@ float hit_eps(float t) {
 float fog_amount(float t) {
 	if (fog_dist <= 0.0) { return 0.0; }
 	float t_fog = fog_dist * near_dist;
-	return smoothstep(0.35 * t_fog, t_fog, t);
+	return (1.0 - fog_clear) * smoothstep(0.35 * t_fog, t_fog, t);
 }
 
 // The probe dot over a surface colour at hit point v: a white disc of radius
@@ -417,14 +420,14 @@ void fragment() {
 	vec3 bg = (color_mode == 5 || color_mode == 6) ? vec3(1.0) : vec3(0.0);
 	// A miss is infinitely far, so under fog the sky is the fog: far surfaces fade
 	// into it without a seam.
-	if (fog_dist > 0.0) { bg = fog_color; }
+	if (fog_dist > 0.0) { bg = mix(fog_color, bg, fog_clear); }
 
 	vec2 tb = box_intersect(eye, dir, box_half);
 	if (tb.y < max(tb.x, 0.0)) {
 		COLOR = vec4(bg, 1.0);
 	} else {
 		float t_exit = tb.y;
-		if (fog_dist > 0.0) {
+		if (fog_dist > 0.0 && fog_clear <= 0.0) {
 			t_exit = min(t_exit, fog_dist * near_dist);  // nothing past the fog is marched
 		}
 		if (view_limit() > 0.0) {

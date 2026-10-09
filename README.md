@@ -148,8 +148,12 @@ Rays stop at the fog distance, and the view fades into a tint of the current
 colour mode on the way there. The thresholds are sticky: a shed needs 0.5 s
 under 24 fps (and 1 s since the last change), a restore needs 2 s over 40 fps,
 nothing changes in between, and a shed soon after a restore doubles the next
-restore's wait (up to 16 s). The level is kept while you are still, but the
-still frame always renders at full quality. The console's Movement pane shows
+restore's wait (up to 16 s). A level coming off eases its fog out over six
+frames instead of snapping it to the full view distance: the fog recedes, and
+when it is going entirely it also thins, with the march no longer stopping at
+it, so the far geometry fades in. A level going on snaps its fog straight in.
+The level is kept while you are still, but the still frame always renders at
+full quality (the fog easing out over its first frames). The console's Movement pane shows
 `load shed N/4` while a level is active.
 
 ### Fly camera (default)

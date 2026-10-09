@@ -79,8 +79,33 @@ func run() -> void:
 	check_eq(int(mat.get_shader_parameter("coarse_steps")) + int(mat.get_shader_parameter("fine_steps")),
 		FractalParams.MAX_STEPS_MIN, "the shed budget never drops below MAX_STEPS_MIN")
 	params.max_steps = 128
+	# a level drop eases the fog out over FOG_OUT_FRAMES frames: it recedes, and
+	# when it is leaving entirely it thins as it goes
+	view.set_load_level(2)
+	var l2 := LoadShedder.settings(2)
+	var mid := float(mat.get_shader_parameter("fog_dist"))
+	check(mid > l3["fog"] and mid < l2["fog"], "a drop to level 2 starts the fog receding (%s)" % mid)
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "a fog that stays does not thin")
+	check(view.fog_settling(), "and the view is still easing it")
+	await frames(FractalView.FOG_OUT_FRAMES)
+	check_approx(mat.get_shader_parameter("fog_dist"), l2["fog"], "it lands on level 2's fog")
+	check(not view.fog_settling(), "and stops easing")
 	view.set_load_level(0)
+	var first := float(mat.get_shader_parameter("fog_dist"))
+	var clear := float(mat.get_shader_parameter("fog_clear"))
+	check(first > l2["fog"], "back to level 0 the fog first recedes (%s)" % first)
+	check(clear > 0.0 and clear < 1.0, "and thins (%s)" % clear)
+	await frames(2)   # process_frame fires before the view's _process steps the fog
+	check(float(mat.get_shader_parameter("fog_dist")) > first, "a frame later it is further out")
+	check(float(mat.get_shader_parameter("fog_clear")) > clear, "and thinner")
+	view.set_load_level(3)
+	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "a shed mid-ease snaps the fog straight in")
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "at full strength")
+	check(not view.fog_settling(), "with no easing")
+	view.set_load_level(0)
+	await frames(FractalView.FOG_OUT_FRAMES)
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "back to level 0: no fog")
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "and nothing left to thin")
 	check_approx(mat.get_shader_parameter("precision"), base_prec, "and the original precision", 1e-12)
 	check_eq(int(mat.get_shader_parameter("coarse_steps")), base_coarse, "and the original budget")
 
