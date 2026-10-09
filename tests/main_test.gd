@@ -319,6 +319,15 @@ func run() -> void:
 	check(console.visible and not paused, "and leaves the console open, unpaused")
 	_tap_ctrl(main)
 	check(not console.visible and main.is_mouse_captured(), "a Ctrl tap then closes it and recaptures")
+	# WASD in the console hands focus back to the game and recaptures, the
+	# console left open
+	_tap_ctrl(main)
+	check(console.visible and not main.is_mouse_captured(), "a Ctrl tap opens the console again")
+	console.game_focus_requested.emit()
+	check(main.is_mouse_captured() and console.visible, "WASD in the console recaptures with the console left open")
+	_tap_ctrl(main)
+	_tap_ctrl(main)
+	check(not console.visible and main.is_mouse_captured(), "closed again, flying")
 
 	# A Ctrl tap in the focused noise window reaches Main too and opens the console
 	nw.open()

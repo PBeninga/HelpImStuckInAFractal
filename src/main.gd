@@ -170,6 +170,7 @@ func _build_console() -> void:
 	add_child(_console)
 	_console.toggle_requested.connect(_on_console_toggle)
 	_console.unhandled_key.connect(_on_window_key)
+	_console.game_focus_requested.connect(return_to_game)
 	# The zoom is the player's, like the sensitivity: Settings keeps it.
 	_console.set_zoom(Settings.console_zoom)
 	_console.zoom_changed.connect(func(z: float): Settings.console_zoom = z)
@@ -517,6 +518,14 @@ func _on_console_toggle() -> void:
 		_console.toggle()
 		if not _console.visible:
 			_free_requested = false
+	_update_mouse()
+
+
+## WASD pressed in the console: give the main window keyboard focus and, as a
+## click in the view would, recapture the mouse, so the key that asked flies.
+func return_to_game() -> void:
+	get_window().grab_focus()
+	_free_requested = false
 	_update_mouse()
 
 

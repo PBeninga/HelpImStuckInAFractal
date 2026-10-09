@@ -33,12 +33,20 @@ extends Window
 ## and controls alike, through its content scale, as a browser zooms a page;
 ## Cmd+0 resets. The window keeps its size and the panes reflow. `zoom_changed`
 ## lets Main keep the level in Settings.
+##
+## W, A, S or D pressed in the console leaves it for the game
+## (`game_focus_requested`): a spin box drops focus (committing what was typed
+## into it) and the key is not typed. A free-text field being typed into (an
+## axis label) keeps the letter; once Enter ends the edit, WASD leaves too.
 
 signal toggle_requested
 ## A key this window's controls left unhandled (Escape, N, Cmd+S…). Showing the
 ## window gives it keyboard focus, and a focused window keeps keys from the main
 ## window, so Main runs these through its own dispatch.
 signal unhandled_key(event: InputEventKey)
+## W, A, S or D was pressed here outside a text edit: the player wants to fly,
+## so Main hands keyboard focus (and the mouse) back to the game.
+signal game_focus_requested
 ## The zoom level changed (by a key or set_zoom()).
 signal zoom_changed(zoom: float)
 ## The Movement pane's Reset camera button was pressed.
@@ -49,6 +57,8 @@ const DEFAULT_SIZE := Vector2i(1000, 700)
 const MIN_SIZE := Vector2i(700, 400)
 ## The zoom levels Cmd+= and Cmd+- step through, browser style.
 const ZOOM_STEPS: Array[float] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0]
+## The move actions (W, A, S, D) whose press hands focus back to the game.
+const GAME_KEY_ACTIONS: Array[StringName] = [&"move_forward", &"move_back", &"move_left", &"move_right"]
 
 const SELF_SIMILAR_TOOLTIP := "Whether this shape is exactly self-similar: every deep region is a magnified copy of a shallower region of the same shape, so a deep zoom could be rendered from the shallower copy. On the Mandelbox only Julia mode with c fixed in x, y and z, an iteration that magnifies, no scale drift and no noise displacement qualify; the KIFS qualifies without a twist, the Kleinian always (both without noise). Read-only; nothing renders differently. See docs/reference/self-similar-substitution.md."
 
@@ -328,14 +338,38 @@ func feed_ctrl(event: InputEvent) -> bool:
 	return false
 
 
-# Zoom chords are caught before the GUI, so a focused spin box or slider cannot
-# swallow them.
+## Whether `event` is a plain W, A, S or D press (the move actions) that should
+## leave the console for the game: anything but a key typed into a free-text
+## field mid-edit. A spin box's field takes numbers, so a letter there leaves.
+func is_game_key(event: InputEvent) -> bool:
+	var k := event as InputEventKey
+	if k == null or not k.pressed or k.echo:
+		return false
+	if k.ctrl_pressed or k.meta_pressed or k.alt_pressed:
+		return false   # Cmd+S saves; Shift (sprint) is fine
+	if not GAME_KEY_ACTIONS.any(func(a: StringName) -> bool: return k.is_action_pressed(a)):
+		return false
+	var owner := gui_get_focus_owner()
+	if owner is TextEdit:
+		return false
+	if owner is LineEdit:
+		return owner.get_parent() is SpinBox or not (owner as LineEdit).is_editing()
+	return true
+
+
+# Zoom chords and WASD are caught before the GUI, so a focused spin box or
+# slider cannot swallow them. (A key-capture button's own _input runs first.)
 func _input(event: InputEvent) -> void:
 	if not visible:
 		return
 	if zoom_key(event):
 		_ctrl.feed(event)   # a Ctrl+= is a chord, not a Ctrl tap
 		set_input_as_handled()
+		return
+	if is_game_key(event):
+		gui_release_focus()   # a spin box applies its text as it loses focus
+		set_input_as_handled()
+		game_focus_requested.emit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
