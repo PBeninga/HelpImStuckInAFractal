@@ -1,7 +1,5 @@
-class_name ReferenceOrbitDraft
+class_name ReferenceOrbit
 extends RefCounted
-## DRAFT, moved to src/fractal/reference_orbit.gd as ReferenceOrbit in Task 3.
-##
 ## The camera's own orbit, iterated in 64-bit on the CPU from the 64-bit eye, and
 ## the per-iteration record the shader's perturbed march reads
 ## (src/fractal/perturbation.gdshaderinc). The record holds, for each of the first
@@ -19,6 +17,8 @@ extends RefCounted
 ##                    # pert_x: the point a ray hands off to after i perturbed iterations)
 ##   orbit.a, .b, .c, .d   # the record, PERT_MAX Vector4s each (layout: see the shader's header)
 ##   orbit.perturbable     # false for the octahedral fold, the polyfold and the Mandelbulb
+##
+## Built by FractalView._push_near() (the record it pushes), FlyCamera.move_allowed() and FractalParams.zoom_floor() (the floors).
 ##
 ## The shader reads 32-bit copies; points64 and rec64 keep the 64-bit values for
 ## the algebra check (tests/perturbation_test.gd). rec64 index: (i * 4 + slot) * 4
@@ -43,8 +43,8 @@ var d := PackedVector4Array()
 var rec64 := PackedFloat64Array()
 
 
-static func build(params: FractalParams, ex: float, ey: float, ez: float) -> ReferenceOrbitDraft:
-	var o := ReferenceOrbitDraft.new()
+static func build(params: FractalParams, ex: float, ey: float, ez: float) -> ReferenceOrbit:
+	var o := ReferenceOrbit.new()
 	o.eye = PackedFloat64Array([ex, ey, ez])
 	o.mag.resize(ITERATIONS + 1)
 	o.mag.fill(1.0)
