@@ -175,17 +175,61 @@ func run() -> void:
 	check_eq(FractalParams.ulp32(0.3), pow(2.0, -25.0), "2^-25 at 0.3")
 	check(FractalParams.ulp32(0.0) > 0.0 and is_finite(FractalParams.ulp32(0.0)), "zero stays finite and positive")
 
-	# zoom_floor: how close the 32-bit positions let the camera come
+	# floor32: today's 32-bit floor (the guard for shapes that are not perturbed)
 	var zf := FractalParams.new()
-	var near_box := Vector3(1.96, 0.914, 0.787)   # the default view's surface point
-	check(absf(zf.zoom_floor(near_box) - 1e-4) <= 0.2e-4,
-		"near the box at the default precision the floor is about 1e-4 (%s)" % zf.zoom_floor(near_box))
-	check_eq(zf.zoom_floor(-near_box), zf.zoom_floor(near_box), "it uses the largest |coordinate|")
+	var near_box := PackedFloat64Array([1.96, 0.914, 0.787])   # the default view's surface point
+	check(absf(zf.floor32(near_box) - 1e-4) <= 0.2e-4,
+		"near the box at the default precision the 32-bit floor is about 1e-4 (%s)" % zf.floor32(near_box))
+	check_eq(zf.floor32(PackedFloat64Array([-1.96, -0.914, -0.787])), zf.floor32(near_box), "it uses the largest |coordinate|")
 	var zf10 := FractalParams.new()
 	zf10.detail = 10.0
-	check_approx(zf10.zoom_floor(near_box) / zf.zoom_floor(near_box), 10.0,
+	check_approx(zf10.floor32(near_box) / zf.floor32(near_box), 10.0,
 		"it scales with Detail: a finer hit threshold needs more room above the float grid", 1e-9)
-	check(zf.zoom_floor(Vector3(8.18, 3.81, 3.28)) > zf.zoom_floor(near_box),
+	check(zf.floor32(PackedFloat64Array([8.18, 3.81, 3.28])) > zf.floor32(near_box),
 		"larger coordinates have a coarser grid, so a further floor")
-	check(is_finite(zf.zoom_floor(Vector3.ZERO)) and zf.zoom_floor(Vector3.ZERO) >= 0.0, "the origin stays finite")
+	check(is_finite(zf.floor32(PackedFloat64Array([0.0, 0.0, 0.0]))), "the origin stays finite")
 	check_eq(FractalParams.NEAR_FLOOR, 1e-14, "near is clamped only against a zero (1e-14), not at 1e-6")
+	_perturbation()
+
+
+## pert_iters and the zoom floor (ReferenceOrbit at a camera on the default
+## view's line of sight, backed off its surface point).
+func _perturbation() -> void:
+	# pert_iters: off at the default view and above PERT_ON x floor32; below it,
+	# every record the orbit has (each ray picks its own handoff on the GPU)
+	var pp := FractalParams.new()
+	var de := CameraState.DEFAULT_EYE
+	var home := ReferenceOrbit.build(pp, de.x, de.y, de.z)
+	check_eq(pp.pert_iters(home, home.distance), 0, "the default view does not perturb")
+	var sp := SurfaceFixture.default_surface(pp)
+	var switch_at := FractalParams.PERT_ON * pp.floor32(PackedFloat64Array([sp[0], sp[1], sp[2]]))
+	for cs in [[2.0, false], [0.5, true]]:
+		var eb := SurfaceFixture.backed(sp, SurfaceFixture.back_for_distance(pp, sp, cs[0] * switch_at))
+		var ob := ReferenceOrbit.build(pp, eb[0], eb[1], eb[2])
+		check(absf(ob.distance / (cs[0] * switch_at) - 1.0) < 0.1, "placed at %s x the switch (near %s)" % [cs[0], ob.distance])
+		check_eq(pp.pert_iters(ob, ob.distance) > 0, cs[1], "%s x the switch distance: perturbing is %s" % [cs[0], cs[1]])
+	var e5 := SurfaceFixture.backed(sp, 1e-5)
+	var o5 := ReferenceOrbit.build(pp, e5[0], e5[1], e5[2])
+	check_eq(pp.pert_iters(o5, o5.distance), mini(ReferenceOrbit.PERT_MAX, o5.n), "1e-5 from the surface: every record, min(PERT_MAX, n) = %d" % mini(ReferenceOrbit.PERT_MAX, o5.n))
+	var kifs := FractalParams.new()
+	kifs.shape = FractalParams.Shape.KIFS
+	var ko := ReferenceOrbit.build(kifs, 3.2, 2.4, 1.9)
+	check(ko.n < ReferenceOrbit.PERT_MAX, "precondition: a KIFS eye outside the sponge escapes early (n %d)" % ko.n)
+	check_eq(kifs.pert_iters(ko, 1e-9), ko.n, "and then it gets only the n records its orbit has")
+	for v in SurfaceFixture.variants():
+		if v[3]:
+			continue
+		var vs := SurfaceFixture.surface_from(v[1], v[2])
+		for back in [1e-3, 1e-5, 1e-7]:
+			var vb := SurfaceFixture.backed(vs, back)
+			var vo := ReferenceOrbit.build(v[1], vb[0], vb[1], vb[2])
+			check_eq(v[1].pert_iters(vo, vo.distance), 0, "%s at %s: never perturbed" % [v[0], back])
+		var v5 := SurfaceFixture.backed(vs, 1e-5)
+		check_eq(v[1].zoom_floor(v5), v[1].floor32(v5), "%s keeps today's 32-bit floor" % v[0])
+
+	# the zoom floor: floor_pert alone for a perturbable shape. On the default box
+	# it is far below 1e-9 (measured while planning: 3.0e-10 at 1e-5 back,
+	# 1.5e-10 at 1e-6), against today's 9.5e-5
+	check(pp.zoom_floor(e5) > 0.0 and pp.zoom_floor(e5) < 1e-9,
+		"the default box's zoom floor is below 1e-9 (%s; the 32-bit one is %s)" % [pp.zoom_floor(e5), pp.floor32(e5)])
+	check_eq(pp.zoom_floor(e5), pp.floor_pert(o5), "and it is floor_pert")

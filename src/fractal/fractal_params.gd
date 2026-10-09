@@ -414,18 +414,65 @@ static func ulp32(x: float) -> float:
 	return pow(2.0, e - 23)
 
 
-## How close the fly camera may come to the surface with its eye at `eye`. The
-## shader works out ray positions in 32-bit floats, which near `eye` can only
-## land on a grid ulp32(largest |coordinate|) apart; once the hit threshold
-## (eps × distance, eps = precision / detail) is much finer than that grid,
-## rays reach the surface only by luck and the picture breaks into speckle and
-## pits. The floor is ulp32 / (ZOOM_FLOOR_DIVISOR × eps): about 1e-4 near the
-## box at the default precision. A higher Detail (a finer threshold) and a
-## larger eye coordinate (Julia mode's bigger box) both push it further out.
-## Uses the unshed detail, like coarse_iters.
-func zoom_floor(eye: Vector3) -> float:
-	var m := maxf(absf(eye.x), maxf(absf(eye.y), absf(eye.z)))
+## The 32-bit floor: how close the fly camera may come to the surface with its
+## eye at `eye` when the shader forms ray positions in 32-bit floats, which near
+## the eye can only land on a grid ulp32(largest |coordinate|) apart. Once the hit
+## threshold (eps × distance, eps = precision / detail) is much finer than that
+## grid, rays reach the surface only by luck. ulp32 / (ZOOM_FLOOR_DIVISOR × eps):
+## about 1e-4 near the box at the default precision. The guard for shapes that
+## are not perturbed, and the scale pert_iters() switches on at. Uses the unshed
+## detail, like coarse_iters.
+func floor32(eye: PackedFloat64Array) -> float:
+	var m := maxf(absf(eye[0]), maxf(absf(eye[1]), absf(eye[2])))
 	return ulp32(m) / (ZOOM_FLOOR_DIVISOR * maxf(precision / detail, 1e-30))
+
+
+## Perturbation (see ReferenceOrbit and perturbation.gdshaderinc) switches on
+## once the camera is within PERT_ON × the 32-bit floor: an order of magnitude
+## before the 32-bit march breaks, where both agree, so there is no pop.
+const PERT_ON := 10.0
+## The shader's handoff radius (perturbation.gdshaderinc's PERT_HANDOFF, which
+## shader_test checks against this): a ray stops perturbing once its offset from
+## the reference reaches it, where a 32-bit point is fine enough for the hit
+## threshold. Measured (tests/perturbation_test.gd's grid): at 1e-2 four rays in
+## 27 on the default box at 1e-6 landed 0.15-0.5% off; at 0.1 every cell agrees.
+const PERT_HANDOFF := 0.1
+
+
+## How many of the reference orbit's records the shader may use for a camera
+## whose raw distance to the surface is `near`: 0 (off: the direct march, exactly
+## as before) when the shape is not perturbable or the camera is at least
+## PERT_ON × floor32 away; else all of them, min(PERT_MAX, orbit.n). Each ray
+## decides its own handoff from the size of its offset (PERT_HANDOFF).
+func pert_iters(orbit: ReferenceOrbit, near: float) -> int:
+	if not orbit.perturbable or near >= PERT_ON * floor32(orbit.eye):
+		return 0
+	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
+
+
+## The perturbed march's own floor: the 32-bit floor applied at the last handoff
+## point X_K (K = min(PERT_MAX, n)), where the view is mag[K] times bigger.
+func floor_pert(orbit: ReferenceOrbit) -> float:
+	var k := mini(ReferenceOrbit.PERT_MAX, orbit.n)
+	var x: Vector4 = orbit.points[k]
+	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
+	return ulp32(m) / (ZOOM_FLOOR_DIVISOR * maxf(precision / detail, 1e-30) * maxf(orbit.mag[k], 1e-300))
+
+
+## The zoom floor for a reference orbit already built at the eye: floor_pert when
+## the shape is perturbable, else the 32-bit floor. Not guarded: where 32
+## iterations stop resolving (the estimate bottoms out). That depth varies by
+## orders of magnitude from point to point (tests/perturbation_test.gd prints it),
+## and past it rays run out of steps and the picture darkens; a follow-up.
+func zoom_floor_for(orbit: ReferenceOrbit) -> float:
+	if not orbit.perturbable:
+		return floor32(orbit.eye)
+	return floor_pert(orbit)
+
+
+## How close the fly camera may come to the surface with its eye at `eye` (64-bit).
+func zoom_floor(eye: PackedFloat64Array) -> float:
+	return zoom_floor_for(ReferenceOrbit.build(self, eye[0], eye[1], eye[2]))
 
 
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the

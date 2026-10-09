@@ -30,6 +30,7 @@ const SAMPLES := 48
 
 
 func run() -> void:
+	check_eq(PerturbationPort.PERT_HANDOFF, FractalParams.PERT_HANDOFF, "the port hands off where FractalParams says")
 	_check_emulation()
 	_check_cases()
 	_check_algebra()
@@ -288,19 +289,6 @@ func _agree(got: Array, want: Array) -> bool:
 	return got[0] == want[0] and (got[0] != 0 or absf(got[1] - want[1]) <= AGREE_T * want[1])
 
 
-## Task 4 replaces these two with FractalParams.pert_iters / floor_pert.
-func _records(orbit) -> int:
-	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
-
-
-func _floor_pert(orbit, params: FractalParams) -> float:
-	var eps := params.precision / params.detail
-	var kk := mini(ReferenceOrbit.PERT_MAX, orbit.n)
-	var x: Vector4 = orbit.points[kk]
-	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
-	return FractalParams.ulp32(m) / (FractalParams.ZOOM_FLOOR_DIVISOR * eps * orbit.mag[kk])
-
-
 ## The perturbed march must agree on at least 90% at every cell. The direct one's
 ## "under 30%" is checked at 1e-6 where the reference hits on at least half the
 ## rays: below a fixture's 32-iteration floor (the terraces at 1e-6) every ray of
@@ -317,8 +305,8 @@ func _check_agreement() -> void:
 			var e := SurfaceFixture.backed(s, d)
 			var orbit := ReferenceOrbit.build(params, e[0], e[1], e[2])
 			var near := orbit.distance
-			var k := _records(orbit)
-			var fp := _floor_pert(orbit, params)
+			var k := params.pert_iters(orbit, near)
+			var fp := params.floor_pert(orbit)
 			var port := PerturbationPort.new(params, e, true)
 			var classes := [0, 0, 0]
 			var direct := 0

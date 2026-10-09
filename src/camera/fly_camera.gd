@@ -98,7 +98,7 @@ func _physics_process(delta: float) -> void:
 ## accepted step before the floor is tiny and the stop does not pop.
 func move_allowed(from: Vector3, to: Vector3) -> bool:
 	var d_to := DistanceEstimator.estimate(to, _params)
-	if d_to >= _params.zoom_floor(to):
+	if d_to >= _params.zoom_floor(PackedFloat64Array([to.x, to.y, to.z])):
 		return true
 	return d_to >= DistanceEstimator.estimate(from, _params)
 
