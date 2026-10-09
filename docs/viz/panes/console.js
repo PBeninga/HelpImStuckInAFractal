@@ -43,7 +43,7 @@ const F = {
   renderer: "src/ui/renderer_options.gd",
   viewPane: "src/ui/console/view_pane.gd",
   noiseWin: "src/ui/noise_window.gd",
-  kfile: "saves/keymap.json",
+  kfile: "src/axes/keymap.gd",
   saveDef: "saves/default.json",
   proj: "project.godot",
   readme: "README.md",
@@ -282,16 +282,16 @@ const arch = {
     { id: "cons", label: "CONSUMERS — PARAMS AND THE PICTURE", x: 1120, y: 0, w: 560, h: 560 },
     { id: "mainz", label: "MAIN — WIRING, THE CTRL TAP, THE VIEW TAB", x: 0, y: 620, w: 480, h: 340 },
     { id: "ui", label: "CONSOLE — ITS OWN OS WINDOW", x: 540, y: 620, w: 520, h: 340 },
-    { id: "files", label: "SAVED VIEWS", x: 1120, y: 620, w: 560, h: 340 },
+    { id: "files", label: "THE LEVEL SAVE", x: 1120, y: 620, w: 560, h: 340 },
   ],
   nodes: [
     // movement layer
-    { id: "kfile", label: "saves/keymap.json", sub: "Axis A on E / Q, speed 1", ctx: "files", zone: "move", x: 30, y: 450, w: 180, ...R("kfile", 1),
-      blurb: "The shipped keymap: one axis `a` labelled Axis A, pushed at 1 unit per second, E positive, Q negative. Keys are stored by NAME (layout-independent), `\"\"` meaning unbound. Deliberately not part of a saved view: a level loads a view and a keymap separately.",
-      links: [RL("kfile", 5, "the axis entry"), RL("readme", 205, "README: Keymap"), RL("design", 190, "spec: the keymap")] },
+    { id: "kfile", label: "the shipped keymap", sub: "Axis A on E / Q, speed 1", ctx: "files", zone: "move", x: 30, y: 450, w: 180, ...R("kfile", 1),
+      blurb: "The keymap has no file of its own: `reset_to_default()` seeds one axis `a` labelled Axis A, pushed at 1 unit per second, E positive, Q negative, and that is what Main boots with until a level is loaded. The keys and axes travel inside the level save (the `axes` list), stored by NAME (layout-independent), `\"\"` meaning unbound.",
+      links: [RL("kfile", 151, "reset_to_default"), RL("readme", 205, "README: Keys and axes"), RL("design", 190, "spec: the keymap")] },
     { id: "keymap", label: "Keymap", sub: "pairs · rebind API · actions", ctx: "axes", zone: "move", x: 270, y: 450, w: 180, ...R("keymap", 1),
-      blurb: "Owns the Axes and one key pair per axis, and keeps two InputMap actions per axis equal to the pair. The rebind API (`add_axis`, `remove_axis`, `bind`, `set_speed`, `set_label`, `load_file`, `save_file`) each emit `changed` so the Movement pane and the Source dropdowns follow. A missing or malformed file yields the default axis.",
-      links: [RL("keymap", 40, "add_axis"), RL("keymap", 60, "bind"), RL("keymap", 113, "load_file"), RL("keymap", 187, "_apply_default")] },
+      blurb: "Owns the Axes and one key pair per axis, and keeps two InputMap actions per axis equal to the pair. The rebind API (`add_axis`, `remove_axis`, `bind`, `set_speed`, `set_label`) each emit `changed` so the Movement pane and the Source dropdowns follow. The level save reads and writes the whole keymap through `to_list()` / `apply_list()`; `reset_to_default()` is the shipped keymap.",
+      links: [RL("keymap", 40, "add_axis"), RL("keymap", 60, "bind"), RL("keymap", 108, "to_list"), RL("keymap", 126, "apply_list")] },
     { id: "inputmap", label: "InputMap actions", sub: "axis_<id>_pos / _neg", ctx: "axes", zone: "move", x: 30, y: 60, w: 180, ...R("keymap", 78),
       blurb: "Two runtime actions per axis, registered by `_register_actions`: `axis_a_pos` holds E, `axis_a_neg` holds Q. A rebind erases and re-adds the events. This is why key reading needs no special code and why tests drive an axis with `hold(&\"axis_a_pos\", s)`.",
       links: [RL("keymap", 93, "_set_action"), RL("tAxes", 21, "the actions test"), RL("design", 210, "spec: InputMap")] },
@@ -353,12 +353,12 @@ const arch = {
       links: [RL("main", 301, "_remember_home"), RL("main", 274, "after a load"), RL("main", 187, "the View tab's Renderer button"), RL("tMain", 166, "the test")] },
 
     { id: "viewpane", label: "ViewPane", sub: "files · camera · renderer · menu", ctx: "ui", zone: "mainz", x: 30, y: 900, w: 200, ...R("viewPane", 1),
-      blurb: "The console's third tab, everything the old pause menu held that is not a shape knob: Save view… / Load view… with the file name and a status line, the Camera mode, the mouse sensitivity, Noise editor…, the Renderer options (detail, march steps, Fast Controls, Reset renderer defaults, Reset camera) and Back to Menu. It only emits signals; Main wires them in `_build_view_pane`.",
+      blurb: "The console's third tab, everything the old pause menu held that is not a shape knob: Save level… / Load level… with the file name and a status line, the Camera mode, the mouse sensitivity, Noise editor…, the Renderer options (detail, march steps, Fast Controls, Reset renderer defaults, Reset camera) and Back to Menu. It only emits signals; Main wires them in `_build_view_pane`.",
       links: [RL("viewPane", 14, "its signals"), RL("main", 183, "_build_view_pane"), RL("viewPane", 101, "RendererOptions"), RL("tMain", 140, "the test")] },
 
     // Main wiring
     { id: "mready", label: "Main._ready", sub: "builds table, keymap, console", ctx: "main", zone: "mainz", x: 30, y: 680, w: 200, ...R("main", 54),
-      blurb: "Builds, in order: the AttributeTable from MandelboxShape, the Keymap (loads saves/keymap.json), view, governor, cameras, the marker (given the table), then the Clock, the ConsoleWindow and the AxisController as children of Main, then file panels, pause menu and noise window. Ends with one resolve.",
+      blurb: "Builds, in order: the AttributeTable from MandelboxShape, the Keymap (reset_to_default — no file is read at boot), view, governor, cameras, the marker (given the table), then the Clock, the ConsoleWindow and the AxisController as children of Main, then file panels, pause menu and noise window. Ends with one resolve.",
       links: [RL("main", 64, "the table"), RL("main", 66, "the keymap"), RL("main", 80, "clock, console, axis controller"), RL("main", 155, "AxisController.setup(keymap, viewports)")] },
     { id: "mdispatch", label: "Main._unhandled_input", sub: "Ctrl tap first, then the rest", ctx: "main", zone: "mainz", x: 250, y: 680, w: 210, ...R("main", 390),
       blurb: "The one dispatcher: the Ctrl tap, Escape (frees the mouse, nothing else), ⌘P, N, the Julia marker drag, click-to-capture, then the active camera. Keys the focused console does not use arrive here too, through `unhandled_key`.",
@@ -377,8 +377,8 @@ const arch = {
     { id: "inspector", label: "AttributeInspector", sub: "one per tab: headings + rows", ctx: "ui", zone: "ui", x: 830, y: 800, w: 210, ...R("inspector", 1),
       blurb: "A ScrollContainer of group headings and one AttributeRow per spec, built once from the table. There are two over the one table: the Shape tab limited to SHAPE_GROUPS, and the Colour tab limited to COLOUR_GROUPS with the palette window as a header that scrolls with the rows. Owns no state: forwards the Source list and each frame's resolved values to the rows; both stay in step through the table's `changed`.",
       links: [RL("inspector", 59, "_populate"), RL("console", 86, "Shape tab"), RL("console", 97, "Colour tab"), RL("inspector", 91, "set_resolved"), RL("tConsole", 48, "one row per spec across the tabs")] },
-    { id: "movement", label: "MovementPane", sub: "axis lines · clock · keymap files", ctx: "ui", zone: "ui", x: 570, y: 800, w: 200, ...R("movement", 1),
-      blurb: "One line per axis (label, id, live value, 0, speed, two key-capture buttons, ✕), Add axis, the clock and speed-factor readouts beside a Reset camera button, the load-shed level, and Save keymap / Save keymap as… / Load keymap… for the keymap (named in full: the strip is always in view, and a bare Save as… passed for the view's). A view over Keymap: writes through the rebind API, rebuilds on a structural `changed`.",
+    { id: "movement", label: "MovementPane", sub: "axis lines · clock · reset camera", ctx: "ui", zone: "ui", x: 570, y: 800, w: 200, ...R("movement", 1),
+      blurb: "One line per axis (label, id, live value, 0, speed, two key-capture buttons, ✕), Add axis, the clock and speed-factor readouts beside a Reset camera button, and the load-shed level. The keymap-file strip is gone: the keys and axes are saved inside the level now. A view over Keymap: writes through the rebind API, rebuilds on a structural `changed`.",
       links: [RL("movement", 149, "_build_line"), RL("movement", 262, "_on_keymap_changed"), RL("movement", 285, "readouts")] },
     { id: "row", label: "AttributeRow", sub: "value + source · gain · wave", ctx: "ui", zone: "ui", x: 830, y: 680, w: 210, ...R("row", 1),
       blurb: "Fractacular's wide row: label, slider + spin (or a CheckBox / OptionButton), and for bindable specs Source ▾ (None, Time, each axis), Gain, Waveform ▾, Period. Every edit goes to the table; the row re-reads itself on `changed`. While a binding is active it shows `→ value`, the resolved value this frame.",
@@ -388,19 +388,19 @@ const arch = {
       links: [RL("keycap", 38, "_input"), RL("keycap", 47, "_capture")] },
 
     // saved views
-    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "main", zone: "files", x: 1440, y: 680, w: 230, ...R("main", 253),
-      blurb: "The console View tab's Save view… / Load view… and ⌘S land here. After a load Main resolves at once so the picture follows this frame.",
-      links: [RL("main", 264, "load_view_from"), RL("main", 275, "resolve after a load")] },
-    { id: "ws", label: "Workspace", sub: "view JSON v2 · v1 migration", ctx: "files", zone: "files", x: 1440, y: 790, w: 230, ...R("ws", 1),
-      blurb: "A view, version 2: `shape` (the table's defaults and ACTIVE bindings), `axes` (every axis value), `fractal` (preferences), `camera`, `noise`. The clock and the keymap are not saved. A version-1 file is migrated to the new ids without a warning.",
-      links: [RL("ws", 31, "capture"), RL("ws", 56, "restore"), RL("ws", 75, "axis values: Axes.set_value"), RL("ws", 181, "_migrate_v1")] },
-    { id: "saves", label: "saves/*.json", sub: "default.json and friends, all v2", ctx: "files", zone: "files", x: 1440, y: 900, w: 230, ...R("saveDef", 2),
-      blurb: "The committed views, rewritten to version 2 once: every catalogue id under shape.defaults, no bindings, no axis values.",
+    { id: "msave", label: "Main save / load", sub: "save_level_to · load_level_from", ctx: "main", zone: "files", x: 1440, y: 680, w: 230, ...R("main", 253),
+      blurb: "The console View tab's Save level… / Load level… and ⌘S land here. After a load Main resolves at once so the picture follows this frame.",
+      links: [RL("main", 264, "load_level_from"), RL("main", 275, "resolve after a load")] },
+    { id: "ws", label: "Workspace", sub: "level JSON v3 · v1/v2 migration", ctx: "files", zone: "files", x: 1440, y: 790, w: 230, ...R("ws", 1),
+      blurb: "The level, version 3, tagged `kind: \"level\"`: `shape` (the table's defaults and ACTIVE bindings), `axes` (the keymap as a list of {id,label,speed,positive,negative,value}), `fractal` (preferences), `camera`, `noise`. A v2 file (axes a dict of values) and a v1 file still load; a sequence save or an old keymap file is refused by name.",
+      links: [RL("ws", 40, "capture"), RL("ws", 68, "restore"), RL("ws", 176, "kind_of"), RL("ws", 198, "_migrate_v1")] },
+    { id: "saves", label: "saves/*.json", sub: "default.json and friends, levels", ctx: "files", zone: "files", x: 1440, y: 900, w: 230, ...R("saveDef", 2),
+      blurb: "The committed levels: every catalogue id under shape.defaults, no bindings. They predate v3, so their `axes` is a dict (empty) — loading leaves the default keymap alone.",
       links: [RL("saveDef", 3, "the shape section")] },
   ],
   edges: [
-    { from: "keymap", to: "kfile", kind: "data", label: "load / save", ...R("keymap", 113), bow: 0,
-      blurb: "`load_file` parses the JSON (keys by name via OS.find_keycode_from_string); `save_file` writes names with OS.get_keycode_string.", links: [RL("keymap", 159, "save_file")] },
+    { from: "keymap", to: "kfile", kind: "data", label: "to_list / apply_list", ...R("keymap", 108), bow: 0,
+      blurb: "The level save reads the keymap with `to_list()` and restores it with `apply_list()`, keys by name (OS.get_keycode_string / OS.find_keycode_from_string). The keymap has no file of its own.", links: [RL("keymap", 126, "apply_list")] },
     { from: "keymap", to: "inputmap", kind: "call", label: "_register_actions", ...R("keymap", 88),
       blurb: "Erase the action's events and add one InputEventKey with the physical keycode (none for KEY_NONE).", links: [RL("keymap", 100, "action_add_event")] },
     { from: "keymap", to: "axes", kind: "call", label: "owns", ...R("keymap", 44), bow: 0.4,
@@ -441,8 +441,8 @@ const arch = {
       blurb: "The ring shows with `julia_all` and redraws at the new point." },
     { from: "marker", to: "table", kind: "call", label: "set_default c_0..2", ...R("marker", 61), bow: 0.2,
       blurb: "The drag lands in the table, so the next resolve keeps it." },
-    { from: "mready", to: "keymap", kind: "call", label: "load_file()", ...R("main", 66), bow: 0.3,
-      blurb: "`Keymap.new()` then `load_file()`: saves/keymap.json, or the shipped default with a warning." },
+    { from: "mready", to: "keymap", kind: "call", label: "reset_to_default()", ...R("main", 66), bow: 0.3,
+      blurb: "`Keymap.new()` then `reset_to_default()`: the shipped keymap (Axis A on E / Q). No file is read at boot; a level load replaces it." },
     { from: "mready", to: "console", kind: "call", label: "setup", ...R("main", 141), bow: -0.2,
       blurb: "`setup(table, keymap, clock, group_tooltips, speed source)`." },
     { from: "mdispatch", to: "ctrltap", kind: "call", label: "feed", ...R("main", 392), bow: 0.3,
@@ -464,7 +464,7 @@ const arch = {
     { from: "table", to: "row", kind: "signal", label: "changed(id)", ...R("row", 60), bow: 0.8,
       blurb: "Each row connects `changed` to `refresh`, guarded by `_updating` so its own edit does not echo." },
     { from: "movement", to: "keymap", kind: "call", label: "rebind API", ...R("movement", 258), bow: -1.6,
-      blurb: "Add axis, bind, set_speed, set_label, remove_axis, save_file, load_file.", links: [RL("movement", 225, "add_axis"), RL("movement", 205, "remove_axis")] },
+      blurb: "Add axis, bind, set_speed, set_label, remove_axis.", links: [RL("movement", 225, "add_axis"), RL("movement", 205, "remove_axis")] },
     { from: "keymap", to: "console", kind: "signal", label: "changed", ...R("console", 111), bow: -0.3,
       blurb: "The Source dropdowns relist the axes; the Movement pane rebuilds on add / remove (movement_pane.gd:110)." },
     { from: "movement", to: "keycap", kind: "call", label: "two per axis", ...R("movement", 189), bow: 0,
@@ -482,7 +482,7 @@ const arch = {
     { from: "movement", to: "mreset", kind: "signal", label: "reset_camera_requested", ...R("main", 149), bow: 0,
       blurb: "The button's signal, relayed by the console (console_window.gd:106).", links: [RL("movement", 74, "the button")] },
     { from: "msave", to: "ws", kind: "call", label: "save / load", ...R("main", 255), bow: 0,
-      blurb: "`Workspace.save_file(path, _table, _keymap.axes(), params, camera, noise)`.", links: [RL("main", 266, "load_file")] },
+      blurb: "`Workspace.save_file(path, _table, _keymap, params, camera, noise)`; the keymap is passed whole so its keys and axes go into the level.", links: [RL("main", 266, "load_file")] },
     { from: "ws", to: "saves", kind: "data", label: "JSON", ...R("ws", 108), bow: 0 },
     { from: "ws", to: "table", kind: "call", label: "to_dict / apply_dict", ...R("ws", 61), bow: 1.0,
       blurb: "Capture writes `table.to_dict()` (active bindings only); restore runs `apply_dict`, which sets the listed defaults and bindings and leaves the rest.", links: [RL("ws", 40, "capture")] },
@@ -1074,12 +1074,9 @@ const consoleFig = {
       links: [RL("console", 106, "relayed"), RL("main", 292, "Main.reset_camera"), RL("main", 301, "_remember_home"), RL("renderer", 57, "the View tab's Renderer button"), RL("tMain", 166, "the test")] }, "Reset camera");
     y += 24;
     ro2("load shed 2/4", 277, "the load-shed level", "Shown only while the governor sheds quality (level > 0).", true);
-    y += 6;
-    mx = LX;
-    mw(88, "Save keymap", { title: "Save keymap", ...R("movement", 304), blurb: "Over the keymap's current file (saves/keymap.json at start), or the panel if there is none." });
-    mw(112, "Save keymap as…", { title: "Save keymap as…", ...R("movement", 111), blurb: "A WorkspaceFiles with subdir \"\", noun keymap, filtered to *.json.", links: [RL("movement", 97, "the file panels")] });
-    mw(96, "Load keymap…", { title: "Load keymap…", ...R("movement", 321), blurb: "`Keymap.load_file(path)`. A missing or malformed file still resets the keymap to the default (see the gotcha cards); a saved view is refused by name and changes nothing." });
-    winRect.setAttribute("height", y + 44 - Y0);
+    // The keymap-file strip is gone: the keys and axes are saved inside the
+    // level now (the View tab's Save level…), not in a keymap file of their own.
+    winRect.setAttribute("height", y + 20 - Y0);
 
     // ---- the Colour tab, on the right
     const CX = X0 + WW + 30, CW = 600, C_R = api.hue(5), C_G = api.hue(3), C_B = api.hue(1);
@@ -1166,8 +1163,8 @@ const consoleFig = {
     const vHead = text => { api.text(vl, y + 12, text, "", { style: `${caps};font-size:12px;fill:${C_ATTR}` }); y += 22; };
     const vBtn = (x, w, lbl, file, line, title, blurb, links) => rr(x, y, w, 22, null, { title, file: F[file], line, blurb, links }, lbl);
     vHead("FILE");
-    vBtn(vl, 96, "Save view…", "viewPane", 52, "Save view…", "save_requested → WorkspaceFiles.prompt_save; Main saves through Workspace and the saved file becomes the Reset camera point. ⌘S overwrites the current file without a panel.", [RL("main", 189, "wired"), RL("main", 253, "save_view_to")]);
-    vBtn(vl + 104, 96, "Load view…", "viewPane", 54, "Load view…", "load_requested → prompt_load; Main loads, resolves at once and reports here.", [RL("main", 190, "wired")]);
+    vBtn(vl, 96, "Save level…", "viewPane", 52, "Save level…", "save_requested → WorkspaceFiles.prompt_save; Main saves through Workspace and the saved file becomes the Reset camera point. ⌘S overwrites the current file without a panel.", [RL("main", 189, "wired"), RL("main", 253, "save_level_to")]);
+    vBtn(vl + 104, 96, "Load level…", "viewPane", 54, "Load level…", "load_requested → prompt_load; Main loads, resolves at once and reports here.", [RL("main", 190, "wired")]);
     const fl = api.text(vl + 212, y + 15, "default.json", "mono", { style: "font-size:11.5px;cursor:pointer" });
     api.tip(fl, { title: "the current file", ...R("viewPane", 127), blurb: "show_file(display_name), an em dash when no file is current; Main calls it on WorkspaceFiles.current_changed.", links: [RL("main", 217, "Main updates it")] });
     y += 28;
@@ -1259,59 +1256,59 @@ const colourCat = catalogueTable("Colour", COLOUR_GROUPS, "The Colour tab: Colou
 // ================================================================== 7. keymap tables
 const kmFile = {
   type: "table",
-  title: "saves/keymap.json and its actions",
-  note: "Separate from any view. Keys are stored by name, so the file reads as text and does not depend on the keyboard layout.",
-  columns: [{ label: "key", w: 150, mono: true }, { label: "shipped", w: 110, mono: true }, { label: "what it means", w: 470 }],
+  title: "The keymap (the level's \"axes\" list)",
+  note: "The keys and axes travel inside the level save, one entry per axis, read and written by Keymap.to_list() / apply_list(). Keys are stored by name, so the list reads as text and does not depend on the keyboard layout.",
+  columns: [{ label: "field", w: 150, mono: true }, { label: "shipped", w: 110, mono: true }, { label: "what it means", w: 470 }],
   rows: [
-    { cells: ["version", "1", "Written as Keymap.VERSION. Load never reads it: it only checks that `axes` is an array."], tip: { ...R("keymap", 13), links: [RL("keymap", 139, "the only shape check")] } },
-    { cells: ["axes[].id", "\"a\"", "The binding source id. A missing or duplicate id is skipped with a warning."], tip: { ...R("kfile", 5), links: [RL("keymap", 148, "skip")] } },
-    { cells: ["label", "\"Axis A\"", "Shown in every Source dropdown and the Movement pane."], tip: { ...R("kfile", 6), links: [RL("console", 261, "into set_sources")] } },
-    { cells: ["speed", "1.0", "Units per second while a key is held."], tip: { ...R("kfile", 7), links: [RL("axes", 102, "step")] } },
-    { cells: ["positive", "\"E\"", "OS.find_keycode_from_string; \"\" is unbound. Registered as `axis_a_pos`."], tip: { ...R("kfile", 8), links: [RL("keymap", 192, "_key_from_name"), RL("keymap", 78, "pos_action")] } },
-    { cells: ["negative", "\"Q\"", "Registered as `axis_a_neg`."], tip: { ...R("kfile", 9), links: [RL("keymap", 82, "neg_action")] } },
-    { cells: ["(no file, bad JSON)", "default", "One Axis A on E / Q at 1.0, with a warning."], tip: { ...R("keymap", 187), links: [RL("tAxes", 66, "the test")] } },
-    { cells: ["(where)", "saves/", "WorkspaceFiles.directory() + keymap.json: res://saves/ from source, user://saves/ in an export."], tip: { ...R("keymap", 199) } },
+    { cells: ["id", "\"a\"", "The binding source id. A missing or duplicate id is skipped with a warning."], tip: { ...R("keymap", 108), links: [RL("keymap", 133, "skip")] } },
+    { cells: ["label", "\"Axis A\"", "Shown in every Source dropdown and the Movement pane."], tip: { ...R("keymap", 108), links: [RL("console", 261, "into set_sources")] } },
+    { cells: ["speed", "1.0", "Units per second while a key is held."], tip: { ...R("keymap", 108), links: [RL("axes", 98, "step")] } },
+    { cells: ["positive", "\"E\"", "OS.find_keycode_from_string; \"\" is unbound. Registered as `axis_a_pos`."], tip: { ...R("keymap", 146, "apply_list keys"), links: [RL("keymap", 78, "pos_action")] } },
+    { cells: ["negative", "\"Q\"", "Registered as `axis_a_neg`."], tip: { ...R("keymap", 108), links: [RL("keymap", 82, "neg_action")] } },
+    { cells: ["value", "0.0", "The axis's current value; it travels with the level too."], tip: { ...R("keymap", 108), links: [RL("axes", 91, "set_value")] } },
+    { cells: ["(no axes in the file)", "left alone", "A level with no axes list leaves the keymap in hand as it is; boot starts at reset_to_default (one Axis A on E / Q)."], tip: { ...R("keymap", 151), links: [RL("tAxes", 60, "the test")] } },
   ],
 };
 const kmApi = {
   type: "table",
   title: "The rebind API (all on Keymap, each emits changed)",
-  note: "What a level's code will call. The Movement pane is a view over exactly these.",
+  note: "What the Movement pane and the level save call. The pane is a view over the rebind calls; Workspace uses to_list / apply_list.",
   columns: [{ label: "call", w: 290, mono: true }, { label: "does", w: 360 }, { label: "called from", w: 210 }],
   rows: [
-    { cells: ["add_axis(id, label, speed, pos, neg)", "Adds to Axes, stores the pair, registers both actions. A duplicate id warns and does nothing.", "Add axis; load_file"], tip: { ...R("keymap", 40), links: [RL("movement", 225, "Add axis"), RL("keymap", 155, "load")] } },
+    { cells: ["add_axis(id, label, speed, pos, neg)", "Adds to Axes, stores the pair, registers both actions. A duplicate id warns and does nothing.", "Add axis; apply_list"], tip: { ...R("keymap", 34), links: [RL("movement", 225, "Add axis"), RL("keymap", 140, "apply_list")] } },
     { cells: ["remove_axis(id)", "Erases the actions, the pair and the axis. Bindings to it resolve to their default.", "the ✕ button"], tip: { ...R("keymap", 50), links: [RL("movement", 205, "✕"), RL("tAxes", 41, "inert binding test")] } },
-    { cells: ["bind(id, positive, negative)", "Repoints the pair; either may be KEY_NONE. The actions' events are erased and re-added.", "key capture buttons"], tip: { ...R("keymap", 60), links: [RL("movement", 258, "_on_key_captured"), RL("tAxes", 30, "the test")] } },
+    { cells: ["bind(id, positive, negative)", "Repoints the pair; either may be KEY_NONE. The actions' events are erased and re-added.", "key capture buttons"], tip: { ...R("keymap", 54), links: [RL("movement", 258, "_on_key_captured"), RL("tAxes", 30, "the test")] } },
     { cells: ["set_speed(id, units_per_second)", "", "the speed spin"], tip: { ...R("keymap", 68), links: [RL("movement", 249, "the spin")] } },
     { cells: ["set_label(id, text)", "", "the label field"], tip: { ...R("keymap", 73), links: [RL("movement", 241, "the field")] } },
-    { cells: ["load_file(path = \"\") → {ok, warnings}", "Missing or malformed: the default axis, and current_path still becomes `path`. A saved view: refused, nothing changes.", "Main._ready; Load keymap…"], tip: { ...R("keymap", 113), links: [RL("main", 66, "_ready"), RL("movement", 317, "Load…")] } },
-    { cells: ["save_file(path = \"\") → Error", "To `path`, else current_path, else the default file. Keys by name.", "Save keymap; Save keymap as…"], tip: { ...R("keymap", 171), links: [RL("movement", 308, "Save keymap"), RL("movement", 313, "Save keymap as…")] } },
+    { cells: ["to_list() → Array", "The axes as {id,label,speed,positive,negative,value} entries, keys by name. The level save writes this.", "Workspace.capture"], tip: { ...R("keymap", 108), links: [RL("ws", 48, "capture writes axes")] } },
+    { cells: ["apply_list(entries) → warnings", "Clears every axis, then adds each entry (rebinding the actions) and sets its value. A malformed or dup entry is skipped. The level load restores this.", "Workspace.restore"], tip: { ...R("keymap", 126), links: [RL("ws", 80, "restore v3 axes"), RL("tAxes", 57, "round-trip test")] } },
+    { cells: ["reset_to_default()", "One Axis A on E / Q at 1.0. Main boots with this until a level is loaded.", "Main._ready"], tip: { ...R("keymap", 151), links: [RL("main", 66, "_ready"), RL("tAxes", 94, "the test")] } },
     { cells: ["pos_action(id) / neg_action(id)", "\"axis_<id>_pos\" / \"axis_<id>_neg\"", "AxisController; tests"], tip: { ...R("keymap", 78), links: [RL("axisCtl", 25, "AxisController"), RL("tMain", 88, "hold(&\"axis_a_pos\")")] } },
-    { cells: ["axes() → Axes", "The values, for the resolver and saves.", "Main; Workspace"], tip: { ...R("keymap", 23), links: [RL("main", 245, "the resolve"), RL("main", 255, "save")] } },
+    { cells: ["axes() → Axes", "The values, for the resolver.", "Main"], tip: { ...R("keymap", 23), links: [RL("main", 245, "the resolve")] } },
   ],
 };
 
 // ================================================================== 8. saved view tables
 const viewTable = {
   type: "table",
-  title: "A saved view, version 2",
-  note: "Loading is additive and warning-based: what the file does not mention keeps its current value.",
+  title: "The level save, version 3",
+  note: "One file type, tagged kind: \"level\". Loading is additive and warning-based: what the file does not mention keeps its current value.",
   columns: [{ label: "section", w: 140, mono: true }, { label: "written from", w: 280 }, { label: "read back by", w: 380 }],
   rows: [
-    { cells: ["version", "2 (Workspace.VERSION)", "1 is migrated; anything else refuses to load."], tip: { ...R("ws", 19), links: [RL("ws", 129, "the check")] } },
-    { cells: ["shape.defaults", "table.to_dict(): every catalogue id", "apply_dict → set_default (sanitized); an unknown id warns."], tip: { ...R("ws", 40), links: [RL("table", 115, "apply_dict"), RL("tWs", 79, "unknown id test")] } },
+    { cells: ["version / kind", "3, \"level\" (Workspace.VERSION)", "kind_of classifies it; v1 is migrated, v2 loads as is, a sequence or old keymap file is refused."], tip: { ...R("ws", 28), links: [RL("ws", 176, "kind_of"), RL("ws", 150, "the refusals")] } },
+    { cells: ["shape.defaults", "table.to_dict(): every catalogue id", "apply_dict → set_default (sanitized); an unknown id warns."], tip: { ...R("ws", 40), links: [RL("table", 115, "apply_dict"), RL("tWs", 103, "unknown id test")] } },
     { cells: ["shape.bindings", "only ACTIVE bindings", "set_binding(Binding.from_dict) for the listed ids; a binding the file does not list is left as it is."], tip: { ...R("table", 108), links: [RL("table", 123, "apply_dict bindings"), RL("binding", 40, "from_dict")] } },
-    { cells: ["axes", "every axis value by id", "set_value for ids the keymap has; an unknown axis id is dropped with a warning."], tip: { ...R("ws", 41), links: [RL("ws", 66, "restore"), RL("ws", 71, "the warning")] } },
-    { cells: ["fractal", "fast_controls, camera_mode, mouse_sensitivity, detail, detail_range, detail_falloff, max_steps, min_render_scale", "_parse_fractal per key; Main then puts mouse_sensitivity back to the player's Settings value."], tip: { ...R("ws", 23), links: [RL("ws", 214, "_parse_fractal"), RL("main", 268, "sensitivity reset")] } },
-    { cells: ["camera", "eye, forward, up (7 significant digits), speed_factor", "looking_at(eye + forward, up); a degenerate orientation warns."], tip: { ...R("ws", 43), links: [RL("ws", 231, "_restore_camera")] } },
-    { cells: ["noise", "the noise graph, when wired", "NoiseWindow.apply_dict, after the shape."], tip: { ...R("ws", 50), links: [RL("main", 278, "apply_dict")] } },
-    { cells: ["(not saved)", "the clock, the keymap", "A level loads a view and a keymap separately."], tip: { ...R("ws", 5), links: [RL("design", 345, "spec: why")] } },
+    { cells: ["axes", "keymap.to_list(): the keys and axes", "v3: apply_list replaces the whole keymap. v2 (a dict of values): set_value onto the axes in hand, keys left alone, an unknown id warns."], tip: { ...R("ws", 83), links: [RL("keymap", 126, "apply_list"), RL("ws", 87, "the v2 path")] } },
+    { cells: ["fractal", "fast_controls, camera_mode, mouse_sensitivity, detail, detail_range, detail_falloff, max_steps, min_render_scale", "_parse_fractal per key; Main then puts mouse_sensitivity back to the player's Settings value."], tip: { ...R("ws", 30), links: [RL("ws", 232, "_parse_fractal"), RL("main", 268, "sensitivity reset")] } },
+    { cells: ["camera", "eye, forward, up (7 significant digits), speed_factor", "looking_at(eye + forward, up); a degenerate orientation warns."], tip: { ...R("ws", 52), links: [RL("ws", 249, "_restore_camera")] } },
+    { cells: ["noise", "the noise graph, when wired", "NoiseWindow.apply_dict, after the shape."], tip: { ...R("ws", 60), links: [RL("main", 278, "apply_dict")] } },
+    { cells: ["(not saved)", "the clock", "t resets each run; everything else — shape, keys, axes, camera, noise — is in the level."], tip: { ...R("ws", 5), links: [RL("design", 345, "spec: why")] } },
   ],
 };
 const v1Table = {
   type: "table",
-  title: "Version 1 → 2, without a warning (_migrate_v1)",
-  columns: [{ label: "version 1 (flat fractal)", w: 210, mono: true }, { label: "version 2", w: 260, mono: true }],
+  title: "Version 1 → 3, without a warning (_migrate_v1)",
+  columns: [{ label: "version 1 (flat fractal)", w: 210, mono: true }, { label: "version 3", w: 260, mono: true }],
   rows: [
     { cells: ["scale", "shape.defaults.box_scale"], tip: { ...R("ws", 185), links: [RL("tWs", 110, "the test")] } },
     { cells: ["inner_radius", "min_radius"], tip: { ...R("ws", 185), links: [RL("tWs", 111, "the test")] } },
@@ -1379,9 +1376,9 @@ const cards = {
     { title: "Loading a view never unbinds", tag: "gotcha", hue: 2, ...R("table", 123),
       links: [RL("table", 108, "to_dict writes only active bindings"), RL("ws", 61, "restore")],
       body: "A file lists only its active bindings and apply_dict sets only what is listed, so loading saves/default.json while Scale is bound to Axis A keeps the binding (and its drive on top of the loaded default). Same for axis values the file omits, and for the 24 colour, lighting and palette ids: the committed saves predate them, so loading one keeps whatever lighting and palette you had. Consistent with 'loading is additive', but surprising." },
-    { title: "A failed keymap Load keymap… still replaces the axes", tag: "gotcha", hue: 2, ...R("keymap", 120),
-      links: [RL("keymap", 120, "current_path = path anyway"), RL("movement", 318, "the pane says Load failed"), RL("keymap", 180, "_clear_all")],
-      body: "load_file falls back to the default axis on a missing or malformed file AND points current_path at the bad file, so a later Save overwrites it with the default (a saved view handed to it is the one exception: refused by name, nothing changes). Any keymap load also zeroes every axis value (the axes are rebuilt), snapping bound knobs back to their defaults." },
+    { title: "Loading a level rebinds every key and zeroes the axes", tag: "gotcha", hue: 2, ...R("keymap", 126),
+      links: [RL("keymap", 126, "apply_list clears then adds"), RL("ws", 83, "the v3 path"), RL("ws", 87, "the v2 path")],
+      body: "A version-3 level's axes list REPLACES the whole keymap through apply_list: it clears every axis (so their values reset) and adds the file's, rebinding the InputMap actions. So loading a level can change the keys under your hands, not only the shape. Older files are gentler: a version-2 level's axes is a dict of values applied onto the axes already there, leaving the key bindings alone, and a version-1 level has no axes at all, so the keymap in hand is untouched." },
     { title: "Dragging a bound Julia constant", tag: "gotcha", hue: 2, ...R("marker", 60),
       links: [RL("resolver", 35, "the drive is added on top")],
       body: "The marker writes the mouse position as the table DEFAULT. If c_0..2 is bound, the next resolve adds gain × wave on top, so the ring sits off the cursor by the drive." },
@@ -1406,7 +1403,7 @@ const cards = {
       body: "ControlsPanel is gone. Its shape sliders, colour, precision and Julia moved to the console; Save / Load, Camera, Noise editor and Fast Controls went to a pause menu (with a Console… button for browsers that swallow the Ctrl tap); the speed readout to the Movement pane. The pause menu itself is gone since 5ebb10a: see the next card." },
     { title: "The pause menu moved into the console", tag: "history", hue: 6, ...R("viewPane", 1),
       links: [COMMIT("5ebb10a"), RL("main", 183, "_build_view_pane"), RL("main", 399, "Escape: cancel"), RL("proj", 63, "the action renamed pause → cancel"), RL("readme", 197, "README: View tab")],
-      body: "PauseMenu is deleted. Escape (the action renamed pause → cancel) only frees the mouse: nothing pauses the tree, and the console and noise window stay as they are. Save / Load view with the file name and status, the Camera mode, the mouse sensitivity, the Noise editor button, the Renderer options (with Fast Controls and Reset camera) and Back to Menu are the console's View tab; the title menu's Settings lost its Renderer tab, which only the pause menu could enable. With nothing paused, the governor no longer needs PROCESS_MODE_ALWAYS and the clock never stops." },
+      body: "PauseMenu is deleted. Escape (the action renamed pause → cancel) only frees the mouse: nothing pauses the tree, and the console and noise window stay as they are. Save / Load level with the file name and status, the Camera mode, the mouse sensitivity, the Noise editor button, the Renderer options (with Fast Controls and Reset camera) and Back to Menu are the console's View tab; the title menu's Settings lost its Renderer tab, which only the pause menu could enable. With nothing paused, the governor no longer needs PROCESS_MODE_ALWAYS and the clock never stops." },
     { title: "The Colour tab", tag: "history", hue: 6, ...R("shape", 274),
       links: [COMMIT("58575fc"), COMMIT("e246166"), COMMIT("1cbb1a2"), COMMIT("7f7ba6b"), COMMIT("b527826"), RL("readme", 128, "README: Console")],
       body: "The catalogue grew from 23 to 47 ids: lighting knobs and a cosine-palette colour mode (58575fc), then the console's TabContainer, with Fractacular's palette window heading a Colour tab (e246166). color_mode moved from Render to the new Colour group, after precision, which changed RESOLVED_KEYS order. Alongside: console zoom (7f7ba6b) and Reset camera (b527826)." },
@@ -1440,7 +1437,7 @@ VIZ.pane({
   id: "console",
   short: "Attributes & console",
   title: "Help I'm Stuck In A Fractal — attributes, bindings, axes and the console",
-  subtitle: "The Fractacular import. Every knob (47: the Mandelbox shape on the console's Shape tab; colour, lighting and the cosine palette on its Colour tab) is an AttributeSpec in one AttributeTable, with a default and a Binding: value = default + gain × wave(source), where the source is the clock or a virtual axis pushed by a key pair from saves/keymap.json. Main resolves the table into FractalParams once per frame, so the renderer is unchanged. The console, its own OS window, edits the table and the keymap. The stepper runs a line-for-line port of the resolver, checked at load against the tests.",
+  subtitle: "The Fractacular import. Every knob (47: the Mandelbox shape on the console's Shape tab; colour, lighting and the cosine palette on its Colour tab) is an AttributeSpec in one AttributeTable, with a default and a Binding: value = default + gain × wave(source), where the source is the clock or a virtual axis pushed by a key pair. The keys and axes, and everything else, are saved inside the level. Main resolves the table into FractalParams once per frame, so the renderer is unchanged. The console, its own OS window, edits the table and the keymap. The stepper runs a line-for-line port of the resolver, checked at load against the tests.",
   commit: "3190cd5565293d27d3d8f5077c9a81f6b5b68d51",
   pinNote: "main, unpushed: links 404 until it is pushed",
   ctx: {
@@ -1449,7 +1446,7 @@ VIZ.pane({
     main: { hue: 4, label: "Main — wiring, the resolve, the Ctrl tap, save / load" },
     ui: { hue: 2, label: "console UI — ConsoleWindow and its panes" },
     cons: { hue: 6, label: "consumers — FractalParams, FractalView, governor, Julia marker" },
-    files: { hue: 5, label: "files — keymap.json, Workspace, saves/" },
+    files: { hue: 5, label: "files — the level save (Workspace, saves/)" },
   },
   kinds: {
     call: { style: "solid", label: "calls · writes" },
