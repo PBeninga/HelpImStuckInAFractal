@@ -26,7 +26,7 @@ const F = {
   main: "src/main.gd",
   movement: "src/ui/console/movement_pane.gd",
 };
-// Link helpers: S(175) is a spec line, N(364) a note line, R("fly", 147) a code line; the *L forms
+// Link helpers: S(200) is a spec line, N(364) a note line, R("fly", 147) a code line; the *L forms
 // add a label for a tooltip's link list.
 const R = (f, line) => ({ file: F[f], line });
 const RL = (f, line, label) => ({ file: F[f], line, label });
@@ -46,8 +46,7 @@ const DEFAULT_EYE = [8.175847, 3.812460, 3.283393];   // camera_state.gd:9
 // and :203 (precision); detail 1, so eps = precision / detail.
 const BOX = { s: -2.09, L: 1, min: 0.7, fixed: 1, eps: 0.000025 };
 BOX.mr2 = BOX.min * BOX.min; BOX.fr2 = BOX.fixed * BOX.fixed;
-const PERT_MAX = 20, PERT_ON = 10, PERT_HANDOFF = 1e-2, DIVISOR = 50;   // spec 221-223, fractal_params.gd:398
-const BOUND_HALF = 2;                                                   // the box's half-size (spec 248)
+const PERT_MAX = 20, PERT_ON = 10, PERT_HANDOFF = 0.1, DIVISOR = 50;    // spec 250-252, fractal_params.gd:398
 
 // ulp32: fractal_params.gd:404-414, the gap between neighbouring float32s near x. ulp64 likewise for
 // a 64-bit double (52 bits after the leading one).
@@ -102,17 +101,14 @@ function refOrbit(e) {
   return { X, mag, rec, n: 32, distance: len4(z) / Math.abs(dz) };
 }
 
-// pert_iters (spec 225-228): 0 above PERT_ON × today's floor, else the smallest k with
-// λ_k × near ≥ PERT_HANDOFF, else PERT_MAX.
+// pert_iters (spec 256-258): 0 above PERT_ON × today's floor, else min(PERT_MAX, n): how many
+// records the GPU may use. Each ray then hands off on its own (pixelRun).
 function pertIters(o, near, eye) {
   if (near >= PERT_ON * floor32(eye)) return 0;
-  const K = Math.min(PERT_MAX, o.n);
-  for (let k = 1; k <= K; k++) if (o.mag[k] * near >= PERT_HANDOFF) return k;
-  return K;
+  return Math.min(PERT_MAX, o.n);
 }
-// The two floors of spec part 5 (245-253), from a reference orbit at the eye.
+// The new zoom floor (spec 278-288): today's formula at the last handoff point X_K, K = min(20, n).
 function floorPert(o) { const K = Math.min(PERT_MAX, o.n); return ulp32(Math.max(...o.X[K].map(Math.abs))) / (DIVISOR * BOX.eps * o.mag[K]); }
-function floorIter(o) { return BOUND_HALF / (BOX.eps * o.mag[32]); }
 
 // The clamp-fold difference (spec 173-178): δ' = 2 (clamp(δ, g_lo, g_hi) − clamp(0, g_lo, g_hi)) − δ.
 const clampDiff = (d, glo, ghi, Rn = id) => Rn(Rn(2 * Rn(clamp(d, glo, ghi) - clamp(0, glo, ghi))) - d);
@@ -168,13 +164,16 @@ const eyeAt = d => SURF.map((s, a) => s - FWD[a] * d);
 const PIXELS = { centre: [0, 0], edge: [1, 0], corner: [1, 1] };
 const pixelDir = ([nx, ny]) => norm([0, 1, 2].map(a => FWD[a] + nx * ASPECT * TAN_HALF_FOV * RIGHT[a] + ny * TAN_HALF_FOV * UP[a]));
 
-// One sample of one pixel, three ways: exact (doubles from the 64-bit eye), perturbed (float32:
-// k perturbed steps on δ, then today's loop from X_k + δ_k), and direct (float32: today's
-// `eye + dir × t`, then 32 ordinary steps). t = d. Per iteration, the offset each path implies and
-// its relative error against the exact offset P_i − X_i.
-function pixelRun(d, pix) {
-  const eye = eyeAt(d), o = refOrbit(eye), near = o.distance, k = pertIters(o, near, eye);
-  const dir = pixelDir(pix), off = dir.map(v => v * d);
+// One sample of one ray at distance t (default d), three ways: exact (doubles from the 64-bit eye),
+// perturbed (float32, de_pert of spec 176-188: perturbed steps on δ while i < pert_iters and
+// |δ|² < PERT_HANDOFF², then today's loop from z = pert_x[k] + δ_k with c = mb_constant(eye + off)
+// in float32), and direct (float32: today's `eye + dir × t`, then 32 ordinary steps). Per
+// iteration, the offset each path implies and its relative error against the exact P_i − X_i.
+// k is where this ray handed off; a ray with |δ_0| = t ≥ PERT_HANDOFF hands off at 0, which is
+// exactly the direct path.
+function pixelRun(d, pix, t = d) {
+  const eye = eyeAt(d), o = refOrbit(eye), near = o.distance, K = pertIters(o, near, eye);
+  const dir = pixelDir(pix), off = dir.map(v => v * t);
   // exact
   const Pe = [eye[0] + off[0], eye[1] + off[1], eye[2] + off[2], 0], ce = Pe.slice(), ex = [Pe.slice()];
   let dze = 1;
@@ -184,25 +183,24 @@ function pixelRun(d, pix) {
   const Pd = [f32(e32[0] + o32[0]), f32(e32[1] + o32[1]), f32(e32[2] + o32[2]), 0], cd = Pd.slice(), di = [Pd.slice()];
   let dzd = 1;
   for (let i = 0; i < 32; i++) { dzd = stepR(Pd, dzd, cd, f32); di.push(Pd.slice()); }
-  // perturbed float32 (k may be 0 above PERT_ON: then it is the direct path)
+  // perturbed float32: the per-ray handoff
   const dl = [o32[0], o32[1], o32[2], 0], dc = dl.slice(), pe = [dl.slice()];
-  let dzp = 1, z = null;
-  for (let i = 0; i < k; i++) { dzp = pertStep(dl, dc, o.rec[i], dzp, f32); pe.push(dl.slice()); }
-  if (k > 0) {
-    z = o.X[k].map((x, a) => f32(f32(x) + dl[a]));
-    const cc = [f32(e32[0] + o32[0]), f32(e32[1] + o32[1]), f32(e32[2] + o32[2]), 0];   // the pixel's own c, as the loop adds it
-    for (let i = k; i < 32; i++) { dzp = stepR(z, dzp, cc, f32); pe.push(z.map((v, a) => v - o.X[i + 1][a])); }
-  }
+  const small = v => f32(f32(f32(f32(v[0] * v[0]) + f32(v[1] * v[1])) + f32(v[2] * v[2])) + f32(v[3] * v[3])) < f32(PERT_HANDOFF * PERT_HANDOFF);
+  let dzp = 1, k = 0;
+  while (k < K && small(dl)) { dzp = pertStep(dl, dc, o.rec[k], dzp, f32); pe.push(dl.slice()); k++; }
+  const z = o.X[k].map((x, a) => f32(f32(x) + dl[a]));                                 // pert_x[k] + δ
+  const cc = [f32(e32[0] + o32[0]), f32(e32[1] + o32[1]), f32(e32[2] + o32[2]), 0];   // mb_constant(eye + off), float32
+  for (let i = k; i < 32; i++) { dzp = stepR(z, dzp, cc, f32); pe.push(z.map((v, a) => v - o.X[i + 1][a])); }
   const errOf = (i, got) => { const dEx = ex[i].map((v, a) => v - o.X[i][a]); const n = len4(dEx); return n > 0 ? len4(got.map((v, a) => v - dEx[a])) / n : 0; };
   const errP = [], errD = [], exD = [];
   for (let i = 0; i <= 32; i++) {
     exD.push(ex[i].map((v, a) => v - o.X[i][a]));
     errD.push(errOf(i, di[i].map((v, a) => v - o.X[i][a])));
-    errP.push(k > 0 ? errOf(i, pe[i]) : errD[i]);
+    errP.push(errOf(i, pe[i]));
   }
-  const deE = len4(ex[32]) / Math.abs(dze), deD = len4(di[32]) / Math.abs(dzd), deP = k > 0 ? len4(z) / Math.abs(dzp) : deD;
-  const lost = len4([f32(e32[0] + o32[0]) - (eye[0] + off[0]), f32(e32[1] + o32[1]) - (eye[1] + off[1]), f32(e32[2] + o32[2]) - (eye[2] + off[2]), 0]) / d;
-  return { eye, o, near, k, off, exD, pe, di, errP, errD, deE, deD, deP, lost };
+  const deE = len4(ex[32]) / Math.abs(dze), deD = len4(di[32]) / Math.abs(dzd), deP = len4(z) / Math.abs(dzp);
+  const lost = len4([f32(e32[0] + o32[0]) - (eye[0] + off[0]), f32(e32[1] + o32[1]) - (eye[1] + off[1]), f32(e32[2] + o32[2]) - (eye[2] + off[2]), 0]) / t;
+  return { eye, o, near, K, k, t, off, exD, pe, di, errP, errD, deE, deD, deP, lost };
 }
 
 // ================================================================== drawing helpers
@@ -245,7 +243,7 @@ const problemFig = {
   type: "figure",
   tab: "The problem",
   title: "Why the camera stops at about 1e−4 today",
-  note: "The shader forms every ray position as `eye + dir × t` in 32-bit floats, which near the eye can only land on a grid ulp32(max |eye|) apart: about 1.2e−7 here, where the deep camera's coordinates are around 2. Drag d. The view (2 tan 20° × d high) shrinks to a handful of grid steps, the hit threshold eps × d drops far below the grid, and today's guard stops the camera where eps × d reaches the grid ÷ 50. The eye itself is a `Vector3` on the same grid: below about 1e−5 a physics tick's move is under half a grid step and rounds to nothing. The eye here is the default view's centre-ray surface point (found by a 64-bit march in the port) backed off by d. The two squares on the right draw the view on the 32-bit grid, and the same view after the k perturbed iterations the design would run, where it is λ_k times bigger.",
+  note: "The shader forms every ray position as `eye + dir × t` in 32-bit floats, which near the eye can only land on a grid ulp32(max |eye|) apart: about 1.2e−7 here, where the deep camera's coordinates are around 2. Drag d. The view (2 tan 20° × d high) shrinks to a handful of grid steps, the hit threshold eps × d drops far below the grid, and today's guard stops the camera where eps × d reaches the grid ÷ 50. The eye itself is a `Vector3` on the same grid: below about 1e−5 a physics tick's move is under half a grid step and rounds to nothing. The eye here is the default view's centre-ray surface point (found by a 64-bit march in the port) backed off by d. The two squares on the right draw the view on the 32-bit grid, and the same view after the k perturbed iterations the centre ray runs before it hands off (at |δ| ≥ 0.1), where it is λ_k times bigger.",
   w: 1500, h: 840,
   draw(api) {
     const C = { view: api.hue(3), eps: api.hue(1), grid: api.hue(2), tick: api.hue(5), u64: api.hue(6), floor: api.hue(4) };
@@ -258,9 +256,9 @@ const problemFig = {
     // samples
     const smp = [];
     for (let v = 0; v >= -14.0001; v -= 0.05) {
-      const d = Math.pow(10, v), eye = eyeAt(d), m = maxAbs(eye), o = refOrbit(eye), k = pertIters(o, o.distance, eye);
+      const d = Math.pow(10, v), eye = eyeAt(d), m = maxAbs(eye), o = refOrbit(eye), on = pertIters(o, o.distance, eye) > 0, k = on ? pixelRun(d, [0, 0], 0.9 * d).k : 0;
       const H = 2 * TAN_HALF_FOV * d;
-      smp.push({ v, d, H, ulp: ulp32(m), u64: ulp64(m), eps: BOX.eps * d, tick: d / 60, hand: k > 0 ? o.mag[k] * H : null });
+      smp.push({ v, d, H, ulp: ulp32(m), u64: ulp64(m), eps: BOX.eps * d, tick: d / 60, hand: on ? o.mag[k] * H : null });
     }
     const curve = (key, color, dash, w = 2.2) => {
       const pts = smp.filter(s => s[key] !== null && s[key] > 0).map(s => `${lx(s.v)},${ly(Math.log10(s[key]))}`);
@@ -334,17 +332,13 @@ const problemFig = {
     const S0 = { v: -5.5 };
     function render() {
       const d = Math.pow(10, S0.v), eye = eyeAt(d), m = maxAbs(eye), u = ulp32(m), H = 2 * TAN_HALF_FOV * d;
-      const o = refOrbit(eye), near = o.distance, k = pertIters(o, near, eye), F = floor32(eye);
-      const fp = floorPert(o), fi = floorIter(o);
+      const o = refOrbit(eye), near = o.distance, K = pertIters(o, near, eye), F = floor32(eye);
+      const k = K > 0 ? pixelRun(d, [0, 0], 0.9 * d).k : 0;
+      const fp = floorPert(o);
       clear(curG);
       const x = lx(S0.v);
       api.el("line", { x1: x, y1: CY, x2: x, y2: CY + CH, style: "stroke:var(--ink);stroke-width:1.4" }, curG);
       api.text(x + 5, CY + CH - 8, `d = ${sci(d)}`, "ink", { style: "font-size:11px;font-weight:600" }, curG);
-      const fiX = lx(Math.log10(fi));
-      if (fiX >= CX && fiX <= CX + CW) {
-        api.el("line", { x1: fiX, y1: CY, x2: fiX, y2: CY + CH, style: `stroke:${C.tick};stroke-width:1.4;stroke-dasharray:2 3` }, curG);
-        api.text(fiX + 5, CY + 34, `floor_iter at this eye ${sci(fi)}`, "", { style: `fill:${C.tick};font-size:10.5px;font-weight:600` }, curG);
-      }
       for (const [key, color] of [["H", C.view], ["eps", C.eps], ["ulp", C.grid], ["tick", C.tick]]) {
         const s = smp[Math.round(-S0.v / 0.05)];
         api.el("circle", { cx: x, cy: ly(Math.log10(s[key])), r: 4, style: `fill:${color};stroke:var(--surface);stroke-width:1.5` }, curG);
@@ -352,10 +346,10 @@ const problemFig = {
       const nA = square(sqA, AX, SY, H, u, BOX.eps * d, ((SURF[1] / u) % 1 + 1) % 1);
       capA.textContent = `${sci(nA, 1)} grid steps across`;
       capA2.textContent = "blue ring: the hit threshold (≥ 1.6 px)";
-      if (k > 0) {
+      if (K > 0) {
         const HB = o.mag[k] * H, uB = ulp32(Math.max(...o.X[k].map(Math.abs)));
         const nB = square(sqB, BX, SY, HB, uB, null, 0.37);
-        capB.textContent = `k = ${k}: the view is λ_k = ${sci(o.mag[k])} × bigger`;
+        capB.textContent = `centre ray, k = ${k}: the view is λ_k = ${sci(o.mag[k])} × bigger`;
         capB2.textContent = `${sci(nB, 1)} steps of ulp32(X_k) across`;
       } else {
         clear(sqB);
@@ -375,11 +369,11 @@ const problemFig = {
         `one tick's move d / 60 = ${sci(d / 60)} = ${sci(tickSteps, 1)} grid steps${tickSteps < 0.5 ? ": rounds to nothing" : ""}`,
         `with the 64-bit eye: ulp64 = ${sci(ulp64(m))}, that move is ${sci(d / 60 / ulp64(m), 1)} steps`,
         `near = de(eye) = ${sci(near)} (the ray itself hits at d)`,
-        k > 0 ? `pert_iters k = ${k}: λ_k × near = ${sci(o.mag[k] * near)} (rule: ≥ 1e−2, k ≤ 20)` : `pert_iters 0: near ≥ 10 × today's floor (${sci(PERT_ON * F)})`,
-        k > 0 ? `handoff view λ_k × height = ${sci(o.mag[k] * H)} at max |X_k| ${sci(Math.max(...o.X[k].map(Math.abs)))}` : "",
+        K > 0 ? `pert_iters = ${K}; the centre ray hands off at k = ${k} (|δ| ≥ 0.1)` : `pert_iters 0: near ≥ 10 × today's floor (${sci(PERT_ON * F)})`,
+        K > 0 ? `its view at the handoff: λ_k × height = ${sci(o.mag[k] * H)} at max |X_k| ${sci(Math.max(...o.X[k].map(Math.abs)))}` : "",
         `floor_pert = ulp32(X_20) / (50 eps λ_20) = ${sci(fp)}`,
-        `floor_iter = 2 / (eps λ_32) = ${sci(fi)} (λ_32 of this eye = ${sci(o.mag[32])})`,
-        `zoom_floor = max of the two = ${sci(Math.max(fp, fi))}: ${near >= Math.max(fp, fi) ? "allowed here" : "below it (see Decisions)"}`,
+        `zoom_floor = floor_pert: ${near >= fp ? "this eye is above it" : "this eye is below it"}`,
+        "the 32-iteration floor: not guarded (see Decisions)",
       ];
       L.forEach((t, i) => { out[i].textContent = t; });
       out[4].style.fill = d >= F ? "" : api.hue(2);
@@ -390,10 +384,10 @@ const problemFig = {
     const legendTip = (x, y, w, t) => { const r = api.el("rect", { x, y: y - 14, width: w, height: 18, fill: "transparent", style: "cursor:help" }); api.tip(r, t); };
     legendTip(CX, LY, 210, { title: "the view's height at the surface", ...S(29), blurb: "A pixel's sample is the eye plus δ_0 = dir × t. The whole 40° view at distance d spans 2 tan 20° × d, about 0.73 d. Today the shader adds that to the eye in float32, so the whole view has to fit on the eye's 32-bit grid: at d = 1e−6 it is about 6 grid steps tall, which is the note's 'only about 8 grid steps wide'.", links: [NL(83, "note: 8 grid steps at 1e−6"), RL("sh", 442, "pos = eye + dir * total")] });
     legendTip(CX + 220, LY, 190, { title: "the hit threshold", ...R("zoom", 128), blurb: "A ray stops when the estimate falls below eps × t (eps = precision / detail = 2.5e−5 by default, t ≈ d). Once that is much finer than the grid, rays reach the surface only by luck: speckle, shimmer, pits. Today's guard stops the camera where eps × d = ulp32 / 50.", links: [RL("params", 426, "zoom_floor"), RL("params", 398, "ZOOM_FLOOR_DIVISOR = 50"), SL(10, "spec: the problem")] });
-    legendTip(CX + 420, LY, 240, { title: "ulp32: the float32 grid near the eye", ...R("params", 404), blurb: "2^(floor(log2 |x|) − 23): about 1.2e−7 for coordinates between 1 and 2, 2.4e−7 between 2 and 4, 9.5e−7 near the default eye's 8.2. WebGL 2 has nothing wider than float32, and Godot's `Vector3` is float32 too, so the camera's own position sits on this grid.", links: [SL(13, "spec: 1.2e−7 to 9.5e−7"), SL(72, "spec: Transform3D's origin is 32-bit")] });
-    legendTip(CX, LY + 20, 210, { title: "one physics tick's move", ...R("fly", 150), blurb: "The fly camera's speed is about the distance to the surface (base_speed), so at 60 physics ticks a second one tick moves about d / 60. In a `Vector3` a move under half a grid step rounds to nothing: below about 1e−5 the eye cannot move at all, whatever the floor says. Hence spec part 1: the eye becomes three 64-bit doubles and the step is added in 64-bit; the speed clamp's floor drops from 1e−6 to 1e−14.", links: [RL("fly", 82, "t.origin += dir × speed × delta"), SL(91, "spec: the step in 64-bit"), SL(100, "spec: SPEED_FLOOR 1e−14")] });
-    legendTip(CX + 220, LY + 20, 190, { title: "ulp64: the 64-bit eye", ...S(77), blurb: "GDScript floats are 64-bit doubles: 52 bits after the leading one, a grid of about 2.2e−16 near 1 to 2. CameraState gains eye_x, eye_y, eye_z as the truth; transform.origin becomes the rounded shadow every 32-bit consumer keeps reading.", links: [SL(80, "set_eye64"), RL("cam", 11, "today: transform")] });
-    legendTip(CX + 420, LY + 20, 380, { title: "the view after k perturbed iterations", ...S(43), blurb: "After k iterations the pixel's offset has grown by the magnification λ_k (about |scale| per iteration, more when the sphere fold fires). The design hands off once λ_k × near reaches 1e−2: from there the view is big compared with the float32 grid at X_k, and X_k + δ_k in float32 is as good as exact. The dotted line is the handed-off view's height; it starts where perturbation switches on (10 × today's floor). It is jagged because k follows near, the eye's distance to the nearest surface, which jumps about as the eye passes other filaments (it can be far less than d, the distance to the point being viewed); where λ_20 × near stays under 1e−2, k sits at the cap of 20.", links: [SL(225, "pert_iters"), SL(222, "PERT_ON = 10")] });
+    legendTip(CX + 420, LY, 240, { title: "ulp32: the float32 grid near the eye", ...R("params", 404), blurb: "2^(floor(log2 |x|) − 23): about 1.2e−7 for coordinates between 1 and 2, 2.4e−7 between 2 and 4, 9.5e−7 near the default eye's 8.2. WebGL 2 has nothing wider than float32, and Godot's `Vector3` is float32 too, so the camera's own position sits on this grid.", links: [SL(13, "spec: 1.2e−7 to 9.5e−7"), SL(74, "spec: Transform3D's origin is 32-bit")] });
+    legendTip(CX, LY + 20, 210, { title: "one physics tick's move", ...R("fly", 150), blurb: "The fly camera's speed is about the distance to the surface (base_speed), so at 60 physics ticks a second one tick moves about d / 60. In a `Vector3` a move under half a grid step rounds to nothing: below about 1e−5 the eye cannot move at all, whatever the floor says. Hence spec part 1: the eye becomes three 64-bit doubles and the step is added in 64-bit; the speed clamp's floor drops from 1e−6 to 1e−14.", links: [RL("fly", 82, "t.origin += dir × speed × delta"), SL(93, "spec: the step in 64-bit"), SL(105, "spec: SPEED_FLOOR 1e−14")] });
+    legendTip(CX + 220, LY + 20, 190, { title: "ulp64: the 64-bit eye", ...S(79), blurb: "GDScript floats are 64-bit doubles: 52 bits after the leading one, a grid of about 2.2e−16 near 1 to 2. CameraState gains eye_x, eye_y, eye_z as the truth; transform.origin becomes the rounded shadow every 32-bit consumer keeps reading.", links: [SL(82, "set_eye64"), RL("cam", 11, "today: transform")] });
+    legendTip(CX + 420, LY + 20, 380, { title: "the view after k perturbed iterations", ...S(43), blurb: "After k iterations a ray's offset has grown by the magnification λ_k (about |scale| per iteration, more when the sphere fold fires). Each ray hands off on its own once |δ| reaches PERT_HANDOFF = 0.1: from there its view is big compared with the float32 grid at X_k, and pert_x[k] + δ_k in float32 is as good as exact. The dotted line is the centre ray's view at its handoff (sampled 10% short of its hit); it starts where perturbation switches on (10 × today's floor) and, once the 20 records run out before |δ| reaches 0.1, shrinks with d again. The new zoom floor (floor_pert) is where that last view gets too fine for float32.", links: [SL(181, "the handoff is per ray"), SL(256, "pert_iters"), SL(251, "PERT_ON = 10"), SL(281, "floor_pert")] });
     render();
   },
 };
@@ -414,10 +408,10 @@ const approachTable = {
     { cells: ["GPU cost per ray at depth", "none extra (fewer GPU iterations)", "about 7×: a paired-float iteration costs about 13 plain ones, × 16 iterations", "about 1.5–2×: a difference iteration costs about 2 plain ones"],
       tip: { title: "cost (estimates from operation counts)", ...N(366), blurb: "Estimates, not measurements: the investigation had no GPU. They apply only below the zoom floor, where the method is switched on; normal views cost exactly what they cost now.", links: [NL(372, "the caveat")] } },
     { cells: ["CPU cost", "one orbit and its Jacobian per frame", "none", "one orbit per frame: 32 iterates, microseconds"], tip: { title: "CPU cost", ...N(367) } },
-    { cells: ["GPU data", "4 vec4 + 2 floats", "the eye as two vec3s", "a record per iteration as uniform arrays (spec: 4 vec4 × 20)"], tip: { title: "GPU data", ...N(368), links: [SL(154, "spec: the uniforms")] } },
+    { cells: ["GPU data", "4 vec4 + 2 floats", "the eye as two vec3s", "a record per iteration as uniform arrays (spec: 4 vec4 × 20)"], tip: { title: "GPU data", ...N(368), links: [SL(166, "spec: the uniforms")] } },
     { cells: ["shader complexity", "moderate, many special cases (normals, colour, clip, fallback)", "moderate: a small paired-float library, isolated in de", "moderate: a case analysis per fold, isolated in de"], tip: { title: "complexity", ...N(369) } },
-    { cells: ["risk", "seams and pops by design: one straight-line map cannot follow a fold crease that crosses the view", "the compiler must not fuse or reorder the paired-float steps; WebGL 2 cannot forbid that (no `precise`)", "glitches if δ grows too large (k = 24, ice field: 49% at 1e−5): stop once λ_k × d reaches about 1e−2, which also sets k"],
-      tip: { title: "risk", ...N(370), links: [NL(259, "why the substitution is squeezed"), NL(273, "the seam")] } },
+    { cells: ["risk", "seams and pops by design: one straight-line map cannot follow a fold crease that crosses the view", "the compiler must not fuse or reorder the paired-float steps; WebGL 2 cannot forbid that (no `precise`)", "glitches if δ grows too large (k = 24, ice field: 49% at 1e−5): stop once λ_k × d reaches about 1e−2 (the spec: per ray, at |δ| ≥ 0.1, measured)"],
+      tip: { title: "risk", ...N(370), links: [NL(259, "why the substitution is squeezed"), NL(273, "the seam"), SL(252, "spec: PERT_HANDOFF = 0.1, per ray")] } },
     { cells: ["verdict", "rejected: approximate by construction", "kept as the fallback if the per-fold cases prove fiddly in GLSL", "built (this spec)"],
       tip: { title: "the recommendation", ...N(376), links: [NL(378, "do not build the substitution"), NL(382, "build C as perturbation"), NL(388, "two-float: the fallback"), SL(21, "spec: perturbation")] } },
   ],
@@ -461,9 +455,9 @@ const whyCards = {
       body: "A difference iteration costs about 2 plain ones, so 16 to 20 of them make a ray 1.5 to 2 times today's cost at depth; a paired-float iteration costs about 13, about 7 times overall. Both are estimates from operation counts, and both apply only below the old floor: normal views run today's code." },
     { title: "Ordinary float arithmetic", tag: "decided", hue: 3, ...N(370), links: [SL(20, "spec: depends on how a WebGL driver rounds")],
       body: "A two-float trick only works if the GPU computes each rounding step exactly as written; a WebGL 2 compiler may fuse a multiply and an add, and GLSL ES 3.0 has no `precise` to forbid it. Perturbation's formulas are plain float maths: the worst a compiler can do is the usual last-bit rounding." },
-    { title: "Mandelbrot mode comes free", tag: "decided", hue: 3, ...N(355), links: [SL(204, "spec: the add step")],
+    { title: "Mandelbrot mode comes free", tag: "decided", hue: 3, ...N(355), links: [SL(233, "spec: the add step")],
       body: "In Mandelbrot mode the pixel's c differs from the reference's by exactly its starting offset, so the add is δ' = s δ + δc with δc = the offset (masked by the Julia flags per component). The substitution needed c to 'follow' the point as a separate correction." },
-    { title: "A small extension of what exists", tag: "decided", hue: 3, ...N(385), links: [SL(124, "spec: reuses the fold helpers"), RL("de", 30, "estimate_at, already 64-bit")],
+    { title: "A small extension of what exists", tag: "decided", hue: 3, ...N(385), links: [SL(136, "spec: reuses the fold helpers"), RL("de", 30, "estimate_at, already 64-bit")],
       body: "DistanceEstimator already runs the orbit in 64-bit scalars on the CPU. ReferenceOrbit reuses its static fold helpers and adds only the loop that records gaps, and `orbit.distance == estimate_at(...)` exactly is a test, so the fold maths has one source." },
   ],
 };
@@ -472,64 +466,75 @@ const whyCards = {
 const ideaFig = {
   type: "figure",
   tab: "The idea",
-  title: "Iterate the offset, not the point",
-  note: "The core trick, run live on the default Mandelbox (Mandelbrot mode). The CPU iterates the eye 32 times in 64-bit: the reference orbit X_0 … X_32 and its magnification λ_i. A pixel's sample point is the eye plus δ_0 = dir × t (here t = d). The GPU iterates only δ, using the record's gaps, until λ_k × near reaches 1e−2; then it hands off, z = X_k + δ_k in float32, and today's loop runs the remaining 32 − k iterations. The right-hand chart is the point of the design: how wrong the pixel's offset is at each iteration in float32, on the perturbed path (green) and on today's direct path, which starts from the rounded P = eye + δ (orange). Hover the circles and points for numbers. A port of mb_step in doubles and in Math.fround float32, with the spec's clamp and radial difference formulas. The X circles are coloured by the sphere fold's regime (grey outside, violet shell, orange inside; amber marks X_k). On this view the reference is almost always outside within the first 20 iterations, so the radial case here is mostly the trivial one; the Crossing a fold tab shows the others.",
-  w: 1500, h: 900,
+  title: "Iterate the offset, not the point; each ray hands off on its own",
+  note: "The core trick, run live on the default Mandelbox (Mandelbrot mode). The CPU iterates the eye 32 times in 64-bit: the reference orbit X_0 … X_32 and its magnification λ_i. A ray's sample point is the eye plus δ_0 = dir × t. The GPU iterates only δ, using the record's gaps, until |δ| reaches PERT_HANDOFF = 0.1 (or the 20 records run out); then that ray hands off, z = pert_x[k] + δ_k in float32, and today's loop runs the remaining 32 − k iterations. Rays in one frame need different counts, so the handoff is per ray: three rays of one view are drawn, a wall as close as the nearest surface (t = near: the most help), the centre ray just short of its hit (t = 0.9 d) and a far ray (t = 0.3, already past 0.1: it hands off at 0, which is exactly today's `eye + dir × t`). The right-hand chart is the point of the design: how wrong the chosen ray's offset is at each iteration in float32, perturbed (green) against today's direct path (orange). Hover circles and points for numbers. A port of mb_step in doubles and in Math.fround float32 with the spec's clamp and radial difference formulas. The X circles are coloured by the sphere fold's regime (grey outside, violet shell, orange inside); on this view the reference is almost always outside within 20 iterations, so the radial case here is mostly the trivial one (the Crossing a fold tab shows the others).",
+  w: 1500, h: 920,
   draw(api) {
-    const CG = api.hue(3), CO = api.hue(2), CB = api.hue(1), CA = api.hue(4);
-    const ST = { v: -5.5, pix: "corner" };
-    let run = null;
+    const CG = api.hue(3), CO = api.hue(2), CA = api.hue(4);
+    const RAYS = {
+      wall: { label: "near wall", pix: [1, 1], t: (d, near) => near, color: api.hue(5), what: "t = near: a wall as close as the nearest surface" },
+      centre: { label: "centre hit", pix: [0, 0], t: d => 0.9 * d, color: api.hue(3), what: "t = 0.9 d: the centre ray just short of its hit" },
+      far: { label: "far ray", pix: [1, 0], t: () => 0.3, color: api.hue(1), what: "t = 0.3: a far ray, |δ_0| already ≥ 0.1" },
+    };
+    const ST = { v: -6, ray: "centre" };
+    let runs = null, run = null;
     // ---- schematic
     const X0 = 70, DX = 40, YX = 150, YD = 262;
-    api.text(20, 108, "CPU · 64-BIT: THE REFERENCE ORBIT X_i (once per frame)", "ink", { style: caps });
-    api.text(20, 222, "GPU · FLOAT32: THE PIXEL'S OFFSET δ_i (every pixel, every sample)", "ink", { style: caps });
+    api.text(20, 108, "CPU · 64-BIT: THE REFERENCE ORBIT X_i (once per frame; X_0..X_20 pushed as pert_x)", "ink", { style: caps });
+    api.text(20, 222, "GPU · FLOAT32: THIS RAY'S OFFSET δ_i, UNTIL ITS OWN HANDOFF", "ink", { style: caps });
     for (let i = 0; i < 20; i++) api.el("line", { x1: X0 + i * DX + 8, y1: YX, x2: X0 + (i + 1) * DX - 8, y2: YX, style: `stroke:var(--muted);stroke-width:1.2;${noPtr}` });
     api.text(X0 + 20 * DX + 22, YX + 4, "… X_32", "muted", { style: small });
     const regCol = [api.hue(2), api.hue(6), "var(--muted)"], regName = ["inside", "shell", "outside"];
     const xs = [], ds = [];
     for (let i = 0; i <= 20; i++) {
       const c = api.el("circle", { cx: X0 + i * DX, cy: YX, r: 8, style: "stroke:var(--surface);stroke-width:1.5;cursor:pointer" });
-      api.tip(c, { title: `X_${i}`, ...S(119), live() {
+      api.tip(c, { title: `X_${i}`, ...S(130), live() {
         if (!run) return {};
         const o = run.o, X = o.X[i], r = o.rec[i];
-        return { title: `X_${i} (64-bit)`, sub: i === run.k ? "the handoff point: pert_end" : i < run.k ? "perturbed past" : "",
+        return { title: `X_${i} (64-bit) = pert_x[${i}]`, sub: i === run.k ? "where this ray hands off" : i < run.k ? "perturbed past" : "",
           blurb: `X_${i} = (${X.map(v => sci(v, 6)).join(", ")})\nλ_${i} = ${sci(o.mag[i])}\n` + (r ? `record for iteration ${i}: lower gaps ${r.lo.map(v => sci(v)).join(", ")} · upper gaps ${r.hi.map(v => sci(v)).join(", ")} · |Xs|² ${sci(r.r2, 4)} (${regName[r.reg]}, m = ${sci(r.m, 4)})` : "the last point") };
-      }, links: [SL(131, "the per-iteration record"), SL(127, "λ_i")] });
+      }, links: [SL(143, "the per-iteration record"), SL(139, "λ_i"), SL(168, "pert_x: the handoff points")] });
       xs.push(c);
       api.text(X0 + i * DX, YX + 26, String(i), "muted", { "text-anchor": "middle", style: `font-size:9.5px;${noPtr}` });
-      const dcirc = api.el("circle", { cx: X0 + i * DX, cy: YD, r: 4, style: `fill:${CG};fill-opacity:.25;stroke:${CG};stroke-width:1.5;cursor:pointer` });
+      const dcirc = api.el("circle", { cx: X0 + i * DX, cy: YD, r: 4, style: "fill-opacity:.25;stroke-width:1.5;cursor:pointer" });
       api.tip(dcirc, { title: `δ_${i}`, ...S(31), live() {
         if (!run || i > run.k) return {};
         const ex = run.exD[i], pe = run.pe[i];
-        return { title: `δ_${i}`, sub: `|δ_${i}| = ${sci(len4(ex))}`,
+        return { title: `δ_${i}`, sub: `|δ_${i}| = ${sci(len4(ex))}${i === run.k ? " (handoff)" : ""}`,
           blurb: `exact (64-bit P − X): (${ex.map(v => sci(v, 4)).join(", ")})\nperturbed float32: (${pe.map(v => sci(v, 4)).join(", ")}), relative error ${sci(run.errP[i], 1)}\ndirect float32 (rounded P − X): relative error ${pct(run.errD[i])}` };
-      }, links: [SL(170, "the difference formulas")] });
+      }, links: [SL(195, "the difference formulas"), SL(178, "iterate while |δ|² < PERT_HANDOFF²")] });
       ds.push(dcirc);
     }
     const hand = api.el("g", { style: noPtr });
     // ---- readouts (right of the schematic)
     const RX = 960;
     const rd = [];
-    for (let i = 0; i < 9; i++) rd.push(api.text(RX, 108 + i * 21, "", "mono", { style: mono }));
-    // ---- chart L: λ_i × near
-    const LX = 70, LYt = 380, LW = 610, LH = 380;
+    for (let i = 0; i < 10; i++) rd.push(api.text(RX, 108 + i * 20, "", "mono", { style: mono }));
+    // ---- chart L: |δ_i| of the three rays
+    const LX = 70, LYt = 400, LW = 610, LH = 380;
     const xt = [];
-    for (let i = 0; i <= 32; i += 4) xt.push([LX + (i + 0.5) * LW / 33, String(i)]);
-    const lyL = logFrame(api, LX, LYt, LW, LH, 6, -14, 2, xt, "iteration i", "λ_i × near, per iteration");
-    const barsG = api.el("g", {});
-    const bars = [];
-    for (let i = 0; i <= 32; i++) {
-      const b = api.el("rect", { x: LX + i * LW / 33 + 2, width: LW / 33 - 4, y: LYt, height: 1, style: "cursor:pointer" }, barsG);
-      api.tip(b, { title: `λ_${i} × near`, ...S(43), live() { if (!run) return {}; return { title: `i = ${i}`, blurb: `λ_${i} = ${sci(run.o.mag[i])}\nλ_${i} × near = ${sci(run.o.mag[i] * run.near)}${i === run.k ? "\nthe first to reach 1e−2: k" : ""}` }; }, links: [SL(223, "PERT_HANDOFF = 1e−2")] });
-      bars.push(b);
+    for (let i = 0; i <= 20; i += 2) xt.push([LX + i / 20 * LW, String(i)]);
+    const lyL = logFrame(api, LX, LYt, LW, LH, 4, -14, 2, xt, "iteration i (the perturbed ones: at most 20)", "|δ_i| for three rays of one view");
+    const lx = i => LX + i / 20 * LW;
+    api.el("line", { x1: LX, y1: lyL(-1), x2: LX + LW, y2: lyL(-1), style: `stroke:${CA};stroke-width:1.6;stroke-dasharray:6 4;${noPtr}` });
+    api.text(LX + 6, lyL(-1) + 15, "PERT_HANDOFF = 0.1", "", { style: `fill:${CA};font-size:10.5px;font-weight:600;${noPtr}` });
+    const lines = {}, marks = {};
+    for (const [key, R] of Object.entries(RAYS)) {
+      lines[key] = api.el("polyline", { style: `fill:none;stroke:${R.color};${noPtr}` });
+      marks[key] = api.el("circle", { r: 6, style: `fill:${R.color};stroke:var(--surface);stroke-width:1.5;cursor:pointer` });
+      api.tip(marks[key], { title: `${R.label}: its handoff`, ...S(181), live() {
+        if (!runs) return {};
+        const r = runs[key];
+        return { sub: R.what, blurb: `t = ${sci(r.t)}\nhands off at k = ${r.k}${r.k === 0 ? " (|δ_0| = t ≥ 0.1: pert_x[0] + δ_0 is today's eye + dir × t)" : r.k === r.K ? " (the records ran out before |δ| reached 0.1)" : ""}\n|δ_k| = ${sci(len4(r.exD[r.k]))}` };
+      }, links: [SL(183, "why per ray")] });
     }
-    api.el("line", { x1: LX, y1: lyL(-2), x2: LX + LW, y2: lyL(-2), style: `stroke:${CA};stroke-width:1.6;stroke-dasharray:6 4;${noPtr}` });
-    api.text(LX + LW - 4, lyL(-2) - 6, "handoff: 1e−2", "", { "text-anchor": "end", style: `fill:${CA};font-size:10.5px;font-weight:600;${noPtr}` });
-    // ---- chart R: relative error of δ_i
+    let lgx = LX;
+    for (const R of Object.values(RAYS)) { swatch(api, lgx, LYt + LH + 52, R.color, `${R.label} (${R.what.split(":")[0]})`); lgx += 205; }
+    // ---- chart R: relative error of δ_i for the chosen ray
     const QX = 800, QW = 660;
     const xq = [];
     for (let i = 0; i <= 32; i += 4) xq.push([QX + i / 32 * QW, String(i)]);
-    const lyR = logFrame(api, QX, LYt, QW, LH, 3, -9, 1, xq, "iteration i", "how wrong the pixel's offset is, per iteration");
+    const lyR = logFrame(api, QX, LYt, QW, LH, 3, -9, 1, xq, "iteration i", "how wrong the chosen ray's offset is, per iteration");
     const qx = i => QX + i / 32 * QW;
     api.el("line", { x1: QX, y1: lyR(0), x2: QX + QW, y2: lyR(0), style: `stroke:var(--ink);stroke-width:1;opacity:.5;${noPtr}` });
     api.text(QX + 6, lyR(0) - 5, "100% wrong", "muted", { style: `${small};${noPtr}` });
@@ -543,46 +548,49 @@ const ideaFig = {
     for (let i = 0; i <= 32; i++) {
       for (const [arr, col, key, name] of [[ptsP, CG, "errP", "perturbed"], [ptsD, CO, "errD", "direct"]]) {
         const c = api.el("circle", { r: 3.6, style: `fill:${col};stroke:var(--surface);stroke-width:1;cursor:pointer` });
-        api.tip(c, { title: `${name}, iteration ${i}`, ...(key === "errP" ? S(31) : S(11)), live() { if (!run) return {}; return { blurb: `relative error of the pixel's offset after ${i} iterations: ${sci(run[key][i], 2)} (${pct(run[key][i])})${key === "errP" && i > run.k ? "\npast the handoff: today's loop, from X_k + δ_k in float32" : ""}` }; } });
+        api.tip(c, { title: `${name}, iteration ${i}`, ...(key === "errP" ? S(31) : S(11)), live() { if (!run) return {}; return { blurb: `relative error of the ray's offset after ${i} iterations: ${sci(run[key][i], 2)} (${pct(run[key][i])})${key === "errP" && i > run.k ? "\npast this ray's handoff: today's loop, from pert_x[k] + δ_k in float32" : ""}` }; } });
         arr.push(c);
       }
     }
-    swatch(api, QX, LYt + LH + 52, CG, "perturbed: δ iterated in float32 for k steps, then today's loop");
+    swatch(api, QX, LYt + LH + 52, CG, "perturbed: δ in float32 until |δ| ≥ 0.1, then today's loop");
     swatch(api, QX + 380, LYt + LH + 52, CO, "direct: today, from the rounded eye + δ");
     // ---- controls
     api.slider({ x: 20, y: 44, w: 420, label: "camera distance d (log)", min: -12, max: -3, step: 0.1, value: ST.v,
       fmt: v => sci(Math.pow(10, v)), onChange: v => { ST.v = v; compute(); } });
-    const pb = {};
+    const rb = {};
     let bx = 500;
-    api.text(bx, 36, "pixel", "ink");
-    for (const name of ["centre", "edge", "corner"]) {
-      pb[name] = api.button({ x: bx, y: 42, w: 80, label: name, on: name === ST.pix, onClick: () => { ST.pix = name; for (const n in pb) pb[n].set(n === name); compute(); } });
-      bx += 88;
+    api.text(bx, 36, "the ray shown in detail", "ink");
+    for (const [key, R] of Object.entries(RAYS)) {
+      rb[key] = api.button({ x: bx, y: 42, w: 110, label: R.label, on: key === ST.ray, onClick: () => { ST.ray = key; for (const n in rb) rb[n].set(n === key); compute(); } });
+      bx += 118;
     }
     function compute() {
-      run = pixelRun(Math.pow(10, ST.v), PIXELS[ST.pix]);
-      const k = run.k, o = run.o;
+      const d = Math.pow(10, ST.v), near = refOrbit(eyeAt(d)).distance;
+      runs = {};
+      for (const [key, R] of Object.entries(RAYS)) runs[key] = pixelRun(d, R.pix, R.t(d, near));
+      run = runs[ST.ray];
+      const k = run.k, o = run.o, col = RAYS[ST.ray].color;
       for (let i = 0; i <= 20; i++) {
-        const reg = i < 32 ? o.rec[i].reg : 2;
+        const reg = o.rec[i] ? o.rec[i].reg : 2;
         xs[i].style.fill = i === k ? CA : regCol[reg];
         xs[i].setAttribute("r", i === k ? 10 : 8);
-        const on = i <= k && k > 0;
+        const on = i <= k;
         ds[i].style.display = on ? "" : "none";
-        if (on) ds[i].setAttribute("r", clamp(3 + (Math.log10(Math.max(len4(run.exD[i]), 1e-14)) + 13) * 1.25, 3, 18));
+        ds[i].style.fill = col; ds[i].style.stroke = col;
+        if (on) ds[i].setAttribute("r", clamp(3 + (Math.log10(Math.max(len4(run.exD[i]), 1e-14)) + 13) * 1.15, 3, 18));
       }
       clear(hand);
-      if (k > 0) {
-        const x = X0 + k * DX;
-        api.el("line", { x1: x, y1: YX - 26, x2: x, y2: YD + 28, style: `stroke:${CA};stroke-width:1.6;stroke-dasharray:5 4` }, hand);
-        api.text(X0 - 10, YD + 44, `hand off at k = ${k}: z = pert_end + δ_k in float32, then today's loop for iterations ${k} … 31`, "", { style: `fill:${CA};font-size:11px;font-weight:600` }, hand);
-      } else {
-        api.text(X0, YD + 4, "pert_iters = 0 at this distance: the GPU runs today's path (no δ)", "muted", { style: small }, hand);
-      }
-      for (let i = 0; i <= 32; i++) {
-        const v = Math.log10(Math.max(o.mag[i] * run.near, 1e-30)), top = lyL(v), base = lyL(-14);
-        bars[i].setAttribute("y", Math.min(top, base)); bars[i].setAttribute("height", Math.max(1, Math.abs(base - top)));
-        bars[i].style.fill = i === k && k > 0 ? CA : i < k ? CG : "var(--muted)";
-        bars[i].style.opacity = i <= k ? 1 : 0.45;
+      const x = X0 + k * DX;
+      api.el("line", { x1: x, y1: YX - 26, x2: x, y2: YD + 28, style: `stroke:${CA};stroke-width:1.6;stroke-dasharray:5 4` }, hand);
+      api.text(X0 - 10, YD + 44, run.K === 0 ? "pert_iters = 0 at this distance: the GPU runs today's path" :
+        `this ray hands off at k = ${k}${k === 0 ? " (|δ_0| ≥ 0.1)" : k === run.K ? " (the 20 records ran out)" : " (|δ_k| ≥ 0.1)"}: z = pert_x[${k}] + δ_k in float32, then today's loop for iterations ${k} … 31`, "", { style: `fill:${CA};font-size:11px;font-weight:600` }, hand);
+      for (const [key, R] of Object.entries(RAYS)) {
+        const r = runs[key], pts = [];
+        for (let i = 0; i <= 20; i++) pts.push(`${lx(i)},${lyL(Math.log10(Math.max(len4(r.exD[i]), 1e-30)))}`);
+        lines[key].setAttribute("points", pts.join(" "));
+        lines[key].style.strokeWidth = key === ST.ray ? 3 : 1.6;
+        lines[key].style.opacity = key === ST.ray ? 1 : 0.6;
+        marks[key].setAttribute("cx", lx(r.k)); marks[key].setAttribute("cy", lyL(Math.log10(Math.max(len4(r.exD[r.k]), 1e-30))));
       }
       const pl = (key, arr) => {
         const pts = [];
@@ -595,23 +603,23 @@ const ideaFig = {
       };
       lineP.setAttribute("points", pl("errP", ptsP));
       lineD.setAttribute("points", pl("errD", ptsD));
-      kLine.style.display = kLab.style.display = k > 0 ? "" : "none";
       kLine.setAttribute("x1", qx(k)); kLine.setAttribute("x2", qx(k));
       kLab.setAttribute("x", qx(k) + 5); kLab.textContent = `k = ${k}`;
-      const d = Math.pow(10, ST.v);
+      const th = BOX.eps * run.t, eP = Math.abs(run.deP - run.deE), eD = Math.abs(run.deD - run.deE);
       const L = [
         `camera d = ${sci(d)} from the surface point · near = ${sci(run.near)}`,
-        `δ_0 = dir × d, |δ_0| = ${sci(d)} (the ${ST.pix} pixel)`,
+        `${RAYS[ST.ray].label}: t = ${sci(run.t)}, δ_0 = dir × t`,
         `float32 P_0 = eye + δ_0 loses ${pct(run.lost)} of the offset`,
-        k > 0 ? `k = ${k}: λ_k = ${sci(o.mag[k])}, λ_k × near = ${sci(o.mag[k] * run.near)}` : "pert_iters = 0: both paths are today's",
+        run.K === 0 ? "pert_iters = 0: both paths are today's" : `pert_iters = ${run.K}; this ray hands off at k = ${k}, |δ_k| = ${sci(len4(run.exD[k]))}`,
         "distance estimate after 32 iterations:",
         `  exact, 64-bit        ${sci(run.deE, 5)}`,
-        `  perturbed, float32   ${sci(run.deP, 5)}   error ${pct(Math.abs(run.deP - run.deE) / run.deE)}`,
-        `  direct, float32      ${sci(run.deD, 5)}   error ${pct(Math.abs(run.deD - run.deE) / run.deE)}`,
-        `hit test: estimate < eps × t = ${sci(BOX.eps * d)}`,
+        `  perturbed, float32   ${sci(run.deP, 5)}   error ${pct(eP / run.deE)}`,
+        `  direct, float32      ${sci(run.deD, 5)}   error ${pct(eD / run.deE)}`,
+        `hit threshold eps × t = ${sci(th)}`,
+        `error ÷ threshold: perturbed ${(eP / th).toExponential(1)}, direct ${(eD / th).toExponential(1)}`,
       ];
       L.forEach((t, i) => { rd[i].textContent = t; });
-      rd[7].style.fill = Math.abs(run.deD - run.deE) / run.deE > 0.01 ? CO : "";
+      rd[7].style.fill = eD / run.deE > 0.01 ? CO : "";
       rd[6].style.fill = CG;
     }
     compute();
@@ -623,7 +631,7 @@ const partsGraph = {
   type: "graph",
   tab: "The seven parts",
   title: "The seven parts and what flows between them",
-  note: "Everything left of the bridge runs in 64-bit GDScript floats on the CPU, once per camera change; everything right of it in float32 on the GPU, per pixel. Only gaps, multipliers and one handoff point cross the bridge, never two big positions for the GPU to subtract. The number in each node's second line is the spec part. Hover a node for what the part does, its spec line and the existing code it changes.",
+  note: "Everything left of the bridge runs in 64-bit GDScript floats on the CPU, once per camera change; everything right of it in float32 on the GPU, per pixel. Only gaps, multipliers and the 21 handoff points cross the bridge, never two big positions for the GPU to subtract. The number in each node's second line is the spec part. Hover a node for what the part does, its spec line and the existing code it changes.",
   zones: [
     { id: "cpu", label: "CPU · 64-BIT (GDSCRIPT DOUBLES) · ONCE PER CAMERA CHANGE", x: 0, y: 0, w: 1150, h: 570 },
     { id: "bridge", label: "THE BRIDGE · UNIFORMS", x: 1180, y: 0, w: 340, h: 570 },
@@ -631,77 +639,77 @@ const partsGraph = {
     { id: "out", label: "CONSOLE, DOCS AND THE KEYSTONE TEST", x: 0, y: 630, w: 2370, h: 130 },
   ],
   nodes: [
-    { id: "center", label: "CenterRay.march(ox, oy, oz)", sub: "1 · scalar origin, march in doubles", ctx: "cpu", x: 30, y: 70, w: 270, ...S(96),
-      blurb: "The probe and the fly speed's ray distance march from the camera. Today `march(origin: Vector3, …)` starts from the rounded eye; the design adds a scalar-origin overload whose loop forms `o + dir × t` in doubles, and the `Vector3` one calls it.", links: [RL("center", 69, "today: march(origin: Vector3, …)"), SL(352, "test: resolves a hit at 1e−8")] },
-    { id: "ws", label: "Workspace capture / restore", sub: "1 · eye at full precision, no _tidy", ctx: "cpu", x: 30, y: 210, w: 260, ...S(103),
-      blurb: "Saves write `\"eye\"` from eye64() at full precision. Today every vector goes through `_tidy`, which rounds to 7 significant figures: fine for forward and up, fatal for an eye 1e−9 from the surface. Restore reads three doubles and calls set_eye64. The save stays version 2: an old file is the same shape with fewer digits; a new file loads in an old build with the eye rounded.", links: [RL("ws", 45, "today: \"eye\": _vec_to_array(eye())"), RL("ws", 261, "_tidy: 7 significant figures"), SL(342, "test: restores 1e−9 exactly")] },
-    { id: "params", label: "FractalParams", sub: "4, 5 · pert_iters(orbit, near) · zoom_floor", ctx: "cpu", x: 30, y: 350, w: 320, ...S(225),
-      blurb: "Two rules. pert_iters: 0 unless the orbit is perturbable and near is under 10 × today's floor, else the smallest k ≤ 20 with λ_k × near ≥ 1e−2. zoom_floor(eye64) becomes max(floor_pert, floor_iter), both from a ReferenceOrbit at the eye: where the perturbed march runs out of float32 precision, and where 32 iterations run out of detail.", links: [SL(242, "zoom_floor = max(floor_pert, floor_iter)"), RL("params", 426, "today: zoom_floor(eye: Vector3)"), SL(221, "PERT_MAX, PERT_ON, PERT_HANDOFF")] },
-    { id: "fly", label: "FlyCamera", sub: "1 · step added in 64-bit · SPEED_FLOOR 1e−14", ctx: "cpu", x: 430, y: 70, w: 310, ...S(91),
-      blurb: "_physics_process adds the step in 64-bit: `set_eye64(ex + dir.x × step, …)`; `dir` stays a unit Vector3, only the add needs the precision. move_allowed takes two PackedFloat64Arrays. base_speed's clamp floor drops from 1e−6 to 1e−14: the speed is about the distance to the surface, so below 1e−6 the camera would otherwise outrun its own stop.", links: [RL("fly", 82, "today: t.origin += dir × speed × delta"), RL("fly", 95, "today: move_allowed(Vector3, Vector3)"), RL("fly", 150, "today: clampf(d, 1e-6, 20)"), SL(100, "SPEED_FLOOR")] },
-    { id: "cam", label: "CameraState", sub: "1 · eye_x/y/z: the truth · transform: the shadow", ctx: "cpu", x: 430, y: 210, w: 330, ...S(77),
-      blurb: "Gains @export eye_x, eye_y, eye_z (64-bit). set_eye64 sets the doubles, sets transform.origin to the rounded Vector3, emits changed when any double differs. eye() keeps returning the rounded shadow for every 32-bit consumer (the eye uniform, box_intersect, the orbit camera, the probe, project/unproject). The transform setter replaces the doubles only when the new origin differs from the shadow, so FlyCamera._set_forward, which rebuilds the transform from eye(), leaves the eye alone.", links: [RL("cam", 11, "today: transform"), RL("cam", 25, "today: eye()"), SL(86, "the setter rule"), SL(339, "test: round-trips 1e−12")] },
-    { id: "view", label: "FractalView._push_near()", sub: "4 · builds the orbit, picks k, pushes", ctx: "cpu", x: 830, y: 210, w: 290, ...S(234),
-      blurb: "Builds the ReferenceOrbit from eye64() (its distance is near, so the estimate is not computed twice), pushes near_dist, coarse_iters and nf_weight as today, plus pert_iters; while that is positive, the four record arrays and pert_end = X_k. The arrays are pushed only while on, so a still frame at depth pushes once.", links: [RL("view", 366, "today: _push_near()"), RL("view", 369, "today: near from the 32-bit eye"), SL(237, "arrays only while on")] },
-    { id: "orbit", label: "ReferenceOrbit.build", sub: "2 · X_0..X_32 · λ_0..λ_32 · record a..d", ctx: "cpu", x: 830, y: 350, w: 290, ...S(111),
-      blurb: "New RefCounted (src/fractal/reference_orbit.gd), built from the 64-bit eye for the current shape: distance (== DistanceEstimator.estimate_at exactly), n (iterations before a KIFS bailout or Kleinian fixed point), mag (λ_i, the product of the scale magnitudes and radial-fold factors), points (float32 copies; X_k is the handoff point), the record arrays a, b, c, d, and perturbable (false for the octahedral fold, the poly fold and shapes without support).", links: [SL(115, "the API"), SL(127, "λ_i"), SL(335, "test: reference_orbit_test")] },
-    { id: "helpers", label: "the estimators' fold helpers", sub: "2 · _fold, _sphere_fold, _rot_plane, menger_fold…", ctx: "cpu", x: 830, y: 490, w: 290, ...S(124),
+    { id: "center", label: "CenterRay.march(ox, oy, oz)", sub: "1 · scalar origin, march in doubles", ctx: "cpu", x: 30, y: 70, w: 270, ...S(98),
+      blurb: "The probe and the fly speed's ray distance march from the camera. Today `march(origin: Vector3, …)` starts from the rounded eye; the design adds a scalar-origin overload whose loop forms `o + dir × t` in doubles, and the `Vector3` one calls it. Its `_update` marches from the eye64() scalars, so base_speed's ray distance is measured from the true eye.", links: [RL("center", 69, "today: march(origin: Vector3, …)"), SL(103, "_update marches from eye64"), SL(402, "test: resolves a hit at 1e−8")] },
+    { id: "ws", label: "Workspace capture / restore", sub: "1 · eye at full precision, no _tidy", ctx: "cpu", x: 30, y: 210, w: 260, ...S(114),
+      blurb: "Saves write `\"eye\"` from eye64() at full precision. Today every vector goes through `_tidy`, which rounds to 7 significant figures: fine for forward and up, fatal for an eye 1e−9 from the surface. Restore reads three doubles and calls set_eye64. The save stays version 2: an old file is the same shape with fewer digits; a new file loads in an old build with the eye rounded.", links: [RL("ws", 45, "today: \"eye\": _vec_to_array(eye())"), RL("ws", 261, "_tidy: 7 significant figures"), SL(392, "test: restores 1e−9 exactly")] },
+    { id: "params", label: "FractalParams", sub: "1, 4, 5 · pert_iters · zoom_floor · NEAR_FLOOR", ctx: "cpu", x: 30, y: 350, w: 320, ...S(256),
+      blurb: "pert_iters: 0 unless the orbit is perturbable and near is under 10 × today's floor, else min(PERT_MAX, n), the number of records the GPU may use (each ray picks its own handoff). zoom_floor(eye64) becomes floor_pert alone, from a ReferenceOrbit at the eye: today's formula at the last handoff point X_20, 3e−11 to 3e−10 for the default box. The 32-iteration floor is not guarded. NEAR_FLOOR drops from 1e−6 to 1e−14, so near, the level of detail, the fog and coarse_iters keep following the camera down.", links: [SL(278, "zoom_floor = floor_pert"), SL(290, "the iteration floor: not guarded"), SL(109, "NEAR_FLOOR 1e−14"), RL("params", 281, "today: NEAR_FLOOR = 1e-6"), RL("params", 426, "today: zoom_floor(eye: Vector3)"), SL(250, "PERT_MAX, PERT_ON, PERT_HANDOFF")] },
+    { id: "fly", label: "FlyCamera", sub: "1 · step and distances in 64-bit · SPEED_FLOOR 1e−14", ctx: "cpu", x: 430, y: 70, w: 310, ...S(93),
+      blurb: "_physics_process adds the step in 64-bit: `set_eye64(ex + dir.x × step, …)`; `dir` stays a unit Vector3, only the add needs the precision. move_allowed takes two PackedFloat64Arrays. base_speed measures both its distances from the 64-bit eye (estimate_at on eye64() and CenterRay.distance()), and its clamp floor drops from 1e−6 to 1e−14: the speed is about the distance to the surface, so the camera would otherwise outrun its own stop, and a distance from the rounded eye would be wrong by more than the distance itself.", links: [RL("fly", 82, "today: t.origin += dir × speed × delta"), RL("fly", 95, "today: move_allowed(Vector3, Vector3)"), RL("fly", 148, "today: estimate(_camera.eye())"), RL("fly", 150, "today: clampf(d, 1e-6, 20)"), SL(102, "base_speed from eye64")] },
+    { id: "cam", label: "CameraState", sub: "1 · eye_x/y/z: the truth · transform: the shadow", ctx: "cpu", x: 430, y: 210, w: 330, ...S(79),
+      blurb: "Gains @export eye_x, eye_y, eye_z (64-bit). set_eye64 sets the doubles, sets transform.origin to the rounded Vector3, emits changed when any double differs. eye() keeps returning the rounded shadow for every 32-bit consumer (the eye uniform, box_intersect, the orbit camera, the probe, project/unproject). The transform setter replaces the doubles only when the new origin differs from the shadow, so FlyCamera._set_forward, which rebuilds the transform from eye(), leaves the eye alone.", links: [RL("cam", 11, "today: transform"), RL("cam", 25, "today: eye()"), SL(88, "the setter rule"), SL(389, "test: round-trips 1e−12")] },
+    { id: "view", label: "FractalView._push_near()", sub: "4 · builds the orbit, pushes the records", ctx: "cpu", x: 830, y: 210, w: 290, ...S(270),
+      blurb: "Builds the ReferenceOrbit from eye64() (its distance is near, so the estimate is not computed twice; no longer clamped at 1e−6), pushes near_dist, coarse_iters and nf_weight as today, plus pert_iters; while that is positive, the five arrays (pert_a..d and pert_x). The arrays are pushed only while on, so a still frame at depth pushes once.", links: [RL("view", 366, "today: _push_near()"), RL("view", 369, "today: near from the 32-bit eye, clamped"), SL(273, "arrays only while on"), SL(406, "test: near_dist ≈ 1e−8 at 1e−8")] },
+    { id: "orbit", label: "ReferenceOrbit.build", sub: "2 · X_0..X_32 · λ_0..λ_32 · record a..d", ctx: "cpu", x: 830, y: 350, w: 290, ...S(122),
+      blurb: "New RefCounted (src/fractal/reference_orbit.gd), built from the 64-bit eye for the current shape: distance (== DistanceEstimator.estimate_at exactly), n (iterations before a KIFS bailout or Kleinian fixed point), mag (λ_i, the product of the scale magnitudes and radial-fold factors), points (float32 copies; X_k is the handoff point), the record arrays a, b, c, d, and perturbable (false for the octahedral fold, the poly fold and shapes without support).", links: [SL(126, "the API"), SL(139, "λ_i"), SL(385, "test: reference_orbit_test")] },
+    { id: "helpers", label: "the estimators' fold helpers", sub: "2 · _fold, _sphere_fold, _rot_plane, menger_fold…", ctx: "cpu", x: 830, y: 490, w: 290, ...S(136),
       blurb: "ReferenceOrbit reuses the estimators' static fold helpers, so the fold maths is not duplicated; only the loop body is, and the distance-equality test keeps it honest.", links: [RL("de", 108, "_fold"), RL("de", 192, "_sphere_fold"), RL("de", 208, "_rot_plane"), RL("de", 133, "menger_fold"), RL("kifs", 113, "KifsEstimator._diagonal_fold")] },
-    { id: "uK", label: "pert_iters", sub: "3 · k; 0 = off: today's code", ctx: "bridge", x: 1200, y: 70, w: 300, ...S(154),
-      blurb: "int. 0 means the shader runs exactly today's code, which is what keeps the default view bit-for-bit. Positive: the number of perturbed iterations before the handoff, never above PERT_MAX = 20 or the orbit's n.", links: [SL(215, "0: exactly today's code"), SL(357, "test: RENDERER_UNIFORMS gains it")] },
-    { id: "uRec", label: "pert_a, pert_b, pert_c, pert_d", sub: "2, 3 · vec4[20] each: the record", ctx: "bridge", x: 1200, y: 180, w: 300, ...S(131),
-      blurb: "The per-iteration record, four vec4 per iteration (see the Per-iteration record tab): for the Mandelbox the lower and upper clamp gaps, the sphere fold's input point, and (|Xs|² − min², |Xs|² − fixed², m, the cylinder's radial gap). Every value is a small gap or a multiplier that needs only relative precision, so float32 holds it well.", links: [SL(135, "the table"), SL(156, "uniform arrays compile under GL Compatibility")] },
-    { id: "uEnd", label: "pert_end", sub: "3 · X_k: the handoff point", ctx: "bridge", x: 1200, y: 290, w: 300, ...S(155),
-      blurb: "vec4: the reference's point after k iterations. By then the pixel's offset has grown by λ_k, so `pert_end + δ` in float32 is as good as exact and today's loop can take over.", links: [SL(161, "z = pert_end + δ")] },
-    { id: "uNear", label: "near_dist · coarse_iters · nf_weight", sub: "as today", ctx: "bridge", x: 1200, y: 400, w: 300, ...S(235),
+    { id: "uK", label: "pert_iters", sub: "3 · 0 = off (today's code), else min(20, n)", ctx: "bridge", x: 1200, y: 70, w: 300, ...S(166),
+      blurb: "int. 0 means the shader runs exactly today's code, which is what keeps the default view bit-for-bit. Positive: the number of records the GPU may use, min(PERT_MAX, n). It is not a per-frame handoff count: each ray hands off on its own.", links: [SL(244, "0: exactly today's code"), SL(261, "only how many records"), SL(408, "test: RENDERER_UNIFORMS gains it")] },
+    { id: "uRec", label: "pert_a, pert_b, pert_c, pert_d", sub: "2, 3 · vec4[20] each: the record", ctx: "bridge", x: 1200, y: 180, w: 300, ...S(143),
+      blurb: "The per-iteration record, four vec4 per iteration (see the Per-iteration record tab): for the Mandelbox the lower and upper clamp gaps (or the cylinder fold's pre-fold xy), the sphere fold's input point, and (|Xs|² − min², |Xs|² − fixed², m, the cylinder's radial gap). Every value is a small gap or a multiplier that needs only relative precision, so float32 holds it well.", links: [SL(147, "the table"), SL(159, "the cylinder's a.xy"), SL(169, "uniform arrays compile under GL Compatibility")] },
+    { id: "uEnd", label: "pert_x", sub: "3 · vec4[21]: X_0..X_20, the handoff points", ctx: "bridge", x: 1200, y: 290, w: 300, ...S(168),
+      blurb: "The reference's points X_0 … X_20 (float32 copies). A ray that hands off after i perturbed iterations forms `pert_x[i] + δ_i` in float32: by then |δ| ≥ 0.1, big enough to be as good as exact. pert_x[0] is the eye, so a far ray handing off at 0 forms today's `eye + dir × t`. Replaces the earlier single pert_end.", links: [SL(130, "orbit.points"), SL(180, "z = pert_x[i] + δ")] },
+    { id: "uNear", label: "near_dist · coarse_iters · nf_weight", sub: "as today", ctx: "bridge", x: 1200, y: 400, w: 300, ...S(271),
       blurb: "The existing deep-zoom uniforms (the coarse pass's iteration count and the lighting crossfade), pushed by _push_near as today.", links: [RL("view", 370, "today's pushes"), R("zoom", 74)] },
-    { id: "frag", label: "fragment()", sub: "3 · pert_iters > 0: both passes call de_pert", ctx: "gpu", x: 1610, y: 70, w: 290, ...S(211),
-      blurb: "When pert_iters > 0 both march passes call de_pert(dir × total, n) and the normal is calc_normal_pert; `v = eye + dir × total` is still formed in 32 bits for everything that only needs it roughly (Rainbow's radius, the probe dot, fog, the noise tint, noise_displace). When pert_iters == 0 the shader runs exactly today's code.", links: [RL("sh", 410, "today: fragment()"), RL("sh", 442, "today: pos = eye + dir * total"), SL(213, "v still formed in 32 bits")] },
-    { id: "normal", label: "calc_normal_pert(off, delta)", sub: "3 · samples de_pert(off ± e)", ctx: "gpu", x: 1960, y: 350, w: 290, ...S(212),
+    { id: "frag", label: "fragment()", sub: "3 · pert_iters > 0: both passes call de_pert", ctx: "gpu", x: 1610, y: 70, w: 290, ...S(240),
+      blurb: "When pert_iters > 0 both march passes call de_pert(dir × total, n) and the normal is calc_normal_pert; `v = eye + dir × total` is still formed in 32 bits for everything that only needs it roughly (Rainbow's radius, the probe dot, fog, the noise tint, noise_displace). When pert_iters == 0 the shader runs exactly today's code.", links: [RL("sh", 410, "today: fragment()"), RL("sh", 442, "today: pos = eye + dir * total"), SL(242, "v still formed in 32 bits")] },
+    { id: "normal", label: "calc_normal_pert(off, delta)", sub: "3 · samples de_pert(off ± e)", ctx: "gpu", x: 1960, y: 350, w: 290, ...S(241),
       blurb: "The central-difference normal, with its six samples taken as offsets from the eye (off ± e) so they too never form eye + off.", links: [RL("sh", 343, "today: calc_normal(v, delta)")] },
-    { id: "dePert", label: "de_pert(off, iters)", sub: "3 · min(pert_iters, iters) steps on δ", ctx: "gpu", x: 1610, y: 210, w: 290, ...S(160),
-      blurb: "Runs the perturbed iterations on δ (a vec4, δ.w = 0), with off = dir × t: the shader never forms eye + off on this path. Then z = pert_end + δ, dz as accumulated, and the shape's ordinary loop continues from iteration k.", links: [SL(161, "then hand off")] },
-    { id: "de", label: "de(p, iters)", sub: "pert_iters == 0: today's code", ctx: "gpu", x: 1960, y: 70, w: 280, ...S(166),
+    { id: "dePert", label: "de_pert(off, iters)", sub: "3 · steps on δ while |δ| < 0.1, per ray", ctx: "gpu", x: 1610, y: 210, w: 290, ...S(176),
+      blurb: "With off = dir × t (the shader never forms eye + off on this path), iterates δ (a vec4, δ.w = 0) while i < min(pert_iters, iters) and |δ|² < PERT_HANDOFF². At the first iteration where either fails it forms z = pert_x[i] + δ in float32, keeps the accumulated dz, and the shape's ordinary loop continues from i. In Mandelbrot mode the constant from there on is mb_constant(vec4(eye + off, w)) in float32: about one eye-ulp of error against a δ of at least 0.1, harmless.", links: [SL(178, "the loop condition"), SL(181, "per ray: wall, centre, far"), SL(186, "c after the handoff")] },
+    { id: "de", label: "de(p, iters)", sub: "pert_iters == 0: today's code", ctx: "gpu", x: 1960, y: 70, w: 280, ...S(191),
       blurb: "The direct path calls the shared loop with first = 0: the same arithmetic in the same order, so the default view stays bit-for-bit (the user's screenshot check confirms).", links: [RL("sh", 313, "today: de(p, iters)"), RL("sh", 322, "today's loop")] },
-    { id: "mbOrbit", label: "mb_orbit(z, dz, c, first, iters)", sub: "3 · each shape's loop, from a start index", ctx: "gpu", x: 2010, y: 210, w: 330, ...S(164),
-      blurb: "To share the loop body, each shape's loop moves into a function taking a start index (mb_orbit and its KIFS and Kleinian siblings). de_pert calls it from k, the direct de from 0.", links: [RL("sh", 275, "today: mb_step")] },
-    { id: "kinds", label: "the difference formulas", sub: "3 · clamp, radial, sort, Menger, linear, add", ctx: "gpu", x: 1610, y: 350, w: 330, ...S(170),
-      blurb: "One formula per step kind, each of small numbers: the clamp folds (one formula covers all nine side pairs), the radial folds (m' − m written per regime pair), the KIFS sorts and diagonal swaps, the Menger correction, the linear steps (rotation, twist, scale: the same step applied to δ) and the add (δ' = s δ + δc). See the Crossing a fold tab.", links: [SL(173, "clamp folds"), SL(179, "radial folds"), SL(193, "sorts and swaps"), SL(201, "linear steps"), SL(204, "the add")] },
-    { id: "main", label: "Main._process", sub: "6 · forwards FractalView.pert_iters()", ctx: "out", x: 30, y: 690, w: 300, ...S(266),
+    { id: "mbOrbit", label: "mb_orbit(z, dz, c, first, iters)", sub: "3 · each shape's loop, from a start index", ctx: "gpu", x: 2010, y: 210, w: 330, ...S(189),
+      blurb: "To share the loop body, each shape's loop moves into a function taking a start index (mb_orbit and its KIFS and Kleinian siblings). de_pert calls it from the ray's own handoff i, the direct de from 0.", links: [RL("sh", 275, "today: mb_step"), SL(191, "first = 0: bit for bit")] },
+    { id: "kinds", label: "the difference formulas", sub: "3 · clamp, radial, sort, Menger, linear, add", ctx: "gpu", x: 1610, y: 350, w: 330, ...S(195),
+      blurb: "One formula per step kind, each of small numbers: the clamp folds (one formula covers all nine side pairs), the radial folds (m' − m written per regime pair), the KIFS sorts and diagonal swaps, the Menger correction, the linear steps (rotation, twist, scale: the same step applied to δ) and the add (δ' = s δ + δc). See the Crossing a fold tab.", links: [SL(198, "clamp folds"), SL(204, "radial folds"), SL(218, "sorts and swaps"), SL(230, "linear steps"), SL(233, "the add")] },
+    { id: "main", label: "Main._process", sub: "6 · forwards FractalView.pert_iters()", ctx: "out", x: 30, y: 690, w: 300, ...S(311),
       blurb: "Forwards pert_iters to the Movement pane each frame, the way at_zoom_limit is forwarded today.", links: [RL("main", 384, "today: show_zoom_limit(fly.at_zoom_limit)")] },
-    { id: "movement", label: "MovementPane.show_deep(k)", sub: "6 · deep k=14 on the speed line", ctx: "out", x: 450, y: 690, w: 300, ...S(265),
-      blurb: "Shows `deep k=14` on the speed line while pert_iters > 0; k = 0 hides it. The zoom limit readout stays, with a tooltip saying the limit is now where 32 iterations run out of detail or the perturbed march runs out of precision.", links: [RL("movement", 296, "today: show_zoom_limit"), SL(259, "the zoom limit readout")] },
-    { id: "vizPane", label: "the deep-zoom viz pane", sub: "7 · after the code lands; this pane now", ctx: "out", x: 1200, y: 690, w: 300, ...S(272),
-      blurb: "A ten-tab pane written with /visualize once the code lands, its links pinned to that commit. This pane is the smaller one the spec asks for now, before the code: the document itself.", links: [SL(312, "this pane")] },
-    { id: "test", label: "perturbation_test.gd", sub: "the keystone: emulated float32 port", ctx: "out", x: 830, y: 690, w: 300, ...S(321),
-      blurb: "Runs before any shader work: a GDScript port of the perturbed and the direct step in emulated float32, plus the 64-bit reference, over five shape fixtures × three depths × 27 rays. It proves the formulas; see the Test plan tab.", links: [SL(329, "the checks")] },
+    { id: "movement", label: "MovementPane.show_deep(k)", sub: "6 · deep k=N on the speed line", ctx: "out", x: 450, y: 690, w: 300, ...S(310),
+      blurb: "Shows `deep k=N` on the speed line while pert_iters > 0 (N is pert_iters, the records available; the spec's example says k=14); k = 0 hides it. The zoom limit readout stays, with a tooltip saying the limit is now where the perturbed march runs out of 32-bit precision after its last handoff.", links: [RL("movement", 296, "today: show_zoom_limit"), SL(304, "the zoom limit readout")] },
+    { id: "vizPane", label: "the deep-zoom viz pane", sub: "7 · after the code lands; this pane now", ctx: "out", x: 1200, y: 690, w: 300, ...S(317),
+      blurb: "A ten-tab pane written with /visualize once the code lands, its links pinned to that commit. This pane is the smaller one the spec asks for now, before the code: the document itself.", links: [SL(359, "this pane")] },
+    { id: "test", label: "perturbation_test.gd", sub: "the keystone: emulated float32 port", ctx: "out", x: 830, y: 690, w: 300, ...S(368),
+      blurb: "Runs before any shader work: a GDScript port of the perturbed and the direct step in emulated float32, plus the 64-bit reference, over five shape fixtures × three depths × 27 rays. It proves the formulas; see the Test plan tab.", links: [SL(376, "the checks")] },
   ],
   edges: [
-    { from: "fly", to: "cam", kind: "call", label: "set_eye64", ...S(91), blurb: "The step is added to the doubles, not to the Vector3.", bow: 0 },
-    { from: "fly", to: "params", kind: "call", label: "zoom_floor(to64)", ...S(258), blurb: "move_allowed is unchanged in shape (accept if d_to ≥ floor(to) or d_to ≥ d_from), now in 64-bit.", bow: 0 },
-    { from: "ws", to: "cam", kind: "call", ...S(105), blurb: "restore: set_eye64 with the saved doubles, then the basis with looking_at.", bow: 0 },
-    { from: "center", to: "cam", kind: "data", label: "eye64()", ...S(96), bow: 0 },
-    { from: "cam", to: "view", kind: "signal", label: "changed", ...S(80), blurb: "set_eye64 emits changed when any double differs, so a sub-ulp move still re-renders.", bow: 0 },
-    { from: "view", to: "orbit", kind: "call", label: "build(eye64)", ...S(234), bow: 0 },
-    { from: "view", to: "params", kind: "call", label: "pert_iters(orbit, near)", ...S(225), bow: 0 },
-    { from: "params", to: "orbit", kind: "call", label: "a ReferenceOrbit at eye", ...S(243), bow: 0 },
-    { from: "orbit", to: "helpers", kind: "call", label: "reuses", ...S(124), bow: 0 },
-    { from: "view", to: "uK", kind: "data", label: "k", ...S(236), bow: 0 },
-    { from: "view", to: "uRec", kind: "data", label: "record[0..k)", ...S(236), bow: 0 },
-    { from: "view", to: "uEnd", kind: "data", label: "X_k", ...S(237), bow: 0 },
-    { from: "view", to: "uNear", kind: "data", label: "as today", ...S(235), bow: 0 },
-    { from: "uK", to: "frag", kind: "data", ...S(211), bow: 0 },
-    { from: "uRec", to: "dePert", kind: "data", ...S(160), bow: 0 },
-    { from: "uEnd", to: "dePert", kind: "data", ...S(161), bow: 0 },
-    { from: "frag", to: "dePert", kind: "call", label: "de_pert(dir × total, n)", ...S(211), bow: 0 },
-    { from: "frag", to: "normal", kind: "call", ...S(212), bow: 0 },
-    { from: "normal", to: "dePert", kind: "call", label: "off ± e", ...S(212), bow: 0 },
-    { from: "frag", to: "de", kind: "call", label: "k = 0", ...S(215), bow: 0 },
-    { from: "dePert", to: "mbOrbit", kind: "call", label: "from k", ...S(162), bow: 0 },
-    { from: "de", to: "mbOrbit", kind: "call", label: "from 0", ...S(166), bow: 0 },
-    { from: "dePert", to: "kinds", kind: "call", label: "k steps", ...S(170), bow: 0 },
-    { from: "view", to: "main", kind: "data", label: "pert_iters()", ...S(266), bow: 0 },
-    { from: "main", to: "movement", kind: "call", label: "show_deep(k)", ...S(265), bow: 0 },
+    { from: "fly", to: "cam", kind: "call", label: "set_eye64", ...S(93), blurb: "The step is added to the doubles, not to the Vector3.", bow: 0 },
+    { from: "fly", to: "params", kind: "call", label: "zoom_floor(to64)", ...S(303), blurb: "move_allowed is unchanged in shape (accept if d_to ≥ floor(to) or d_to ≥ d_from), now in 64-bit.", bow: 0 },
+    { from: "ws", to: "cam", kind: "call", ...S(116), blurb: "restore: set_eye64 with the saved doubles, then the basis with looking_at.", bow: 0 },
+    { from: "center", to: "cam", kind: "data", label: "eye64()", ...S(98), bow: 0 },
+    { from: "cam", to: "view", kind: "signal", label: "changed", ...S(82), blurb: "set_eye64 emits changed when any double differs, so a sub-ulp move still re-renders.", bow: 0 },
+    { from: "view", to: "orbit", kind: "call", label: "build(eye64)", ...S(270), bow: 0 },
+    { from: "view", to: "params", kind: "call", label: "pert_iters(orbit, near)", ...S(256), bow: 0 },
+    { from: "params", to: "orbit", kind: "call", label: "a ReferenceOrbit at eye", ...S(284), bow: 0 },
+    { from: "orbit", to: "helpers", kind: "call", label: "reuses", ...S(136), bow: 0 },
+    { from: "view", to: "uK", kind: "data", label: "k", ...S(272), bow: 0 },
+    { from: "view", to: "uRec", kind: "data", label: "record[0..20)", ...S(272), bow: 0 },
+    { from: "view", to: "uEnd", kind: "data", label: "X_0..X_20", ...S(273), bow: 0 },
+    { from: "view", to: "uNear", kind: "data", label: "as today", ...S(271), bow: 0 },
+    { from: "uK", to: "frag", kind: "data", ...S(240), bow: 0 },
+    { from: "uRec", to: "dePert", kind: "data", ...S(176), bow: 0 },
+    { from: "uEnd", to: "dePert", kind: "data", ...S(180), bow: 0 },
+    { from: "frag", to: "dePert", kind: "call", label: "de_pert(dir × total, n)", ...S(240), bow: 0 },
+    { from: "frag", to: "normal", kind: "call", ...S(241), bow: 0 },
+    { from: "normal", to: "dePert", kind: "call", label: "off ± e", ...S(241), bow: 0 },
+    { from: "frag", to: "de", kind: "call", label: "k = 0", ...S(244), bow: 0 },
+    { from: "dePert", to: "mbOrbit", kind: "call", label: "from i", ...S(180), bow: 0 },
+    { from: "de", to: "mbOrbit", kind: "call", label: "from 0", ...S(191), bow: 0 },
+    { from: "dePert", to: "kinds", kind: "call", label: "until |δ| ≥ 0.1", ...S(195), bow: 0 },
+    { from: "view", to: "main", kind: "data", label: "pert_iters()", ...S(311), bow: 0 },
+    { from: "main", to: "movement", kind: "call", label: "show_deep(k)", ...S(310), bow: 0 },
   ],
 };
 
@@ -711,7 +719,7 @@ const foldFig = {
   tab: "Crossing a fold",
   title: "Crossing a fold: the difference formulas",
   note: "Folds are where perturbation needs care: the reference X and the pixel P = X + δ can land on different sides of a crease, and then δ' is not the same step applied to δ. The spec writes every crossing as a formula of small numbers: the CPU sends the gaps (crease − X, computed in 64-bit), and the GPU never subtracts two nearly equal large numbers. Left: the clamp fold (the box fold, one component). Drag X and P; the 3 × 3 table lights the case the one formula reduces to. Right: the radial fold (the sphere fold), drawn along one ray from the centre so radii are enough; the regime pair picks how m' − m is written. Both check the formula against P' − X' computed directly, and again in float32 with δ shrunk a million-fold, where the direct difference falls apart.",
-  w: 1560, h: 800,
+  w: 1560, h: 810,
   draw(api) {
     const CX = api.hue(1), CP = api.hue(2), CG = api.hue(3), CA = api.hue(4);
     const ST = { L: 1, X: 0.6, P: 1.35, min: 0.7, fixed: 1, rX: 0.85, rP: 0.62 };
@@ -749,7 +757,7 @@ const foldFig = {
         const rect = api.el("rect", { x: x + 2, y: y + 2, width: CW - 4, height: CHh - 4, rx: 6, style: "fill:var(--surface);stroke:var(--hairline);stroke-width:1.2;cursor:help" });
         api.text(x + CW / 2, y + 26, CASES[r][c][0], "mono", { "text-anchor": "middle", style: `font-size:12px;${noPtr}` });
         if (CASES[r][c][1]) api.text(x + CW / 2, y + 43, CASES[r][c][1], "muted", { "text-anchor": "middle", style: `${small};${noPtr}` });
-        api.tip(rect, { title: `X ${SIDES[r]}, P ${SIDES[c]}`, ...S(176), blurb: `δ' = ${CASES[r][c][0]}${CASES[r][c][1] && CASES[r][c][1].startsWith("=") ? ` ${CASES[r][c][1]}` : ""}: what 2 × (clamp(δ, g_lo, g_hi) − clamp(0, g_lo, g_hi)) − δ reduces to when X and P are on these sides. On the GPU there is no branch: the one formula is evaluated for every case, and both clamps are of small numbers.`, links: [SL(175, "the formula")] });
+        api.tip(rect, { title: `X ${SIDES[r]}, P ${SIDES[c]}`, ...S(201), blurb: `δ' = ${CASES[r][c][0]}${CASES[r][c][1] && CASES[r][c][1].startsWith("=") ? ` ${CASES[r][c][1]}` : ""}: what 2 × (clamp(δ, g_lo, g_hi) − clamp(0, g_lo, g_hi)) − δ reduces to when X and P are on these sides. On the GPU there is no branch: the one formula is evaluated for every case, and both clamps are of small numbers.`, links: [SL(200, "the formula")] });
         cellL[r].push(rect);
       }
     }
@@ -816,8 +824,8 @@ const foldFig = {
     const statR = api.el("g", { style: noPtr }), dynR = api.el("g", { style: noPtr });
     const hXr = api.el("circle", { r: 9, style: `fill:${CX};stroke:var(--surface);stroke-width:2;cursor:ew-resize` });
     const hPr = api.el("circle", { r: 9, style: `fill:${CP};stroke:var(--surface);stroke-width:2;cursor:ew-resize` });
-    api.tip(hXr, { title: "|X|: the reference's radius", ...S(137), blurb: "Drag. The CPU sends |Xs|² − min² and |Xs|² − fixed² (the gaps) and the reference's own factor m." });
-    api.tip(hPr, { title: "|P|: the pixel's radius", ...S(182), blurb: "Drag. The GPU decides the pixel's regime from g + q against 0, with q = 2 X·δ + δ·δ = |P|² − |X|²: a sum of products, no cancellation." });
+    api.tip(hXr, { title: "|X|: the reference's radius", ...S(149), blurb: "Drag. The CPU sends |Xs|² − min² and |Xs|² − fixed² (the gaps) and the reference's own factor m." });
+    api.tip(hPr, { title: "|P|: the pixel's radius", ...S(207), blurb: "Drag. The GPU decides the pixel's regime from g + q against 0, with q = 2 X·δ + δ·δ = |P|² − |X|²: a sum of products, no cancellation." });
     draggable(api, hXr, q => { ST.rX = +clamp(br(q.x), 0.02, RMAX).toFixed(3); drawR(); });
     draggable(api, hPr, q => { ST.rP = +clamp(br(q.x), 0.02, RMAX).toFixed(3); drawR(); });
     const outR = [];
@@ -840,7 +848,7 @@ const foldFig = {
         const rect = api.el("rect", { x: x + 2, y: y + 2, width: CWr - 4, height: CHh - 4, rx: 6, style: "fill:var(--surface);stroke:var(--hairline);stroke-width:1.2;cursor:help" });
         api.text(x + CWr / 2, y + 26, RCASES[r][c][0], "mono", { "text-anchor": "middle", style: `font-size:12px;${noPtr}` });
         if (RCASES[r][c][1]) api.text(x + CWr / 2, y + 43, RCASES[r][c][1], "muted", { "text-anchor": "middle", style: `${small};${noPtr}` });
-        api.tip(rect, { title: `X ${REG[r]}, P ${REG[c]}`, ...S(187), blurb: `m' − m = ${RCASES[r][c][0]}${RCASES[r][c][1] && RCASES[r][c][1].startsWith("÷") ? ` ${RCASES[r][c][1]}` : ""}. Written per regime pair so it is a small precise number over a product, never a difference of two factors. Then δ' = m' δ + X (m' − m), and the pixel's dz multiplies by m'.`, links: [SL(180, "δ' = m' δ + X (m' − m)"), SL(185, "m' − m per regime pair")] });
+        api.tip(rect, { title: `X ${REG[r]}, P ${REG[c]}`, ...S(212), blurb: `m' − m = ${RCASES[r][c][0]}${RCASES[r][c][1] && RCASES[r][c][1].startsWith("÷") ? ` ${RCASES[r][c][1]}` : ""}. Written per regime pair so it is a small precise number over a product, never a difference of two factors. Then δ' = m' δ + X (m' − m), and the pixel's dz multiplies by m'.`, links: [SL(205, "δ' = m' δ + X (m' − m)"), SL(210, "m' − m per regime pair")] });
         cellR[r].push(rect);
       }
     }
@@ -905,8 +913,9 @@ const foldFig = {
     }
     api.slider({ x: 1240, y: 40, w: 130, label: "min_radius", min: 0.1, max: 0.95, step: 0.05, value: ST.min, fmt: v => fmt(v, 2), onChange: v => { ST.min = v; drawR(); } });
     api.slider({ x: 1405, y: 40, w: 130, label: "fixed_radius", min: 0.5, max: 1.6, step: 0.05, value: ST.fixed, fmt: v => fmt(v, 2), onChange: v => { ST.fixed = v; drawR(); } });
-    api.text(20, 760, "Not drawn: the cylinder fold (the same radial template on xy, m = (2L − r) / r), the KIFS sorts and diagonal swaps (four cases: both, neither, only the pixel, only the reference), the Menger correction (a step of t when P and X cross differently).", "muted", { style: small });
-    api.text(20, 778, "Hover a table cell for its spec line.", "muted", { style: small });
+    api.text(20, 760, "Not drawn: the cylinder fold (the same radial template on xy, m = (2L − r) / r; the record carries its pre-fold xy in a.xy), the KIFS sorts and diagonal swaps (four cases each:", "muted", { style: small });
+    api.text(20, 776, "both, neither, only the pixel, only the reference; the diagonal's both-swap case is swapped and negated, (−δ_b, −δ_a)), the Menger correction (a step of t when P and X cross differently).", "muted", { style: small });
+    api.text(20, 792, "Hover a table cell for its spec line.", "muted", { style: small });
     drawL(); drawR();
   },
 };
@@ -915,32 +924,34 @@ const foldFig = {
 const recordTable = {
   type: "table",
   title: "What the CPU hands the GPU per iteration",
-  note: "Spec part 2: four vec4 per iteration for up to PERT_MAX = 20 iterations, every value something a 32-bit float holds precisely: a gap that is small exactly when precision matters, or a multiplier that needs only relative precision. X is the reference's point at that step.",
+  note: "Spec part 2: four vec4 per iteration for up to PERT_MAX = 20 iterations, every value something a 32-bit float holds precisely: a gap that is small exactly when precision matters, or a multiplier that needs only relative precision; plus pert_x, the 21 points a ray can hand off to. X is the reference's point at that step.",
   columns: [{ label: "shape", w: 110 }, { label: "pert_a", w: 230 }, { label: "pert_b", w: 270 }, { label: "pert_c", w: 210 }, { label: "pert_d", w: 330 }],
   rows: [
-    { cells: ["Mandelbox", "lower-crease gaps lo − X, per component", "upper gaps hi − X", "the sphere fold's input point", "(|Xs|² − min_radius², |Xs|² − fixed_radius², the reference's sphere factor m, the cylinder fold's radial gap r_xy − fold_limit)"],
-      tip: { title: "Mandelbox record", ...S(137), blurb: "The clamp gaps use the fold's own interval: ±fold_limit for the box fold and for the cylinder fold's z and w, or the hybrid interval [lo, hi] on a hybrid iteration. The cylinder's xy pair uses the radial gap in d.w instead. The octahedral fold is not perturbed.", links: [SL(141, "which interval"), RL("sh", 152, "today: mb_box_fold"), RL("sh", 157, "today: mb_sphere_fold")] } },
+    { cells: ["Mandelbox", "lower-crease gaps lo − X, per component (cylinder fold: its pre-fold xy in a.xy)", "upper gaps hi − X", "the sphere fold's input point", "(|Xs|² − min_radius², |Xs|² − fixed_radius², the reference's sphere factor m, the cylinder fold's radial gap r_xy − fold_limit)"],
+      tip: { title: "Mandelbox record", ...S(149), blurb: "The clamp gaps use the fold's own interval: ±fold_limit for the box fold and for the cylinder fold's z and w, or the hybrid interval [lo, hi] on a hybrid iteration. The cylinder's xy pair has no clamp gaps, so a.xy carries its pre-fold xy instead (recovering it from c would divide by L − gap_r, which is 0 at r = 2L), and its radial gap goes in d.w. The octahedral fold is not perturbed.", links: [SL(153, "which interval"), SL(159, "the cylinder's a.xy"), RL("sh", 152, "today: mb_box_fold"), RL("sh", 157, "today: mb_sphere_fold")] } },
     { cells: ["Mandelbox, fold order 1", "clamp gaps of the post-sphere point", "(as fold order 0)", "always the sphere fold's input", "sphere gaps of the pre-fold point"],
-      tip: { title: "sphere first", ...S(145), blurb: "With fold_order 1 (sphere first) the sphere gaps are of the pre-fold point and the clamp gaps of the post-sphere point. The GPU recovers anything else from c, m and the radial gap: the cylinder fold's pre-fold xy is c.xy scaled back by (L + gap_r) / (L − gap_r) in fold order 0, or c.xy × m in fold order 1.", links: [RL("sh", 276, "today: the two orders")] } },
-    { cells: ["KIFS", "abs-fold gaps −X (after R1)", "the three sort gaps (X_x − X_y, then X_x − X_z, X_y − X_z, each from the state at that comparison), or the four diagonal gaps X_a + X_b", ".x: the Menger-correction gap X_z + t/2 after the scale", "unused"],
-      tip: { title: "KIFS record", ...S(138), blurb: "The coordinate and diagonal fold sets are exclusive per shape, so b holds the three sort gaps or the four diagonal gaps, never both.", links: [RL("kifs", 113, "today: _diagonal_fold"), SL(193, "the sort and swap formulas")] } },
+      tip: { title: "sphere first", ...S(157), blurb: "With fold_order 1 (sphere first) the sphere gaps are of the pre-fold point and the clamp gaps of the post-sphere point; the record's c is always the sphere fold's input.", links: [RL("sh", 276, "today: the two orders")] } },
+    { cells: ["KIFS", "abs-fold gaps −X (after R1)", "the three sort gaps (X_x − X_y, then X_x − X_z, X_y − X_z, each from the state at that comparison), or the four diagonal gaps X_a + X_b", ".x: the Menger-correction gap X_z + t/2 after the scale", "the next point X_{i+1}, for the pixel's own bailout test |X_{i+1} + δ'|² > 1e6"],
+      tip: { title: "KIFS record", ...S(150), blurb: "The coordinate and diagonal fold sets are exclusive per shape, so b holds the three sort gaps or the four diagonal gaps, never both. d carries the next point so a pixel can test its own bailout and hand off there.", links: [RL("kifs", 113, "today: _diagonal_fold"), SL(218, "the sort and swap formulas"), SL(236, "bailout: hand off there")] } },
     { cells: ["Kleinian", "box gaps −b − X", "b − X", "the post-fold point", "(|Xs|² − radius², the reference's factor m, 0, 0)"],
-      tip: { title: "Kleinian record", ...S(139), links: [SL(207, "the fixed-point exit")] } },
+      tip: { title: "Kleinian record", ...S(151), links: [SL(236, "the fixed-point exit")] } },
+    { cells: ["every shape · pert_x", "X_0 … X_20 (21 entries, float32 copies)", "", "", "the point a ray hands off to after i perturbed iterations: z = pert_x[i] + δ_i"],
+      tip: { title: "pert_x, the handoff points", ...S(168), blurb: "Not part of the per-iteration record but pushed with it. pert_x[0] is the eye, so a far ray that hands off at once forms today's eye + dir × t.", links: [SL(130, "orbit.points"), SL(180, "z = pert_x[i] + δ")] } },
   ],
 };
 const budgetTable = {
   type: "table",
   title: "The uniform budget",
-  note: "Spec part 3 says 80 vec4 plus the existing ~110 scalars stay well inside WebGL 2's 224-vector minimum. Counted at this commit: 109 `uniform` lines (71 in mandelbox.gdshader, 20 KIFS, 11 Kleinian, 7 Mandelbulb), nearly all scalars. 'Well inside' holds when scalars pack four to a row; if each took a row it would be about 191 of 224.",
-  columns: [{ label: "item", w: 300 }, { label: "vec4 rows", w: 120 }, { label: "where", w: 420 }],
+  note: "Counted at this commit: 109 `uniform` declarations (71 in mandelbox.gdshader, 20 KIFS, 11 Kleinian, 7 Mandelbulb; no arrays), nearly all scalars. The five arrays add 101 vec4. If a driver packs scalars four to a row this is far inside WebGL 2's 224; if it packs none, 101 + 1 + 109 comes to 211, not the spec's 'about 190': inside, with 13 rows to spare. PERT_MAX is the knob if a web export fails to link.",
+  columns: [{ label: "item", w: 300 }, { label: "vec4 rows", w: 140 }, { label: "where", w: 420 }],
   rows: [
-    { cells: ["pert_a, pert_b, pert_c, pert_d", "4 × 20 = 80", "the record, PERT_MAX = 20 entries each"], tip: { title: "the record arrays", ...S(154) } },
-    { cells: ["pert_end", "1", "X_k, a vec4"], tip: { title: "pert_end", ...S(155) } },
-    { cells: ["pert_iters", "a scalar", "int, 0 = off"], tip: { title: "pert_iters", ...S(154) } },
-    { cells: ["the existing uniforms", "109 declarations", "mostly floats, ints and bools; a few vec3s (eye, the camera basis, colours)"], tip: { title: "today's uniforms", ...R("sh", 15), blurb: "71 `uniform` lines in mandelbox.gdshader, 20 in kifs.gdshaderinc, 11 in kleinian.gdshaderinc, 7 in mandelbulb.gdshaderinc, at this commit.", links: [SL(158, "spec: the budget claim")] } },
-    { cells: ["total, scalars packed four to a row", "about 110", "the GLSL ES packing rules allow it; well inside 224"], tip: { title: "packed", ...S(158) } },
-    { cells: ["total, one row per scalar (worst case)", "about 191", "still inside 224, with less margin: worth checking on a web export"], tip: { title: "unpacked", ...S(158), blurb: "Whether a driver packs scalar uniforms is up to it (Godot may also put material uniforms in a uniform block, whose limit is bytes, not rows). The spec checked that uniform arrays compile headless on 4.6.1; the budget itself is only checkable on a WebGL 2 browser.", links: [SL(157, "checked headless on 4.6.1")] } },
-    { cells: ["WebGL 2's guaranteed minimum", "224", "MAX_FRAGMENT_UNIFORM_VECTORS"], tip: { title: "the limit", ...S(158) } },
+    { cells: ["pert_a, pert_b, pert_c, pert_d", "4 × 20 = 80", "the record, PERT_MAX = 20 entries each"], tip: { title: "the record arrays", ...S(166) } },
+    { cells: ["pert_x", "21", "X_0 … X_20, the handoff points (PERT_MAX + 1)"], tip: { title: "pert_x", ...S(168) } },
+    { cells: ["pert_iters", "1 (a scalar)", "int, 0 = off"], tip: { title: "pert_iters", ...S(166) } },
+    { cells: ["the existing uniforms", "109 declarations", "mostly floats, ints and bools; a few vec3s (eye, the camera basis, colours)"], tip: { title: "today's uniforms", ...R("sh", 15), blurb: "71 `uniform` lines in mandelbox.gdshader, 20 in kifs.gdshaderinc, 11 in kleinian.gdshaderinc, 7 in mandelbulb.gdshaderinc, at this commit; none is an array.", links: [SL(171, "spec: the budget claim")] } },
+    { cells: ["total, scalars packed four to a row", "about 135", "what drivers normally do; far inside 224"], tip: { title: "packed", ...S(173), blurb: "101 + pert_iters + roughly 33 rows for the packed scalars and the few vec3s." } },
+    { cells: ["total, one row per scalar (worst case)", "211", "still inside 224, with 13 to spare (the spec says about 190)"], tip: { title: "unpacked", ...S(171), blurb: "101 array rows + pert_iters + 109 declarations = 211. Whether a driver packs scalar uniforms is up to it (Godot may also put material uniforms in a uniform block, whose limit is bytes, not rows). The spec checked that uniform arrays compile headless on 4.6.1; the budget itself is only checkable on a WebGL 2 browser.", links: [SL(170, "checked headless on 4.6.1"), SL(173, "only the web export can confirm")] } },
+    { cells: ["WebGL 2's guaranteed minimum", "224", "MAX_FRAGMENT_UNIFORM_VECTORS"], tip: { title: "the limit", ...S(172) } },
   ],
 };
 
@@ -949,46 +960,46 @@ const frameSeq = {
   type: "seq",
   tab: "One frame at depth",
   title: "One frame at depth: from a key press to a pixel",
-  note: "Spec part 4, once the camera is within 10 × today's floor. The CPU work is one orbit of 32 iterates (microseconds); the GPU work per sample is k perturbed iterations plus 32 − k ordinary ones. At the default view pert_iters is 0 and the GPU side is today's code.",
+  note: "Spec parts 3 and 4, once the camera is within 10 × today's floor. The CPU work is one orbit of 32 iterates (microseconds); the GPU work per sample is k perturbed iterations plus 32 − k ordinary ones, where k is that ray's own handoff (0 for a far ray, up to 20 for a near wall). At the default view pert_iters is 0 and the GPU side is today's code.",
   laneWidth: 190, headWidth: 172,
   boundaryAfterCol: 5, boundaryLabel: "CPU → GPU",
   participants: [
-    { id: "fly", col: 0, ctx: "cpu", name: "FlyCamera", sub: "physics tick", ...S(91) },
-    { id: "cam", col: 1, ctx: "cpu", name: "CameraState", sub: "eye_x/y/z", ...S(77) },
-    { id: "view", col: 2, ctx: "cpu", name: "FractalView", sub: "_push_near()", ...S(234) },
-    { id: "orbit", col: 3, ctx: "cpu", name: "ReferenceOrbit", sub: "build()", ...S(111) },
-    { id: "params", col: 4, ctx: "cpu", name: "FractalParams", sub: "pert_iters, zoom_floor", ...S(225) },
-    { id: "mat", col: 5, ctx: "bridge", name: "ShaderMaterial", sub: "the uniforms", ...S(154) },
-    { id: "frag", col: 6, ctx: "gpu", name: "fragment()", sub: "every pixel", ...S(211) },
-    { id: "dep", col: 8, ctx: "gpu", name: "de_pert · de", sub: "+ mb_orbit(…, first, …)", ...S(160) },
+    { id: "fly", col: 0, ctx: "cpu", name: "FlyCamera", sub: "physics tick", ...S(93) },
+    { id: "cam", col: 1, ctx: "cpu", name: "CameraState", sub: "eye_x/y/z", ...S(79) },
+    { id: "view", col: 2, ctx: "cpu", name: "FractalView", sub: "_push_near()", ...S(270) },
+    { id: "orbit", col: 3, ctx: "cpu", name: "ReferenceOrbit", sub: "build()", ...S(122) },
+    { id: "params", col: 4, ctx: "cpu", name: "FractalParams", sub: "pert_iters, zoom_floor", ...S(256) },
+    { id: "mat", col: 5, ctx: "bridge", name: "ShaderMaterial", sub: "the uniforms", ...S(166) },
+    { id: "frag", col: 6, ctx: "gpu", name: "fragment()", sub: "every pixel", ...S(240) },
+    { id: "dep", col: 8, ctx: "gpu", name: "de_pert · de", sub: "+ mb_orbit(…, first, …)", ...S(176) },
   ],
   rows: [
     { sec: "PHYSICS TICK · CPU, 64-BIT" },
-    { from: "fly", to: "params", kind: "call", label: "move_allowed(from64, to64)", tick: "zoom_floor(to): max of two floors", ...S(258), blurb: "Accept the move if the distance at `to` is at least the floor there, or at least the distance at `from` (backing away is always allowed). Unchanged in shape, now in 64-bit.", links: [RL("fly", 95, "today: move_allowed(Vector3, Vector3)"), SL(242, "the two floors")] },
-    { from: "fly", to: "cam", kind: "call", label: "set_eye64(ex + dir.x × step, …)", ...S(91), blurb: "The step is added to the doubles; a move far below the Vector3 grid still lands.", links: [RL("fly", 82, "today: t.origin += …")] },
-    { from: "cam", to: "view", kind: "signal", label: "changed", ...S(80), blurb: "Emitted when any double differs, even when the rounded transform did not change." },
+    { from: "fly", to: "params", kind: "call", label: "move_allowed(from64, to64)", tick: "zoom_floor(to) = floor_pert", ...S(303), blurb: "Accept the move if the distance at `to` is at least the floor there, or at least the distance at `from` (backing away is always allowed). Unchanged in shape, now in 64-bit.", links: [RL("fly", 95, "today: move_allowed(Vector3, Vector3)"), SL(278, "floor_pert"), SL(290, "the iteration floor: not guarded")] },
+    { from: "fly", to: "cam", kind: "call", label: "set_eye64(ex + dir.x × step, …)", ...S(93), blurb: "The step is added to the doubles; a move far below the Vector3 grid still lands.", links: [RL("fly", 82, "today: t.origin += …")] },
+    { from: "cam", to: "view", kind: "signal", label: "changed", ...S(82), blurb: "Emitted when any double differs, even when the rounded transform did not change." },
     { sec: "THE PUSH · CPU" },
-    { from: "view", to: "orbit", kind: "call", label: "build(params, ex, ey, ez)", tick: "32 iterates in doubles", ...S(115), toRole: "Iterates the eye 32 times in 64-bit, recording X_i, λ_i and the per-iteration gaps." },
-    { from: "orbit", to: "view", kind: "data", label: "orbit (distance = near)", ...S(234), blurb: "Its distance is near, so the estimate is not computed twice." },
-    { from: "view", to: "params", kind: "call", label: "pert_iters(orbit, near) → k", ...S(225), blurb: "0 unless perturbable and near < 10 × today's floor; else the smallest k ≤ 20 with λ_k × near ≥ 1e−2." },
-    { from: "view", to: "mat", kind: "data", label: "near_dist, coarse_iters, nf_weight", tick: "as today", ...S(235), links: [RL("view", 370, "today")] },
-    { from: "view", to: "mat", kind: "data", label: "pert_iters = k", ...S(236) },
-    { from: "view", to: "mat", kind: "data", label: "pert_a..d[20], pert_end = X_k", tick: "only while k > 0", ...S(237) },
+    { from: "view", to: "orbit", kind: "call", label: "build(params, ex, ey, ez)", tick: "32 iterates in doubles", ...S(126), toRole: "Iterates the eye 32 times in 64-bit, recording X_i, λ_i and the per-iteration gaps." },
+    { from: "orbit", to: "view", kind: "data", label: "orbit (distance = near)", ...S(270), blurb: "Its distance is near, so the estimate is not computed twice." },
+    { from: "view", to: "params", kind: "call", label: "pert_iters(orbit, near)", ...S(256), blurb: "0 unless perturbable and near < 10 × today's floor; else min(PERT_MAX, n) = 20 for the Mandelbox: how many records the GPU may use. Each ray picks its own handoff." },
+    { from: "view", to: "mat", kind: "data", label: "near_dist, coarse_iters, nf_weight", tick: "as today", ...S(271), links: [RL("view", 370, "today")] },
+    { from: "view", to: "mat", kind: "data", label: "pert_iters (0 or 20)", ...S(272) },
+    { from: "view", to: "mat", kind: "data", label: "pert_a..d[20], pert_x[21]", tick: "only while pert_iters > 0", ...S(273) },
     { sec: "EVERY PIXEL · GPU, FLOAT32" },
-    { from: "mat", to: "frag", kind: "data", label: "this frame's uniforms", ...S(211) },
-    { from: "frag", to: "frag", kind: "call", label: "box_intersect(eye, dir)", ...S(213), blurb: "Still from the 32-bit eye: clipping to the shape's cube needs nothing like the precision of the march.", links: [RL("sh", 422, "today")] },
+    { from: "mat", to: "frag", kind: "data", label: "this frame's uniforms", ...S(240) },
+    { from: "frag", to: "frag", kind: "call", label: "box_intersect(eye, dir)", ...S(242), blurb: "Still from the 32-bit eye: clipping to the shape's cube needs nothing like the precision of the march.", links: [RL("sh", 422, "today")] },
     { sec: "THE MARCH · PERT_ITERS > 0" },
-    { from: "frag", to: "dep", kind: "call", label: "de_pert(dir × total, n)", tick: "n = n_coarse, then 32", ...S(211), blurb: "off = dir × total: the shader never forms eye + off on this path.", links: [RL("sh", 438, "n_coarse"), RL("sh", 443, "today: de(pos, n_coarse)")] },
-    { from: "dep", to: "dep", kind: "call", label: "k perturbed steps on δ", tick: "gaps from pert_a..d", ...S(161) },
-    { from: "dep", to: "dep", kind: "call", label: "mb_orbit(pert_end + δ, dz, c, k, n)", tick: "today's loop body, from k", ...S(164) },
-    { from: "dep", to: "frag", kind: "data", label: "the distance estimate", ...S(160) },
-    { from: "frag", to: "dep", kind: "call", label: "calc_normal_pert(off, delta)", tick: "six de_pert(off ± e)", ...S(212) },
-    { from: "frag", to: "frag", kind: "call", label: "shade: v = eye + dir × total", tick: "32-bit, only where rough is fine", ...S(213) },
+    { from: "frag", to: "dep", kind: "call", label: "de_pert(dir × total, n)", tick: "n = n_coarse, then 32", ...S(240), blurb: "off = dir × total: the shader never forms eye + off on this path.", links: [RL("sh", 438, "n_coarse"), RL("sh", 443, "today: de(pos, n_coarse)")] },
+    { from: "dep", to: "dep", kind: "call", label: "steps on δ while |δ| < 0.1", tick: "and i < pert_iters; gaps from pert_a..d", ...S(178), blurb: "The per-ray handoff: a near wall runs many perturbed steps, the centre hit fewer, a far ray with t ≥ 0.1 none.", links: [SL(181, "why per ray")] },
+    { from: "dep", to: "dep", kind: "call", label: "mb_orbit(pert_x[k] + δ, dz, c, k, n)", tick: "c = mb_constant(eye + off), float32", ...S(180), links: [SL(186, "c after the handoff"), SL(189, "the shared loop body")] },
+    { from: "dep", to: "frag", kind: "data", label: "the distance estimate", ...S(176) },
+    { from: "frag", to: "dep", kind: "call", label: "calc_normal_pert(off, delta)", tick: "six de_pert(off ± e)", ...S(241) },
+    { from: "frag", to: "frag", kind: "call", label: "shade: v = eye + dir × total", tick: "32-bit, only where rough is fine", ...S(242) },
     { sec: "PERT_ITERS == 0 · TODAY'S PATH" },
-    { from: "frag", to: "dep", kind: "call", label: "de(eye + dir × total, n)", tick: "mb_orbit from 0: bit for bit", ...S(215), links: [RL("sh", 313, "today: de"), SL(166, "first = 0: same arithmetic, same order")] },
+    { from: "frag", to: "dep", kind: "call", label: "de(eye + dir × total, n)", tick: "mb_orbit from 0: bit for bit", ...S(244), links: [RL("sh", 313, "today: de"), SL(191, "first = 0: same arithmetic, same order")] },
   ],
   fragments: [
-    { type: "opt", rows: [10, 10], cols: [2, 5], guard1: "k > 0" },
+    { type: "opt", rows: [10, 10], cols: [2, 5], guard1: "pert_iters > 0" },
     { type: "loop", rows: [15, 18], cols: [6, 8], guard1: "each march step" },
   ],
 };
@@ -998,49 +1009,51 @@ const decisionCards = {
   type: "cards",
   tab: "Decisions",
   title: "What is decided, rejected, risky or open",
-  note: "Tags: decided (green), rejected (violet: the history of the choice), risk (orange) and open (amber: left to a follow-up or to measurement). The first four risks were found while building this pane's live port; they are questions for the implementer, not settled facts.",
+  note: "Tags: decided (green), rejected (violet: the history of the choice, including two earlier drafts of this spec), risk (orange) and open (amber: left to a follow-up or to measurement). Four of these cards answer questions this pane's first version raised from its live port (the per-ray handoff, NEAR_FLOOR, base_speed, the dropped iteration-floor guard); the iteration-floor risk quotes two measurements that disagree.",
   columns: 3, cardWidth: 470,
   cards: [
     { title: "Perturbation, not the substitution or the two-float camera", tag: "decided", hue: 3, ...S(21), links: [NL(382, "the note's recommendation")],
       body: "94–100% of rays right at 1e−5 to 1e−7 for every shape, an estimated 1.5–2× per ray, in ordinary float arithmetic. See the Three approaches tab." },
-    { title: "Everything automatic; the default view is bit-for-bit", tag: "decided", hue: 3, ...S(67), links: [SL(215, "pert_iters 0 = today's code"), SL(166, "first = 0: same order")],
+    { title: "Everything automatic; the default view is bit-for-bit", tag: "decided", hue: 3, ...S(69), links: [SL(244, "pert_iters 0 = today's code"), SL(191, "first = 0: same order")],
       body: "No new renderer option, the save stays version 2. At the default view pert_iters is 0 and the shader runs exactly today's code; the shared loop with first = 0 is the same arithmetic in the same order." },
-    { title: "The 64-bit eye is the truth; transform is the shadow", tag: "decided", hue: 3, ...S(77), links: [SL(83, "eye() stays the shadow"), SL(86, "the setter rule")],
+    { title: "The 64-bit eye is the truth; transform is the shadow", tag: "decided", hue: 3, ...S(79), links: [SL(85, "eye() stays the shadow"), SL(88, "the setter rule")],
       body: "CameraState gains eye_x/y/z doubles. Every 32-bit consumer keeps reading eye(), the rounded Vector3, so nothing outside the deep path changes." },
-    { title: "Only gaps cross the bridge", tag: "decided", hue: 3, ...S(37), links: [SL(131, "the record")],
+    { title: "Only gaps cross the bridge", tag: "decided", hue: 3, ...S(37), links: [SL(143, "the record")],
       body: "The CPU sends each crease's position minus X, computed in 64-bit. A gap is small exactly when precision matters, and a float32 holds a small number to the same relative precision as a large one. The shader never forms eye + off on the perturbed path." },
-    { title: "Hand off when λ_k × near reaches 1e−2, at most 20", tag: "decided", hue: 3, ...S(223), links: [NL(386, "the note's rule"), NL(370, "too large a δ glitches")],
-      body: "Big enough that X_k + δ_k in float32 is as good as exact; small enough that δ never grows into the glitch the note saw at k = 24. PERT_MAX = 20 also sizes the uniform arrays." },
-    { title: "Switch on at 10 × today's floor: no pop", tag: "decided", hue: 3, ...S(222), links: [SL(231, "why")],
+    { title: "Each ray hands off on its own, at |δ| ≥ 0.1", tag: "decided", hue: 3, ...S(181), links: [SL(252, "PERT_HANDOFF = 0.1, measured"), SL(264, "the note's rule, per ray"), SL(178, "the loop condition"), NL(386, "the note's per-frame rule")],
+      body: "Rays in one frame need different counts: a wall as close as the nearest surface needs the most help, the centre hit less, and a far ray with t ≥ 0.1 hands off at 0, where pert_x[0] + δ_0 is today's eye + dir × t. |δ_i| ≈ λ_i × t is the note's λ_k × d applied at each ray's own t. The plan's dry run measured the threshold: at 1e−2 four default-box rays at d = 1e−6 landed 0.15–0.5% off from a slightly early handoff (85% of the cell), at 0.1 every cell scored 100%. pert_iters only says how many records (20) the GPU may use." },
+    { title: "Switch on at 10 × today's floor: no pop", tag: "decided", hue: 3, ...S(251), links: [SL(262, "why")],
       body: "An order of magnitude before the 32-bit path breaks, both paths agree within the hit threshold, so switching between them shows nothing." },
-    { title: "zoom_floor = max(floor_pert, floor_iter)", tag: "decided", hue: 3, ...S(242), links: [SL(245, "floor_pert"), SL(248, "floor_iter")],
-      body: "floor_pert: today's formula applied at the handoff point, where the view is λ_20 times bigger (about 1e−11 for the default box). floor_iter: where 32 iterations stop resolving, bound_half / (eps × λ_32). Shapes that are not perturbable keep today's floor." },
+    { title: "zoom_floor = floor_pert alone", tag: "decided", hue: 3, ...S(278), links: [SL(281, "the formula"), SL(286, "3e−11 to 3e−10")],
+      body: "Today's formula applied at the last handoff point X_20, where the view is λ_20 times bigger: ulp32(max |X_20|) / (50 × eps × λ_20), between 3e−11 and 3e−10 for the default box depending on how large X_20 is at that eye (this pane's port measured it). Seven orders below today. Shapes that are not perturbable keep today's formula." },
+    { title: "NEAR_FLOOR drops from 1e−6 to 1e−14", tag: "decided", hue: 3, ...S(109), links: [RL("view", 369, "today: _push_near's clamp"), RL("params", 281, "today: NEAR_FLOOR = 1e-6"), SL(406, "test: near_dist ≈ 1e−8 at 1e−8")],
+      body: "It clamps near in _push_near, hit_epsilon and CenterRay.march; at 1e−6 the level of detail, the fog, coarse_iters and the switch-on rule would all stop following the camera exactly where perturbation starts to matter. It only ever guarded against a zero." },
+    { title: "base_speed and CenterRay measure from eye64", tag: "decided", hue: 3, ...S(102), links: [RL("fly", 148, "today: estimate(_camera.eye())"), RL("fly", 149, "today: _ray.distance()"), SL(103, "CenterRay._update from eye64")],
+      body: "Both of base_speed's distances (its own estimate_at and the centre ray's) come from the 64-bit eye, and its clamp floor drops to 1e−14. A distance measured from the rounded eye would be wrong by more than the distance itself." },
     { title: "The self-similar substitution", tag: "rejected", hue: 6, ...N(378), links: [NL(259, "why it is squeezed"), NL(32, "self-similarity does not matter")],
       body: "Approximate by construction: one straight-line camera map is right on one side of a fold crease and a mirror image on the other, so even the best k left up to a third of the rays wrong, as seams that move and jump." },
     { title: "The two-float camera", tag: "rejected", hue: 6, ...N(388), links: [NL(370, "the compiler risk"), R("zoom", 162)],
       body: "Exact, but about 7× per ray and dependent on a WebGL compiler not fusing or reordering the paired-float steps. Kept as the fallback if the per-fold cases prove fiddly in GLSL." },
+    { title: "Earlier draft: one handoff k per frame (pert_end)", tag: "rejected", hue: 6, ...S(264), links: [SL(181, "now: per ray")],
+      body: "The first version picked one k per frame, the smallest with λ_k × near ≥ 1e−2, and pushed a single handoff point pert_end. near (the nearest surface) can be thousands of times smaller than the distance a ray actually travels, and far samples carried a δ far bigger than the rule assumed. Replaced by the per-ray test and the 21-entry pert_x." },
+    { title: "Earlier draft: a guard at the 32-iteration floor (floor_iter)", tag: "rejected", hue: 6, ...S(293), links: [SL(290, "not guarded"), SL(299, "worse than none")],
+      body: "zoom_floor was max(floor_pert, floor_iter), with floor_iter = bound_half / (eps × λ_32) from the eye's orbit. The eye is outside the shape, so its orbit escapes: λ_32 of 1e10 to 1e13 at the default view against 6e12 to 6e14 at the points its rays hit, so the guard would have stopped the camera near 5e−6, about a thousand times too early. Dropped: a guard that early is worse than none." },
     { title: "Octahedral and poly folds keep today's floor", tag: "rejected", hue: 6, ...S(55),
       body: "Many-region piecewise maps whose crossing cases are not worth enumerating now. With them pert_iters is 0 and zoom_floor is today's." },
     { title: "The Mandelbulb is not perturbed", tag: "rejected", hue: 6, ...S(57), links: [RL("sh", 316, "its de() branch")],
       body: "Its power map is curved everywhere, not piecewise-linear, so there are no creases to hand gaps for; a follow-up spec. It keeps today's floor." },
-    { title: "Noise, the orbit camera, more than 32 iterations", tag: "rejected", hue: 6, ...S(59), links: [SL(62, "orbit camera"), SL(63, "iterations past 32")],
-      body: "Noise displacement stays evaluated at the 32-bit position: a displaced surface is smooth below the displacement's size. The orbit camera cannot approach the surface. Going past the 32-iteration floor needs more iterations: a follow-up." },
-    { title: "floor_iter from the eye's orbit may stop the default box early", tag: "risk", hue: 2, ...S(248), links: [SL(252, "an estimate, measured by its test"), SL(347, "the bracketing test"), NL(322, "the note's 1e−15: interior points")],
-      body: "From this pane's port, a question for the implementer: the eye is outside the shape, so its orbit escapes and its λ_32 is about 2.09^32 ≈ 1.8e10 (the sphere fold barely fires). floor_iter = 2 / (eps × λ_32) is then about 5e−6 on the default centre view, not 'far lower', and as the max it would stop the camera there. A 64-bit march from the same view still hits 8 or 9 of 9 rays at d = 1e−10; the hit points' λ_32 is 6e12 to 6e14. The spec's test should catch it." },
-    { title: "Below 1e−6, near is clamped", tag: "risk", hue: 2, ...R("view", 369), links: [RL("params", 281, "NEAR_FLOOR = 1e-6"), SL(234, "spec: distance is near")],
-      body: "Today _push_near pushes max(estimate, NEAR_FLOOR = 1e−6). The spec has the orbit's distance become near but does not say whether the clamp goes; pert_iters(orbit, near) with near held at 1e−6 would pick too small a k deeper down." },
-    { title: "base_speed still estimates from the 32-bit eye", tag: "risk", hue: 2, ...R("fly", 148), links: [SL(100, "spec: only the clamp floor moves"), RL("fly", 149, "and _ray.distance()")],
-      body: "The spec drops the speed clamp to 1e−14 and makes move_allowed 64-bit, but base_speed's own distance comes from `DistanceEstimator.estimate(_camera.eye())`, the rounded shadow, and from the centre ray. At 1e−9 the shadow can be 1e−7 away from the eye, possibly inside the surface." },
-    { title: "Far samples carry a large δ", tag: "risk", hue: 2, ...S(160), links: [SL(223, "k sized by near"), NL(370, "the glitch at large δ")],
-      body: "k is chosen so λ_k × near ≈ 1e−2, but a sample far along a ray has δ_0 = dir × total with total ≫ near, so its δ_k is much bigger than the rule assumed. The formulas are exact, so it may be harmless; the note's glitch was a δ grown too large. Worth a row in perturbation_test with a far sample." },
-    { title: "Merge hazard with the Mandelbulb work on main", tag: "risk", hue: 2, ...S(164), links: [RL("sh", 313, "de(): every shape's branch"), RL("sh", 316, "the Mandelbulb branch")],
+    { title: "Noise and the orbit camera", tag: "rejected", hue: 6, ...S(59), links: [SL(62, "orbit camera")],
+      body: "Noise displacement stays evaluated at the 32-bit position: a displaced surface is smooth below the displacement's size. The orbit camera cannot approach the surface." },
+    { title: "The iteration floor: two measurements disagree", tag: "risk", hue: 2, ...S(290), links: [SL(299, "ships without a guard"), SL(381, "the test prints the stop depth"), NL(322, "the note's 1e−15: interior points")],
+      body: "Nothing guards the 32-iteration floor now, so where it lies decides how deep the camera usefully goes. The plan's dry run: 32 iterations stop resolving the default box at about 2e−7, which would put the useful floor near 6e−7, two decades below today's 1e−4 rather than seven. This pane's port: a 64-bit march from the default centre view still hits 8 or 9 rays of 9 at d = 1e−10. perturbation_test prints where the 64-bit reference stops hitting per fixture, and that settles it." },
+    { title: "Merge hazard with the Mandelbulb work on main", tag: "risk", hue: 2, ...S(189), links: [RL("sh", 313, "de(): every shape's branch"), RL("sh", 316, "the Mandelbulb branch")],
       body: "The design moves each shape's loop into a function with a start index and changes de(), fragment() and _push_near: the same places the Mandelbulb work on main touches. Land one before starting the other, or rebase this branch onto main's Mandelbulb first." },
-    { title: "The WebGL 2 uniform budget", tag: "risk", hue: 2, ...S(158), links: [SL(157, "checked headless on 4.6.1")],
-      body: "80 vec4 for the record plus 109 existing uniform declarations: comfortable if scalars pack, about 191 of 224 rows if they do not. Only a WebGL 2 browser can confirm; see the Per-iteration record tab." },
+    { title: "The WebGL 2 uniform budget", tag: "risk", hue: 2, ...S(171), links: [SL(173, "only the web export can confirm"), SL(170, "checked headless on 4.6.1")],
+      body: "Five arrays (101 vec4) plus 109 existing uniform declarations: far inside 224 if scalars pack, 211 of 224 rows if they do not (the spec says about 190). PERT_MAX is the knob if a web export fails to link; see the Per-iteration record tab." },
     { title: "The 1.5–2× cost is an estimate", tag: "open", hue: 4, ...N(372),
-      body: "From operation counts, with no GPU in the investigation. It applies only below 10 × today's floor; the load shedder and governor still react to real frame times." },
-    { title: "Follow-ups the spec names", tag: "open", hue: 4, ...S(58), links: [SL(63, "past 32 iterations")],
-      body: "The poly and octahedral folds, the Mandelbulb, more than 32 iterations past the iteration floor, the orbit camera." },
+      body: "From operation counts, with no GPU in the investigation. With the per-ray handoff, rays near a wall run all 20 perturbed iterations and far rays none. It applies only below 10 × today's floor; the load shedder and governor still react to real frame times." },
+    { title: "Follow-ups the spec names", tag: "open", hue: 4, ...S(63), links: [SL(58, "not perturbed: today's floor")],
+      body: "The poly and octahedral folds, the Mandelbulb, the 32-iteration floor (as a guard, or more iterations past it: needs the measurement above), the orbit camera." },
   ],
 };
 
@@ -1051,29 +1064,29 @@ const testCards = {
   title: "The test plan, keystone first",
   columns: 3, cardWidth: 470,
   cards: [
-    { title: "perturbation_test.gd (new): the keystone", tag: "keystone", hue: 3, ...S(321), links: [SL(329, "the checks"), SL(333, "runs before any shader work")],
-      body: "A GDScript port of the perturbed step and of the direct step, both in emulated float32 (every result rounded through a PackedFloat32Array, as the note did with numpy), plus the 64-bit reference. Five shape fixtures × d ∈ {1e−5, 1e−6, 1e−7} × 27 rays (a 3 × 3 × 3 fan). Checks: the direct march agrees on under 30% at 1e−6 (today's failure), the perturbed march on at least 90% at every depth, and the perturbed step in 64-bit reproduces the reference exactly (the algebra check). Prints the table for the deep-zoom pane." },
-    { title: "reference_orbit_test.gd", tag: "new", hue: 1, ...S(335),
+    { title: "perturbation_test.gd (new): the keystone", tag: "keystone", hue: 3, ...S(368), links: [SL(376, "the checks"), SL(381, "prints where the 64-bit reference stops hitting"), SL(383, "runs before any shader work")],
+      body: "A GDScript port of the perturbed step and of the direct step, both in emulated float32 (every result rounded through a PackedFloat32Array, as the note did with numpy), plus the 64-bit reference. Five shape fixtures × d ∈ {1e−5, 1e−6, 1e−7} × 27 rays (a 3 × 3 × 3 fan). Checks: the direct march agrees on under 30% at 1e−6 (today's failure), the perturbed march (per-ray handoff at PERT_HANDOFF, PERT_MAX records) on at least 90% at every depth, and the perturbed step in 64-bit reproduces the reference exactly (the algebra check). Prints the table for the deep-zoom pane, and per fixture the depth (powers of ten down to 1e−12) at which the 64-bit reference itself stops hitting: the data for the iteration-floor follow-up." },
+    { title: "reference_orbit_test.gd", tag: "new", hue: 1, ...S(385),
       body: "distance equals DistanceEstimator.estimate_at exactly for every shape fixture; mag is non-decreasing; n is 32 for the Mandelbox and under 32 for a KIFS point that bails out; perturbable is false for the octahedral and poly folds." },
-    { title: "camera_state_test.gd", tag: "extended", hue: 1, ...S(339),
+    { title: "camera_state_test.gd", tag: "extended", hue: 1, ...S(389),
       body: "set_eye64 round-trips 1e−12 and emits changed; assigning a transform whose origin is the rounded shadow keeps the doubles; a new origin replaces them; make_default is unchanged." },
-    { title: "workspace_test.gd", tag: "extended", hue: 1, ...S(342),
+    { title: "workspace_test.gd", tag: "extended", hue: 1, ...S(392),
       body: "A capture with an eye 1e−9 from a surface point restores it exactly; saves/default.json loads to the same camera as before." },
-    { title: "fractal_params_test.gd", tag: "extended", hue: 1, ...S(344),
-      body: "pert_iters is 0 at the default view and at 1e−3, positive at 1e−5, rising as d falls, never above 20; zoom_floor at the surface fixture is below 1e−8 for the default box; floor_iter's prediction brackets the measured stop (a 64-bit march from 10 × floor_iter hits, from floor_iter / 10 it does not)." },
-    { title: "fly_camera_test.gd", tag: "extended", hue: 1, ...S(349),
+    { title: "fractal_params_test.gd", tag: "extended", hue: 1, ...S(394),
+      body: "pert_iters is 0 at the default view and at 1e−3, min(PERT_MAX, n) at 1e−5, and 0 for an octahedral-fold shape at any depth; zoom_floor at the surface fixture is below 1e−9 for the default box and today's value for the octahedral fold; NEAR_FLOOR is 1e−14." },
+    { title: "fly_camera_test.gd", tag: "extended", hue: 1, ...S(399),
       body: "A camera at 1e−6 with W held moves closer (refused today) and stops at the new floor with at_zoom_limit; the eye moves by less than 1e−9 per tick there (the speed follows the distance)." },
-    { title: "center_ray_test.gd", tag: "extended", hue: 1, ...S(352),
+    { title: "center_ray_test.gd", tag: "extended", hue: 1, ...S(402),
       body: "The scalar march agrees with the Vector3 one at the default view and resolves a hit at 1e−8 that the Vector3 one cannot." },
-    { title: "fractal_view_test.gd", tag: "extended", hue: 1, ...S(354),
-      body: "At the default view pert_iters is 0 and no array is pushed; at a deep camera pert_iters is positive and pert_a has PERT_MAX entries." },
-    { title: "shader_test.gd", tag: "extended", hue: 1, ...S(357),
-      body: "RENDERER_UNIFORMS gains pert_iters, pert_a, pert_b, pert_c, pert_d, pert_end; the shader compiles." },
-    { title: "console, ui_console and main tests", tag: "extended", hue: 1, ...S(359),
+    { title: "fractal_view_test.gd", tag: "extended", hue: 1, ...S(404),
+      body: "At the default view pert_iters is 0 and no array is pushed; at a deep camera pert_iters is positive, pert_a has PERT_MAX entries and pert_x has PERT_MAX + 1; near_dist at a camera 1e−8 from the surface is about 1e−8, not clamped to 1e−6." },
+    { title: "shader_test.gd", tag: "extended", hue: 1, ...S(408),
+      body: "RENDERER_UNIFORMS gains pert_iters, pert_a, pert_b, pert_c, pert_d, pert_x; the shader compiles." },
+    { title: "console, ui_console and main tests", tag: "extended", hue: 1, ...S(410),
       body: "The `deep k=N` readout shows with k and hides at 0. deep_zoom_test.gd is unchanged." },
-    { title: "README", tag: "docs", hue: 6, ...S(362),
-      body: "The Deep zoom section describes the 64-bit eye, the reference orbit, the handoff and the two floors; the zoom-limit paragraph is rewritten." },
-    { title: "The windowed check is the user's", tag: "manual", hue: 4, ...S(365),
+    { title: "README", tag: "docs", hue: 6, ...S(413),
+      body: "The Deep zoom section describes the 64-bit eye, the reference orbit, the handoff and 'the two floors' (the spec's wording, left from the earlier draft: there is one floor now); the zoom-limit paragraph is rewritten." },
+    { title: "The windowed check is the user's", tag: "manual", hue: 4, ...S(416),
       body: "tests/screenshots.sh: the default view must be pixel-identical before and after, and a flight to 1e−8 on the default box must show detail, not speckle. Everything else is headless." },
   ],
 };
@@ -1097,8 +1110,8 @@ VIZ.pane({
   short: "Perturbation design",
   title: "Perturbation: zooming past the 32-bit floor (the design)",
   subtitle: "An approved design, not yet code. Today the fly camera stops about 1e−4 from the surface because the shader forms every ray position in 32-bit floats. The design keeps the eye in 64-bit on the CPU, runs the eye's reference orbit there once per frame, and has the GPU iterate only each pixel's small offset from that orbit, in ordinary float32, until the offset is big enough to hand off to today's loop. Each tab explains one part of the spec with its trade-offs; tooltips link the spec and research-note lines that state each claim, and the existing code a part will change. The live figures run a JavaScript port of the default Mandelbox in doubles and in emulated float32 (Math.fround after every operation), as the spec's own keystone test will.",
-  commit: "0c737112d3bdfeb0a5332b0b22f7824b8ec12984",
-  pinNote: "perturbation-design-viz, unpushed: links 404 until it is pushed",
+  commit: "590f62af361d2a6dcf7faa66d6691701eae39991",
+  pinNote: "590f62a: the revised spec, read there (the pane's own commit is newer); perturbation-design-viz, unpushed: links 404 until it is pushed",
   ctx: {
     cpu: { hue: 1, label: "CPU, 64-bit: GDScript doubles, once per camera change" },
     bridge: { hue: 4, label: "the bridge: shader uniforms" },
@@ -1122,6 +1135,6 @@ VIZ.pane({
     testCards,
   ],
   // The ports, exposed for checking from the console or node.
-  ports: { ulp32, ulp64, floor32, stepR, de64, refOrbit, pertIters, floorPert, floorIter, clampDiff, dmPair, pertStep, pixelRun, eyeAt, SURF },
+  ports: { ulp32, ulp64, floor32, stepR, de64, refOrbit, pertIters, floorPert, clampDiff, dmPair, pertStep, pixelRun, eyeAt, SURF },
 });
 })();
