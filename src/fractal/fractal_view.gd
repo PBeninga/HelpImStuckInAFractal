@@ -12,10 +12,11 @@ const TAN_HALF_FOV := 0.36397023426620234  # tan(20 degrees), half of a 40 deg v
 ## The probe dot's radius as a fraction of its distance: about 5 px across the
 ## 800 px-high view's 40 deg field, whatever the distance.
 const PROBE_ANGULAR_RADIUS := 0.005
-## Frames the shed fog takes to go out when the level drops, instead of popping
-## to the full view distance. Fog coming in is never eased: that is the governor
+## Frames a level drop takes to ease in, instead of popping to full quality:
+## the shed fog recedes to the full view distance, and the detail and step
+## budget climb back to the level's. A shed is never eased: that is the governor
 ## buying frame time back now.
-const FOG_OUT_FRAMES := 6
+const RESTORE_FRAMES := 18
 
 ## A noise rebuild failed to compile, or recovered. "" means all clear. The panel
 ## shows the message on its status line; the console gets it too.
@@ -49,14 +50,18 @@ var _base_shader: Shader
 var _base_code := ""
 var _noise_graph: NoiseGraph
 var _shed: Dictionary = LoadShedder.settings(0)
-# The fog on screen, as an inverse distance (1 / fog_dist, 0 = none) so a fog on
-# its way out recedes towards infinity in even steps. A fog leaving entirely
-# also thins (_fog_clear 0 -> 1) as it recedes.
+# What is on screen, which trails _shed while a restore eases in. The fog is an
+# inverse distance (1 / fog_dist, 0 = none) so a fog on its way out recedes
+# towards infinity in even steps; a fog leaving entirely also thins
+# (_fog_clear 0 -> 1) as it recedes. _detail and _steps are the shed factors on
+# the detail and the step budget.
 var _fog_inv := 0.0
 var _fog_clear := 0.0
-var _fog_from := 0.0
-var _fog_frame := FOG_OUT_FRAMES      # frames into the fog-out tween; done at FOG_OUT_FRAMES
-var _fog_stepped_on := -1             # the process frame the tween last stepped on
+var _detail := 1.0
+var _steps := 1.0
+var _from := {}                       # the on-screen values the restore started from
+var _restore_frame := RESTORE_FRAMES  # frames into the restore tween; done at RESTORE_FRAMES
+var _restore_stepped_on := -1         # the process frame the tween last stepped on
 var _center_ray: CenterRay
 
 
@@ -236,29 +241,31 @@ func set_load_level(level: int) -> void:
 	level = clampi(level, 0, LoadShedder.top())
 	if level == load_level:
 		return
+	var shedding := level > load_level
 	load_level = level
 	_shed = LoadShedder.settings(level)
-	var target := _fog_target()
-	if target >= _fog_inv:
-		_fog_inv = target
+	if shedding:
+		_fog_inv = _fog_target()
 		_fog_clear = 0.0
-		_fog_frame = FOG_OUT_FRAMES
+		_detail = _shed["detail"]
+		_steps = _shed["steps"]
+		_restore_frame = RESTORE_FRAMES
 	else:
-		_fog_from = _fog_inv
-		_fog_frame = 0
-		_step_fog()
+		_from = {"fog_inv": _fog_inv, "detail": _detail, "steps": _steps}
+		_restore_frame = 0
+		_step_restore()
 	_push_params()
 
 
-## True while the fog is still easing out after a level drop.
-func fog_settling() -> bool:
-	return _fog_frame < FOG_OUT_FRAMES
+## True while a level drop is still easing in.
+func restoring() -> bool:
+	return _restore_frame < RESTORE_FRAMES
 
 
 func _process(_delta: float) -> void:
-	if fog_settling() and _fog_stepped_on != Engine.get_process_frames():
-		_step_fog()
-		_push_fog()
+	if restoring() and _restore_stepped_on != Engine.get_process_frames():
+		_step_restore()
+		_push_shed()
 		request_frame()
 
 
@@ -267,15 +274,18 @@ func _fog_target() -> float:
 	return 1.0 / fog if fog > 0.0 else 0.0
 
 
-## One frame of the fog-out tween: recede towards the target level's fog and,
-## when the target is none, thin out on the way.
-func _step_fog() -> void:
-	_fog_frame += 1
-	_fog_stepped_on = Engine.get_process_frames()
-	var t := float(_fog_frame) / FOG_OUT_FRAMES
+## One frame of the restore tween: the fog recedes towards the target level's
+## (thinning on the way when the target is none) while the detail and step
+## budget climb towards it.
+func _step_restore() -> void:
+	_restore_frame += 1
+	_restore_stepped_on = Engine.get_process_frames()
+	var t := float(_restore_frame) / RESTORE_FRAMES
 	var target := _fog_target()
-	_fog_inv = lerpf(_fog_from, target, t)
+	_fog_inv = lerpf(_from["fog_inv"], target, t)
 	_fog_clear = t if target == 0.0 and t < 1.0 else 0.0
+	_detail = lerpf(_from["detail"], _shed["detail"], t)
+	_steps = lerpf(_from["steps"], _shed["steps"], t)
 
 
 func request_frame() -> void:
@@ -391,26 +401,29 @@ func _push_params() -> void:
 			_material.set_shader_parameter(key, Vector3(c.r, c.g, c.b))
 		else:
 			_material.set_shader_parameter(key, _params.get(key))
-	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _shed["detail"]))
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
 	_material.set_shader_parameter("box_half", _params.bound_half())
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
-	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _shed["steps"])))
-	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
-	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
-	# The self-shadow march's budget, shed with the ladder (full 48 at level 0).
-	_material.set_shader_parameter("shadow_steps", int(round(FractalParams.SHADOW_STEPS * _shed["shadow"])))
-	_push_fog()
+	_push_shed()
 	_push_near()
 
 
-func _push_fog() -> void:
+## The values the load-shed level (or a restore easing in) bends: the precision,
+## the step budget and the fog.
+func _push_shed() -> void:
 	if _material == null or _params == null:
 		return
+	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _detail))
+	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _steps)))
+	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
+	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
 	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 else 0.0)
 	_material.set_shader_parameter("fog_clear", _fog_clear)
 	_material.set_shader_parameter("fog_color", _params.fog_color())
+	# The self-shadow march's budget, shed with the ladder (full 48 at level 0;
+	# it steps with the level rather than easing, since it is a step count).
+	_material.set_shader_parameter("shadow_steps", int(round(FractalParams.SHADOW_STEPS * _shed["shadow"])))
 
 
 func _push_camera() -> void:

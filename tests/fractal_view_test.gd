@@ -90,17 +90,30 @@ func run() -> void:
 	check_eq(int(mat.get_shader_parameter("coarse_steps")) + int(mat.get_shader_parameter("fine_steps")),
 		FractalParams.MAX_STEPS_MIN, "the shed budget never drops below MAX_STEPS_MIN")
 	params.max_steps = 128
-	# a level drop eases the fog out over FOG_OUT_FRAMES frames: it recedes, and
-	# when it is leaving entirely it thins as it goes
+	# a level drop eases in over RESTORE_FRAMES frames: the fog recedes (and when
+	# it is leaving entirely it thins as it goes) while the detail and step
+	# budget climb back
+	var l3_prec: float = mat.get_shader_parameter("precision")
+	var l3_coarse: int = mat.get_shader_parameter("coarse_steps")
 	view.set_load_level(2)
 	var l2 := LoadShedder.settings(2)
 	var mid := float(mat.get_shader_parameter("fog_dist"))
 	check(mid > l3["fog"] and mid < l2["fog"], "a drop to level 2 starts the fog receding (%s)" % mid)
 	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "a fog that stays does not thin")
-	check(view.fog_settling(), "and the view is still easing it")
-	await frames(FractalView.FOG_OUT_FRAMES)
+	var mid_prec := float(mat.get_shader_parameter("precision"))
+	var l2_prec: float = base_prec / l2["detail"]
+	check(mid_prec < l3_prec and mid_prec > l2_prec, "and the detail starts climbing (%s)" % mid_prec)
+	check(view.restoring(), "and the view is still easing it")
+	await frames(FractalView.RESTORE_FRAMES / 2 + 1)
+	check(int(mat.get_shader_parameter("coarse_steps")) > l3_coarse, "half way the step budget has grown")
+	check(float(mat.get_shader_parameter("precision")) < mid_prec, "and the detail climbed further")
+	await frames(FractalView.RESTORE_FRAMES)
 	check_approx(mat.get_shader_parameter("fog_dist"), l2["fog"], "it lands on level 2's fog")
-	check(not view.fog_settling(), "and stops easing")
+	check_approx(mat.get_shader_parameter("precision"), l2_prec, "and level 2's detail", 1e-12)
+	var l2_budget: int = maxi(FractalParams.MAX_STEPS_MIN, int(round(params.max_steps * l2["steps"])))
+	check_eq(int(mat.get_shader_parameter("coarse_steps")), params.coarse_steps(l2_budget),
+		"and level 2's step budget")
+	check(not view.restoring(), "and stops easing")
 	view.set_load_level(0)
 	var first := float(mat.get_shader_parameter("fog_dist"))
 	var clear := float(mat.get_shader_parameter("fog_clear"))
@@ -112,9 +125,10 @@ func run() -> void:
 	view.set_load_level(3)
 	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "a shed mid-ease snaps the fog straight in")
 	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "at full strength")
-	check(not view.fog_settling(), "with no easing")
+	check_approx(mat.get_shader_parameter("precision"), l3_prec, "and the detail straight down", 1e-12)
+	check(not view.restoring(), "with no easing")
 	view.set_load_level(0)
-	await frames(FractalView.FOG_OUT_FRAMES)
+	await frames(FractalView.RESTORE_FRAMES)
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "back to level 0: no fog")
 	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "and nothing left to thin")
 	check_approx(mat.get_shader_parameter("precision"), base_prec, "and the original precision", 1e-12)
