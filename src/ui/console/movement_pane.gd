@@ -3,7 +3,8 @@ extends VBoxContainer
 ## The Movement pane: one line per virtual axis (editable label, id, live value,
 ## a "0" button, speed, two key-capture buttons and a remove button), an "Add
 ## axis" button, the clock readout and the fly camera's speed-factor readout
-## (with "zoom limit" beside it while the camera is held at the zoom floor)
+## (with "zoom limit" beside it while the camera is held at the zoom floor, and
+## "deep N" while the renderer is perturbing)
 ## beside a Reset camera button, and a Save / Save as… / Load… strip for the
 ## keymap file. It is a view over Keymap: it writes through the rebind API and
 ## refreshes on `Keymap.changed`.
@@ -31,6 +32,10 @@ var _shed_level := 0
 ## refusing to go nearer the surface (FlyCamera.at_zoom_limit).
 var zoom_label: Label
 var _zoom_limit := false
+## "deep 20", on the speed readout line, shown only while the renderer is
+## perturbing (FractalView.pert_iters() > 0).
+var deep_label: Label
+var _deep_n := 0
 var _status: Label
 ## id -> {label, value, zero, speed, pos, neg, remove}
 var _lines: Dictionary = {}
@@ -76,9 +81,13 @@ func _ready() -> void:
 	speed_row.add_child(_speed_label)
 	zoom_label = Label.new()
 	zoom_label.text = "zoom limit"
-	zoom_label.tooltip_text = "The fly camera is as close to the surface as the renderer's 32-bit positions can draw, and will not go nearer. Moving away is always allowed."
+	zoom_label.tooltip_text = "The fly camera is as close to the surface as the renderer can draw: nearer, the perturbed march runs out of 32-bit precision after its last handoff (for shapes it does not perturb, the 32-bit positions run out). Moving away is always allowed."
 	speed_row.add_child(zoom_label)
 	show_zoom_limit(_zoom_limit)
+	deep_label = Label.new()
+	deep_label.tooltip_text = "The renderer is past the 32-bit limit: the camera's own orbit is worked out in 64-bit on the CPU, k iterations of it are handed to the GPU, and each ray iterates only its small offset from it (perturbation) until the offset is big enough for 32 bits. Hidden while off."
+	speed_row.add_child(deep_label)
+	show_deep(_deep_n)
 	reset_camera_button = _flat_button("Reset camera",
 		"Put the camera's position, view and speed factor back where the current save file has them (the starting view when no file is loaded).")
 	reset_camera_button.pressed.connect(reset_camera_requested.emit)
@@ -298,6 +307,15 @@ func show_zoom_limit(on: bool) -> void:
 	if zoom_label == null:
 		return
 	zoom_label.visible = on
+
+
+## The perturbed march's iteration count; the readout shows only while it is above 0.
+func show_deep(n: int) -> void:
+	_deep_n = n
+	if deep_label == null:
+		return
+	deep_label.text = "deep %d" % n
+	deep_label.visible = n > 0
 
 
 func _refresh_readouts() -> void:

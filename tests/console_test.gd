@@ -107,6 +107,14 @@ func run() -> void:
 	console.show_zoom_limit(false)
 	check(not movement.zoom_label.visible, "and false hides it again")
 
+	# --- Movement pane: "deep N" (the records in use) while the march is perturbed, hidden at 0 ---
+	check(movement.deep_label != null and not movement.deep_label.visible, "the deep readout starts hidden")
+	console.show_deep(14)
+	check(movement.deep_label.visible and movement.deep_label.text == "deep 14",
+		"show_deep(14) shows 'deep 14' in the Movement pane")
+	console.show_deep(0)
+	check(not movement.deep_label.visible, "and 0 hides it again")
+
 	# --- Movement pane: Add axis grows the keymap ---
 	var before := km.axes().list().size()
 	movement.add_button().pressed.emit()

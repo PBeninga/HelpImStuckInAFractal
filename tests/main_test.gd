@@ -437,6 +437,15 @@ func run() -> void:
 	main._process(0.0)
 	check(not zoom_label.visible, "and hides it once the limit clears")
 
+	# the perturbed march's k reaches the Movement pane each frame
+	var deep_label: Label = main.console().movement_pane().deep_label
+	main.view._pert_iters = 14
+	main._process(0.0)
+	check(deep_label.visible and deep_label.text == "deep 14", "Main shows the view's records in use in the Movement pane")
+	main.view._pert_iters = 0
+	main._process(0.0)
+	check(not deep_label.visible, "and hides it at 0")
+
 	# Back to Menu swaps to the main menu
 	vp.menu_button.pressed.emit()
 	await frames(2)

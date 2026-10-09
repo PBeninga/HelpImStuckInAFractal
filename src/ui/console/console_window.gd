@@ -203,6 +203,11 @@ func show_zoom_limit(on: bool) -> void:
 	_movement.show_zoom_limit(on)
 
 
+## The perturbed march's k, shown in the Movement pane while above 0.
+func show_deep(n: int) -> void:
+	_movement.show_deep(n)
+
+
 ## Feed one frame of resolved values to both tabs' readouts and the palette's
 ## curves and strip.
 func set_resolved(values: Dictionary) -> void:
