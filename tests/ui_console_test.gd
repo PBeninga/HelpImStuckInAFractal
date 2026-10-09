@@ -5,7 +5,9 @@ extends "res://tests/test_case.gd"
 ## it, its Colour dropdown opens on a click and a click on "Blue" recolours; a Source dropdown binds Axis A; a
 ## click on a slider track and a drag of its grabber set the value; typing into
 ## a spin box and pressing Enter writes the table; and the Movement pane's Add
-## axis, key capture, rename, zero and remove all work by clicks and keys.
+## axis, key capture, rename, zero and remove all work by clicks and keys; and
+## W, A, S or D leaves the console for the game unless a free-text field is
+## being typed into.
 ##
 ## At the console's default size the Shape inspector spans the full width above
 ## the Movement pane, so the sliders are wide enough to drag and every axis
@@ -46,6 +48,7 @@ func run() -> void:
 	await _slider_click_and_drag()
 	await _movement_pane()
 	await _zoom_keys()
+	await _wasd_leaves_for_game()
 
 	for action in InputMap.get_actions():
 		if String(action).begins_with("axis_"):
@@ -328,3 +331,50 @@ func _zoom_keys() -> void:
 	await _chord(KEY_0)
 	check_approx(console.zoom, 1.0, "Cmd+0 resets the zoom")
 	check_approx(console.content_scale_factor, base, "and the content scale")
+
+
+func _wasd_leaves_for_game() -> void:
+	var asked := [0]
+	console.game_focus_requested.connect(func(): asked[0] += 1)
+
+	# mid-edit in a spin box: W commits what was typed, drops focus, types nothing
+	var row := console.inspector().row(&"min_radius")
+	var spin := row.spin_box()
+	check(await ui.scroll_to(scroll, spin), "the Min radius spin box is in view")
+	await ui.type_text(spin.get_line_edit(), "0.6", false)
+	check(console.gui_get_focus_owner() == spin.get_line_edit(), "typing into a spin box focuses its field")
+	await ui.gui_key(KEY_W, true)
+	await ui.gui_key(KEY_W, false)
+	check_eq(asked[0], 1, "W in a spin box asks for the game")
+	check(console.gui_get_focus_owner() == null, "and the spin box lets go of focus")
+	check_approx(float(table.get_default(&"min_radius")), 0.6, "committing what was typed")
+	check(not spin.get_line_edit().text.contains("w"), "and the W is not typed (%s)" % spin.get_line_edit().text)
+
+	# a slider holding focus: D leaves too
+	var slider := row.value_control() as HSlider
+	slider.grab_focus()
+	await ui.gui_key(KEY_D, true)
+	await ui.gui_key(KEY_D, false)
+	check_eq(asked[0], 2, "D with a slider focused asks for the game")
+	check(console.gui_get_focus_owner() == null, "and the slider lets go of focus")
+
+	# a free-text field mid-edit keeps the letters; after Enter, S leaves
+	var pane := console.movement_pane()
+	var line := pane.axis_line(&"a")
+	var label := line["label"] as LineEdit
+	await ui.type_text(label, "wasd", false)
+	check_eq(asked[0], 2, "typing WASD into an axis label is typing, not flying")
+	check_eq(label.text, "wasd", "the letters land in the field")
+	await ui.gui_key(KEY_ENTER, true)
+	await ui.gui_key(KEY_ENTER, false)
+	check(not label.is_editing(), "Enter ends the edit")
+	await ui.gui_key(KEY_S, true)
+	await ui.gui_key(KEY_S, false)
+	check_eq(asked[0], 3, "after which S asks for the game")
+	check_eq(label.text, "wasd", "without typing into the label")
+
+	# Cmd+S is a save, not a move
+	var cmd_s := ui.key_event(KEY_S, true)
+	cmd_s.meta_pressed = true
+	cmd_s.ctrl_pressed = OS.get_name() != "macOS"
+	check(not console.is_game_key(cmd_s), "Cmd/Ctrl+S is not a game key")
