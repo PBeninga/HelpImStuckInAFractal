@@ -4,7 +4,9 @@ extends VBoxContainer
 ## detail falls off with distance from the camera, the march's step budget, Fast
 ## Controls and the lowest render scale it may use. These are saved with the view.
 ## Its Reset camera button asks Main to put the camera back where the current
-## file has it.
+## file has it. No control here takes keyboard focus, like the rest of the
+## console: a focused button or checkbox would take Space (fly up), and a
+## focused Reset camera snapped the camera back on every tap.
 
 signal reset_camera_requested
 
@@ -46,6 +48,7 @@ func _init() -> void:
 	fast_check = CheckBox.new()
 	fast_check.text = "Fast Controls"
 	fast_check.tooltip_text = "Lower the resolution while moving to hold 30 fps; render one full frame when still."
+	fast_check.focus_mode = Control.FOCUS_NONE
 	add_child(fast_check)
 
 	var buttons := HBoxContainer.new()
@@ -53,10 +56,12 @@ func _init() -> void:
 	add_child(buttons)
 	reset_button = Button.new()
 	reset_button.text = "Reset renderer defaults"
+	reset_button.focus_mode = Control.FOCUS_NONE
 	buttons.add_child(reset_button)
 	reset_camera_button = Button.new()
 	reset_camera_button.text = "Reset camera"
 	reset_camera_button.tooltip_text = "Put the camera's position, view and speed factor back where the current save file has them (the starting view when no file is loaded)."
+	reset_camera_button.focus_mode = Control.FOCUS_NONE
 	buttons.add_child(reset_camera_button)
 
 	detail_slider.value_changed.connect(func(v): _write(func(): _params.detail = v))
@@ -127,6 +132,7 @@ func _slider(grid: GridContainer, label: String, lo: float, hi: float, step: flo
 	s.step = step
 	s.exp_edit = exponential
 	s.tooltip_text = tip
+	s.focus_mode = Control.FOCUS_NONE
 	s.custom_minimum_size = Vector2(240, 0)
 	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var v := Label.new()

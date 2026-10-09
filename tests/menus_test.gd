@@ -60,6 +60,13 @@ func run() -> void:
 	check_eq(vp.menu_button.text, "Back to Menu", "View has a Back to Menu button")
 	check(vp.camera_option.item_count == 2, "View has a Camera option (Fly / Orbit)")
 	check(vp.renderer.fast_check != null, "and the Renderer options with Fast Controls")
+	# A focused button or checkbox takes Space (fly up): Reset camera would snap
+	# the camera back on every tap, so no Renderer control holds keyboard focus.
+	var focusable: Array[String] = []
+	for c in vp.renderer.find_children("*", "Control", true, false):
+		if (c as Control).focus_mode != Control.FOCUS_NONE:
+			focusable.append("%s %s" % [c.get_class(), c.get("text") if c is BaseButton else c.name])
+	check(focusable.is_empty(), "no Renderer control takes keyboard focus (%s)" % ", ".join(focusable))
 	# the camera option writes params
 	vp.camera_option.select(1)
 	vp.camera_option.item_selected.emit(1)
