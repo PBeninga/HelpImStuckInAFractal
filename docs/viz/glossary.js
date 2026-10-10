@@ -138,6 +138,44 @@ VIZ.glossary({
     links: [WIKI("Unit_in_the_last_place"), WIKI("Single-precision_floating-point_format")],
   },
 
+  // ---------------------------------------------------------------- deep zoom (perturbation)
+  perturbation: {
+    term: "Perturbation",
+    body: "Following a pixel's small difference from a nearby reference instead of the pixel itself. Here the reference is the camera's own orbit, worked out once per frame in 64-bit on the CPU; the GPU iterates only each pixel's offset from it, which 32-bit floats hold precisely because it is small. Deep Mandelbrot-set zoomers use the same trick.",
+    links: [{ url: "https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation", label: "Wikipedia: Perturbation theory and series approximation" },
+      { url: "https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html", label: "mathr: Deep zoom theory and practice" }],
+  },
+  reference_orbit: {
+    term: "Reference orbit",
+    match: ["reference orbit"],
+    body: "The camera eye's own 32 iterates, X_0 .. X_32, computed on the CPU in 64-bit (ReferenceOrbit). Every pixel's orbit is described as this one plus a small offset.",
+    links: [WIKI("Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation")],
+  },
+  catastrophic_cancellation: {
+    term: "Catastrophic cancellation",
+    match: ["catastrophic cancellation", "cancellation"],
+    body: "Subtracting two nearly equal numbers: the leading digits cancel and only the noisy last ones remain. 2.0000001 − 2.0000000 in 32-bit floats keeps about one correct digit. The perturbed step is written so it never does this.",
+    links: [WIKI("Catastrophic_cancellation")],
+  },
+  magnification: {
+    term: "Magnification λ_i",
+    match: ["magnification", "magnifies"],
+    body: "How much the iteration has stretched a small neighbourhood after i steps, λ_i: the product of |scale| and the sphere fold's factors (the running derivative dz without its + 1s). A view 1e-7 wide is λ_k × 1e-7 wide after k iterations.",
+    links: [WIKI("Chain_rule")],
+  },
+  piecewise_linear: {
+    term: "Piecewise-linear map",
+    match: ["piecewise-linear", "piecewise linear"],
+    body: "A map made of straight-line pieces joined at creases: a box fold is linear on each side of its mirror. The difference of a linear map is the same map applied to the difference, so only the creases need care.",
+    links: [WIKI("Piecewise_linear_function")],
+  },
+  double_float: {
+    term: "Double-float (two-float)",
+    match: ["double-float", "two-float", "double-double"],
+    body: "Carrying each number as the sum of two ordinary floats for about twice the precision. Exact, but about 7 times the cost per ray here, and a GPU compiler may reorder the steps that make it work.",
+    links: [WIKI("Quadruple-precision_floating-point_format#Double-double_arithmetic")],
+  },
+
   // ---------------------------------------------------------------- normals + fields
   normal: {
     term: "Surface normal",
