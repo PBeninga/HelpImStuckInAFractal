@@ -605,8 +605,11 @@ void fragment() {
 			float nl = abs(dot(n, ldir));
 			// The specular exponent from roughness; the lamp's size widens the lobe.
 			// r_eff^2 = roughness^2 + radians(light_size)^2, so size 0 is the site's.
+			// Floored at 0 (r_eff^2 >= 1, a matte surface under a wide light): the
+			// widest lobe is a flat sheen, never a negative power that blows up
+			// at grazing angles (pow(0, neg) is a NaN).
 			float r_eff2 = roughness * roughness + radians(light_size) * radians(light_size);
-			float e = 2.0 / max(r_eff2, 1e-9) - 2.0;
+			float e = max(0.0, 2.0 / max(r_eff2, 1e-9) - 2.0);
 			float lgt = sh * (light_diffuse * nl + light_specular * pow(nl, e)) + light_ambient;
 			vec3 base = vec3(lgt) * (-n * 0.25 + 0.75) + vec3(0.0, 0.0, 0.2);
 

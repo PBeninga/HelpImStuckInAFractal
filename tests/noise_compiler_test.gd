@@ -160,7 +160,8 @@ func run() -> void:
 	check(tcode.contains("const bool noise_texture_on = true;"), "and noise_texture_on = true")
 	check(tcode.contains("const bool noise_bump_on = false;"), "with Bump unwired, noise_bump_on = false")
 	check(not NoiseCompiler.displaces(gt), "a Texture-only graph does not displace")
-	check(_region_compiles_lit(tcode).get_shader_uniform_list().size() >= 0, "the Texture region splices")
+	check(not _region_compiles_lit(tcode).get_shader_uniform_list().is_empty(),
+		"the Texture region compiles when spliced (non-empty uniform list)")
 
 	# Bump: a FLOAT from a FLOAT-output node.
 	var gb := NoiseGraph.new(resolver)
@@ -175,6 +176,8 @@ func run() -> void:
 	check(bcode.contains("const bool noise_texture_on = false;"), "with Texture unwired, noise_texture_on = false")
 	check(bcode.contains("n_%s_scale" % vnb), "Bump's ancestors are in the uniform block")
 	check(not NoiseCompiler.displaces(gb), "a Bump-only graph does not displace")
+	check(not _region_compiles_lit(bcode).get_shader_uniform_list().is_empty(),
+		"the Bump region compiles when spliced (non-empty uniform list)")
 
 	# ---------------------------------------------- live vs baked classification
 	check(NoiseCompiler.is_live_param(g, vn, &"scale"), "a FLOAT edit is live (push, no rebuild)")

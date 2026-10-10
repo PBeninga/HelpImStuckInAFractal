@@ -70,3 +70,10 @@ func run() -> void:
 		check_approx(m.get_string(4).to_float(), c.b, "vec3 '%s' blue" % id, 1e-9)
 		colour_defaults += 1
 	check_eq(colour_defaults, FractalParams.COLOR_KEYS.size(), "both COLOR uniforms declare a vec3 default")
+
+	# the specular exponent is floored at 0: a matte surface (roughness 1) under a
+	# wide light (light_size > 0) gives r_eff2 > 1, so an unclamped 2/r_eff2 - 2
+	# would go negative and pow(nl, e) blows up (pow(0, neg) is a NaN). The widest
+	# lobe is a flat sheen (e = 0), never an inverted rim.
+	check(sh.code.contains("max(0.0, 2.0 / max(r_eff2, 1e-9) - 2.0)"),
+		"the specular exponent is clamped non-negative")
