@@ -81,7 +81,7 @@ func _ready() -> void:
 	speed_row.add_child(zoom_label)
 	show_zoom_limit(_zoom_limit)
 	deep_label = Label.new()
-	deep_label.tooltip_text = "The renderer is past the 32-bit limit: the camera's own orbit is worked out in 64-bit on the CPU, k iterations of it are handed to the GPU, and each ray iterates only its small offset from it (perturbation) until the offset is big enough for 32 bits. Hidden while off."
+	deep_label.tooltip_text = "The renderer is past the 32-bit limit: the camera's own orbit is worked out in 64-bit on the CPU, the N iterations the readout shows are handed to the GPU, and each ray iterates only its small offset from it (perturbation) until the offset is big enough for 32 bits. Hidden while off."
 	speed_row.add_child(deep_label)
 	show_deep(_deep_n)
 	reset_camera_button = _flat_button("Reset camera",

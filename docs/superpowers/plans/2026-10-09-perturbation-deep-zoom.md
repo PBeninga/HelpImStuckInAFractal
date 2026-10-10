@@ -3289,3 +3289,11 @@ git -C $WT commit -m "docs(viz): deep-zoom pane: the 64-bit eye, the reference o
 ```
 
 Then tell the user the branch is ready (`./viz.sh deep-zoom` once merged; the links 404 until pushed). Do not push.
+
+## Deviations (implementation, 2026-10-09)
+
+- Task 2: Reset camera also restores the 64-bit home eye (`Main._home_eye`, e316cca). With only the transform remembered, a deep home came back as its 32-bit shadow, and a move below the 32-bit grid made Reset do nothing.
+- Task 4: commit 84d48fb ends with `Co-Authored-By: Claude Sonnet 5.5` rather than Opus 5.5 (left as is; no history rewriting).
+- Task 9: the glossary's catastrophic-cancellation example is `1.0000001 − 1.0000000` (float32 gives 1.19e-7 against the true 1e-7); the plan's `2.0000001 − 2.0000000` is exactly 0 in float32. The Measured tab has three tables (FAN by depth, VIEW9 by ray), and tab 2 shows the grid at the surface point (x = 1.96, ulp 1.2e-7) rather than ulp32(2).
+- Task 9 review: tab 2 first compared the hit threshold with 50 × the grid; the guard is 1/50 of a grid step (94324a8).
+- Final review: README wording (three to four decades rather than two to three; the orbit is built on each camera or shape change; the Kleinian's n is where its orbit settles), the `_pert_pushes` comment and the deep readout's tooltip ("N" not "k").
