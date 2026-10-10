@@ -16,7 +16,9 @@ extends RefCounted
 ## alone — except the fractal (`shape`), which a file from before there was a
 ## choice lacks, and which then loads as the Mandelbox it was saved from. A
 ## version-1 file (the old flat "fractal" section) is migrated to the new ids
-## without a warning. The one file refused outright is a keymap (keys and
+## without a warning. A saved light_shininess (from before Roughness replaced it)
+## becomes roughness = sqrt(2 / (shininess + 2)) with no warning; a binding on
+## light_shininess is dropped with one. The one file refused outright is a keymap (keys and
 ## axes, which the Movement pane writes into the same saves/ folder): it holds
 ## no view, so the load fails by name instead of reporting "Loaded", and
 ## changes nothing. Saving always writes version 2.
@@ -63,6 +65,8 @@ static func restore(data: Dictionary, table: AttributeTable, axes: Axes, params:
 
 	var shape: Variant = data.get("shape", {})
 	if shape is Dictionary:
+		# An old save's light_shininess becomes the new roughness (see below).
+		shape = _migrate_shininess(shape as Dictionary, warnings)
 		# Views saved before there was a choice of fractal are all Mandelboxes.
 		var defaults: Variant = (shape as Dictionary).get("defaults", {})
 		if defaults is Dictionary and not (defaults as Dictionary).has("shape") and table.has(&"shape"):
@@ -191,6 +195,27 @@ static func is_keymap(data: Variant) -> bool:
 
 static func _failure(message: String) -> Dictionary:
 	return {"ok": false, "warnings": [message]}
+
+
+## Turn an old save's light_shininess into the new roughness, in place of
+## apply_dict's "unknown attribute" warning. The specular exponent was
+## 2/roughness^2 - 2, so roughness = sqrt(2 / (shininess + 2)); the default 160
+## gives 1/9. A default migrates silently; a binding on it is dropped with a
+## warning (roughness drives the exponent through a square root, so the old
+## additive drive no longer means anything).
+static func _migrate_shininess(shape: Dictionary, warnings: Array) -> Dictionary:
+	var out := shape.duplicate(true)
+	var defaults: Variant = out.get("defaults", {})
+	if defaults is Dictionary and (defaults as Dictionary).has("light_shininess"):
+		var sh := float((defaults as Dictionary)["light_shininess"])
+		(defaults as Dictionary).erase("light_shininess")
+		if not (defaults as Dictionary).has("roughness"):
+			(defaults as Dictionary)["roughness"] = sqrt(2.0 / maxf(sh + 2.0, 1e-6))
+	var bindings: Variant = out.get("bindings", {})
+	if bindings is Dictionary and (bindings as Dictionary).has("light_shininess"):
+		(bindings as Dictionary).erase("light_shininess")
+		warnings.append("Binding on 'light_shininess' dropped (shininess is now Roughness)")
+	return out
 
 
 ## Turn a version-1 file (flat "fractal" section with the old ids) into the

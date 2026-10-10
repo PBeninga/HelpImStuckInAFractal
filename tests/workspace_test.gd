@@ -195,6 +195,28 @@ func run() -> void:
 	check_eq(old_view.get_default(&"shape"), FractalParams.Shape.MANDELBOX, "as the Mandelbox it was, whatever was showing")
 	check_approx(old_view.get_default(&"box_scale"), -1.5, "with its own values")
 
+	# --- a v2 file carrying light_shininess migrates to roughness ---
+	var mt := _table()
+	var mw := Workspace.restore({
+		"version": 2,
+		"shape": {"defaults": {"light_shininess": 160.0, "box_scale": -1.7}, "bindings": {}},
+		"axes": {}, "fractal": {},
+	}, mt, Axes.new(), FractalParams.new(), CameraState.make_default())
+	check_approx(mt.get_default(&"roughness"), 1.0 / 9.0,
+		"light_shininess 160 loads as roughness 1/9 (sqrt(2/(160+2)))")
+	check_approx(mt.get_default(&"box_scale"), -1.7, "the rest of the shape still restores")
+	check(mw.is_empty(), "the shininess migration warns nothing: %s" % [mw])
+
+	# --- a binding on light_shininess is dropped with one warning ---
+	var mt2 := _table()
+	var mw2 := Workspace.restore({
+		"version": 2,
+		"shape": {"defaults": {}, "bindings": {"light_shininess": {"source": "time", "gain": 1.0, "waveform": 0, "period": 1.0}}},
+		"axes": {}, "fractal": {},
+	}, mt2, Axes.new(), FractalParams.new(), CameraState.make_default())
+	check_eq(mw2.size(), 1, "the dropped shininess binding warns once: %s" % [mw2])
+	check(String(mw2[0]).to_lower().contains("shininess"), "and the warning names shininess")
+
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TMP))
 
 
