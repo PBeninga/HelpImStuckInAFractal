@@ -126,7 +126,8 @@ off, so the picture there is exactly the site's.
   measured from them, down to `1e-14`.
 - **Perturbation.** Near the surface the shader's 32-bit numbers cannot tell
   one pixel's point from its neighbour's, so instead of iterating the pixel's
-  own point the work is split. Once per frame the CPU runs the camera's own
+  own point the work is split. On each camera or shape change (which is when a
+  frame is redrawn) the CPU runs the camera's own
   orbit in 64-bit (`X_0` the eye, `X_1` its first iterate, `X_2` the next, and
   so on). Each pixel starts a small offset `δ_0 = dir × t` away from the eye,
   and the GPU follows only the offset, `δ_(i+1) = f(X_i + δ_i) − f(X_i)`, never
@@ -152,7 +153,8 @@ off, so the picture there is exactly the site's.
   surface only by luck. With perturbation the grid that matters is the one at
   the last handoff point: `floor_pert = ulp32(max |X_K|) / (50 × eps × λ_K)`,
   the old 32-bit rule applied at `K = min(20, n)` iterations in (`n` is how many
-  the orbit has before it escapes), where the view is `λ_K` times bigger. That
+  the orbit has before it escapes; for the Kleinian, before it settles at a
+  fixed point), where the view is `λ_K` times bigger. That
   is about `3e-11` to `3e-10` on the default box (the old floor was about
   `1e-4`). The fly camera will not go closer than that. Shapes it does not
   perturb (the octahedral fold, the KIFS polyfold, the Mandelbulb) keep the
@@ -170,7 +172,8 @@ off, so the picture there is exactly the site's.
   not stopped there. Measured by `perturbation_test.gd` (a 64-bit march with the
   shader's hit threshold and 128 steps): at the default view's centre point the
   surface stops resolving between `1e-7` and `1e-8`, so the default box gains
-  about two to three decades there, not the seven the floor allows;
+  about three to four decades past the old `1e-4` floor there, not the seven the
+  floor allows;
   neighbouring points of the same view resolve to `1e-9` .. `1e-12`; the Menger
   sponge and the Kleinian resolve to `1e-12`; the terraces save stops near
   `1e-6`. More iterations are a follow-up.

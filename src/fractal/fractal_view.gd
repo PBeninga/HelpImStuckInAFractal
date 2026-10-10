@@ -49,8 +49,10 @@ var _center_ray: CenterRay
 ## The perturbed march's iteration count last pushed (0: off). Main shows it in
 ## the Movement pane as "deep N".
 var _pert_iters := 0
-## How many times the per-iteration record was pushed: never while perturbation
-## is off, once per camera or shape change while it is on (the tests read it).
+## How many times `_push_near` was called while perturbation is on (never while
+## it is off). It runs on every parameter push, so any knob edit or load-level
+## change counts, and a save's clock-animated shape values count every frame
+## (the tests read it).
 var _pert_pushes := 0
 
 
