@@ -154,7 +154,7 @@ VIZ.glossary({
   catastrophic_cancellation: {
     term: "Catastrophic cancellation",
     match: ["catastrophic cancellation", "cancellation"],
-    body: "Subtracting two nearly equal numbers: the leading digits cancel and only the noisy last ones remain. 2.0000001 − 2.0000000 in 32-bit floats keeps about one correct digit. The perturbed step is written so it never does this.",
+    body: "Subtracting two nearly equal numbers: the leading digits cancel and only the noisy last ones remain. 1.0000001 − 1.0000000 in 32-bit floats gives 1.19e-7 against the true 1e-7: about one correct digit. The perturbed step is written so it never does this.",
     links: [WIKI("Catastrophic_cancellation")],
   },
   magnification: {
