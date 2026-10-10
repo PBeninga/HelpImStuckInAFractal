@@ -380,10 +380,16 @@ func _push_probe() -> void:
 func _push_params() -> void:
 	if _material == null or _params == null:
 		return
-	# Every catalogue id is a uniform of the same name, pushed as it is; the
-	# precision folds in the detail and the load shedder's factor.
+	# Every catalogue id is a uniform of the same name, pushed as it is; the two
+	# COLOR keys go as a vec3 (the shader's colour uniforms); the precision folds
+	# in the detail and the load shedder's factor.
 	for key in FractalParams.RESOLVED_KEYS:
-		if key != &"precision":
+		if key == &"precision":
+			continue
+		if FractalParams.COLOR_KEYS.has(key):
+			var c: Color = _params.get(key)
+			_material.set_shader_parameter(key, Vector3(c.r, c.g, c.b))
+		else:
 			_material.set_shader_parameter(key, _params.get(key))
 	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _shed["detail"]))
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
@@ -393,6 +399,8 @@ func _push_params() -> void:
 	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _shed["steps"])))
 	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
 	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
+	# The self-shadow march's budget, shed with the ladder (full 48 at level 0).
+	_material.set_shader_parameter("shadow_steps", int(round(FractalParams.SHADOW_STEPS * _shed["shadow"])))
 	_push_fog()
 	_push_near()
 

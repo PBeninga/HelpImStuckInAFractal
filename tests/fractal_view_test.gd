@@ -64,6 +64,17 @@ func run() -> void:
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "no fog at level 0")
 	var base_prec: float = mat.get_shader_parameter("precision")
 	var base_coarse: int = mat.get_shader_parameter("coarse_steps")
+
+	# the shadow march's budget sheds with the ladder: 48, 24, 0
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), FractalParams.SHADOW_STEPS,
+		"level 0 pushes the full 48-step shadow march")
+	view.set_load_level(1)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), 24, "level 1 halves the shadow march to 24")
+	view.set_load_level(2)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), 0, "level 2 skips the shadow march")
+	view.set_load_level(0)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), FractalParams.SHADOW_STEPS, "and back to 48 at level 0")
+
 	view.set_load_level(3)
 	var l3 := LoadShedder.settings(3)
 	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "level 3 pushes its fog distance")
@@ -113,6 +124,15 @@ func run() -> void:
 	for key in FractalParams.LOOK_KEYS:
 		check_approx(float(mat.get_shader_parameter(key)), float(params.get(key)),
 			"the view pushes '%s'" % key, 1e-9)
+	# the two COLOR keys are pushed as Vector3 (the shader's vec3 uniforms)
+	params.light_color = Color(0.2, 0.4, 0.6)
+	params.surface_color = Color(0.7, 0.5, 0.3)
+	check(Vector3(mat.get_shader_parameter("light_color")).is_equal_approx(Vector3(0.2, 0.4, 0.6)),
+		"light_color pushes as a Vector3")
+	check(Vector3(mat.get_shader_parameter("surface_color")).is_equal_approx(Vector3(0.7, 0.5, 0.3)),
+		"surface_color pushes as a Vector3")
+	params.light_color = Color(1, 1, 1)
+	params.surface_color = Color(1, 1, 1)
 	params.apply_resolved({&"light_specular": 2.5, &"palette_d_b": 0.1, &"palette_source": 2})
 	check_approx(float(mat.get_shader_parameter("light_specular")), 2.5, "a resolved Specular reaches the shader")
 	check_approx(float(mat.get_shader_parameter("palette_d_b")), 0.1, "so does a palette component")
