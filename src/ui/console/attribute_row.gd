@@ -36,6 +36,7 @@ var _slider: HSlider
 var _spin: SpinBox
 var _check: CheckBox
 var _option: OptionButton
+var _picker: ColorPickerButton
 var _readout: Label
 var _source: OptionButton
 var _gain: SpinBox
@@ -84,6 +85,8 @@ func refresh() -> void:
 		_check.button_pressed = bool(value)
 	if _option != null:
 		_select_id(_option, int(value))
+	if _picker != null:
+		_picker.color = value as Color
 	if _source != null:
 		var b := _table.binding(spec.id)
 		if b != null:
@@ -114,6 +117,8 @@ func value_control() -> Control:
 		return _slider
 	if _check != null:
 		return _check
+	if _picker != null:
+		return _picker
 	return _option
 
 
@@ -217,6 +222,14 @@ func _build_value() -> void:
 			_option.tooltip_text = "%s\n\n%s" % [spec.tooltip, spec.effects]
 			_option.item_selected.connect(_on_option_selected)
 			column.add_child(_option)
+		AttributeSpec.Type.COLOR:
+			_picker = ColorPickerButton.new()
+			_picker.edit_alpha = false
+			_picker.custom_minimum_size = Vector2(SPIN_MIN_WIDTH, 0)
+			_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_picker.tooltip_text = "%s\n\n%s" % [spec.tooltip, spec.effects]
+			_picker.color_changed.connect(_on_color_changed)
+			column.add_child(_picker)
 
 	_readout = Label.new()
 	_readout.visible = false
@@ -356,6 +369,12 @@ func _on_option_selected(index: int) -> void:
 	if _updating:
 		return
 	_table.set_default(spec.id, _option.get_item_id(index))
+
+
+func _on_color_changed(c: Color) -> void:
+	if _updating:
+		return
+	_table.set_default(spec.id, c)
 
 
 func _on_source_selected(index: int) -> void:
