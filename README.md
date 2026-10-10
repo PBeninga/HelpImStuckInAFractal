@@ -10,8 +10,9 @@ Mandelbulb — and
 cylinder, octahedral and abs-fold hybrid folds for the Mandelbox, a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
 while you move, and a **console** window — a Shape inspector of every
-fractal knob with Fractacular's binding model, a Colour tab with
-Fractacular's cosine-palette window and a tunable light, and a Movement pane of
+fractal knob with Fractacular's binding model, Light and Material tabs with
+Fractacular's cosine-palette window, a tunable light with scattering and
+shadows, and noise-driven texture and bump, and a Movement pane of
 virtual axes driven by key pairs. It is built on the **GL Compatibility** renderer
 (WebGL 2) so it is web-exportable.
 
@@ -32,8 +33,9 @@ binary.
 
 ## Controls
 
-Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** and
-**Colour** tabs, with a row for every Mandelbox, colour and lighting knob, and
+Tap **Ctrl** to open the **console**, a separate OS window: the **Shape**,
+**Light** and **Material** tabs, with a row for every Mandelbox, light and
+material knob, and
 the **View** tab (Save / Load view, the Camera mode, the mouse sensitivity, the
 Noise editor button, the Window buttons, the Renderer options and Back to Menu), stacked above the
 **Movement** pane of virtual axes.
@@ -136,13 +138,16 @@ With Fast Controls on, the render scale is the first thing to give while you
 move. Once it is at **Min resolution** and the frame rate is still under 24 fps,
 the governor sheds quality a level at a time:
 
-| level | distance fog (× d₀) | detail | step budget | Fly speed |
-|---|---|---|---|---|
-| 0 | none | 100% | 100% | — |
-| 1 | 400 | 75% | 100% | — |
-| 2 | 150 | 55% | 75% | — |
-| 3 | 60 | 40% | 50% | — |
-| 4 | 40 | 35% | 50% | capped at 40% |
+| level | distance fog (× d₀) | detail | step budget | shadow march | Fly speed |
+|---|---|---|---|---|---|
+| 0 | none | 100% | 100% | 48 steps | — |
+| 1 | 400 | 75% | 100% | 24 steps | — |
+| 2 | 150 | 55% | 75% | off | — |
+| 3 | 60 | 40% | 50% | off | — |
+| 4 | 40 | 35% | 50% | off | capped at 40% |
+
+The shadow march (when Shadows is on) halves at level 1 and drops out from
+level 2; scattering and bump cost no extra marches and stay at every level.
 
 Rays stop at the fog distance, and the view fades into a tint of the current
 colour mode on the way there. The thresholds are sticky: a shed needs 0.5 s
@@ -203,7 +208,7 @@ captured in this mode.
 ### Console (Ctrl)
 
 A Ctrl tap opens the console, a
-separate OS window: the **Shape**, **Colour** and **View** tabs on top, taking the full
+separate OS window: the **Shape**, **Light**, **Material** and **View** tabs on top, taking the full
 width and most of the height, and the **Movement** pane below them at its
 natural height (drag the bar between them to share the height differently).
 **⌘=** / **⌘−** (Ctrl elsewhere) zoom everything in the console, text and
@@ -263,8 +268,19 @@ Rows and headings of the fractals not chosen are hidden.
   2 from the origin to frame it.
 - **Render** — the ray-march Precision (log slider).
 
-**Colour tab.** Fractacular's Colour window at the top of one scrolling list,
-then rows grouped **Colour** / **Lighting** / **Palette**:
+**Light tab.** The one lamp every lit mode shares — **Light colour**, **Light
+yaw** / **Light pitch** (swing the headlight about the view's up and right
+axes), **Light size** (a point light at 0, a broad soft source above it),
+**Ambient** / **Diffuse**, and **Shadows** (0 is off and casts no shadow ray;
+only visible with the light swung off the headlight). Then **Scattering** —
+**Density**, **Glow** and **Brightness** of a light-tinted distance haze
+(analytic, no extra rays). Then **Picture** — **Exposure** and **Saturation**
+on the final colour of every mode but Grayscale. The defaults are the site's,
+so the picture is unchanged until one is moved.
+
+**Material tab.** Fractacular's Colour window at the top of one scrolling list
+(the twelve cosine-palette sliders, curves and strip), then rows grouped
+**Colour** / **Surface** / **Texture** / **Palette**:
 
 - **Colour window** — the cosine palette `color(t) = A + B · cos(2π (C·t + D))`:
   twelve sliders (A, B, C and D over red, green and blue), the three channel
@@ -278,12 +294,14 @@ then rows grouped **Colour** / **Lighting** / **Palette**:
   **Palette offset** (position = fract(input × frequency + offset); bind the
   offset to Time for a colour cycle) and **Palette occlusion** (how much the
   step count darkens crevices).
-- **Lighting** — **Ambient**, **Diffuse**, **Specular** and **Shininess** (the
-  light term `diffuse·|N·L| + specular·|N·L|^shininess + ambient`), **Light
-  yaw** / **Light pitch** (swing the camera headlight about the view's up and
-  right axes), and **Exposure** / **Saturation** on the final colour. The
-  defaults are the site's constants, so every site mode looks exactly as before
-  until one is moved; they apply to every mode but Grayscale.
+- **Surface** — **Surface colour**, **Roughness** (glassy with tight glints at
+  low, matte at high; it replaces the old Shininess — the specular exponent is
+  `2/roughness² − 2`, so the default 1/9 is the site's 160) and **Specular**
+  (the glint strength). The defaults are the site's, so every mode looks exactly
+  as before until one is moved; they apply to every mode but Grayscale.
+- **Texture** — **Texture** and **Bump**, driven by the noise editor's Texture
+  and Bump outputs: Texture recolours the surface, Bump tilts the normal for a
+  fake relief. Nothing wired, nothing changes.
 - **Palette** (Palette mode only) — the same twelve numbers as rows, so each
   channel's A, B, C or D can have its own Source, gain and waveform: a Sine on
   B.r pulses the red, a Linear Time drive on D.b cycles the blue.
@@ -384,6 +402,11 @@ to the **Output** node does two things to the picture, live as you edit:
   Output's **Step scale** so the march does not step over the displaced surface.
 - **Tint** — the surface colour is blended toward the Output's **Tint colour** by
   the field, scaled by **Tint strength**.
+- **Texture** — a Vec3 (each channel clamped to 0…1) the surface colour is
+  multiplied by, scaled by the Material tab's **Texture** row.
+- **Bump** — a Float height whose across-surface slope tilts the normal for a
+  fake relief (the surface does not move), scaled by the Material tab's **Bump**
+  row.
 
 The editor is a window inside the main window (unlike the console): drag it by its
 title bar; its ✕, or N or Escape while it has the keyboard, closes it. Opening
@@ -402,7 +425,7 @@ wire to remove it.
 | **Noise** | **Value noise**, **Gradient noise** (both with Octaves/Lacunarity/Gain FBM), **Cellular** (Worley F1) |
 | **Vector** | **Transform** (offset, scale, rotate), **Warp** (domain warp), **Combine XYZ**, **Split XYZ** |
 | **Math** | **Constant**, **Math** (Add…Fract), **Remap**, **Clamp**, **Mix**, **Length** |
-| **Output** | **Output** — Displace and Tint inputs, Amplitude, Step scale, Tint colour and strength (one per graph) |
+| **Output** | **Output** — Displace, Tint, **Texture** and **Bump** inputs, Amplitude, Step scale, Tint colour and strength (one per graph). Texture multiplies the surface colour; Bump tilts the normal for a fake relief (the Material tab's Texture and Bump rows scale them). |
 
 **Saving.** The graph is saved with the view, as an additive `"noise"` key in the
 same JSON file — a view without the key leaves the current field alone. The editor
