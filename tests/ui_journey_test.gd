@@ -247,13 +247,13 @@ func _show_view_tab() -> ViewPane:
 		await ui.tap(KEY_CTRL)
 		await ui.frames(1)
 	var bar := console.tabs().get_tab_bar()
-	var title := ui.control_point(bar, bar.get_tab_rect(2).get_center())
+	var title := ui.control_point(bar, bar.get_tab_rect(3).get_center())
 	await ui.click_at(title)
-	if console.tabs().current_tab != 2:
+	if console.tabs().current_tab != 3:
 		# The console had lost focus (a file panel closed over it): the first
 		# click only focuses it, as it would for a player.
 		await ui.click_at(title)
-	check_eq(console.tabs().current_tab, 2, "a click on the View tab shows it")
+	check_eq(console.tabs().current_tab, 3, "a click on the View tab shows it")
 	return console.view_pane()
 
 

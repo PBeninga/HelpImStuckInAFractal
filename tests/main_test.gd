@@ -143,7 +143,7 @@ func run() -> void:
 	# strip of the main window and narrows the view to the rest. (Headless
 	# cannot really go fullscreen; the layout is what is checked.)
 	_tap_ctrl(main)
-	console.show_tab(2)
+	console.show_tab(3)
 	await frames(1)
 	var vpane: ViewPane = console.view_pane()
 	check(await ui.scroll_to(vpane, vpane.fullscreen_button), "the Fullscreen button scrolls into view")
@@ -172,7 +172,7 @@ func run() -> void:
 	_tap_ctrl(main)
 	check(console.visible and console.is_docked(), "and opens it docked again")
 	check_approx(main.view.size.x, canvas.size.x - strip.size.x, "beside the narrowed view", 1.0)
-	console.show_tab(2)
+	console.show_tab(3)
 	await frames(1)
 	await ui.click(vpane.fullscreen_button)
 	await frames(1)

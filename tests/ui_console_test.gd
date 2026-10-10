@@ -137,11 +137,11 @@ func _pan_scrolls() -> void:
 
 func _colour_dropdown() -> void:
 	var tab_bar := console.tabs().get_tab_bar()
-	await ui.click_at(ui.control_point(tab_bar, tab_bar.get_tab_rect(1).get_center()))
+	await ui.click_at(ui.control_point(tab_bar, tab_bar.get_tab_rect(2).get_center()))
 	await ui.frames(1)
-	check_eq(console.tabs().current_tab, 1, "a click on the Colour tab shows it")
-	var colour_scroll := console.colour_inspector().get_child(0) as ScrollContainer
-	var option := console.colour_inspector().row(&"color_mode").value_control() as OptionButton
+	check_eq(console.tabs().current_tab, 2, "a click on the Material tab shows it")
+	var colour_scroll := console.material_inspector().get_child(0) as ScrollContainer
+	var option := console.material_inspector().row(&"color_mode").value_control() as OptionButton
 	check(await ui.scroll_to(colour_scroll, option), "the wheel brings the Colour row into view")
 	await ui.click(option)
 	var popup := option.get_popup()
