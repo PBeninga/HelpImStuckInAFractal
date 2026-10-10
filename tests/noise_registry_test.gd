@@ -86,9 +86,11 @@ func run() -> void:
 	check_eq(pos.group, "Source", "Position is in the Source group")
 
 	var output := NoiseNodeRegistry.type_by_id(&"output")
-	check_eq(output.inputs.size(), 2, "Output takes Displace and Tint")
+	check_eq(output.inputs.size(), 4, "Output takes Displace, Tint, Texture and Bump")
 	check_eq(output.inputs[0].type, NoisePort.Type.FLOAT, "Displace is a Float")
 	check_eq(output.inputs[1].type, NoisePort.Type.FLOAT, "Tint is a Float")
+	check_eq(output.inputs[2].type, NoisePort.Type.VEC3, "Texture is a Vec3")
+	check_eq(output.inputs[3].type, NoisePort.Type.FLOAT, "Bump is a Float")
 	check_eq(output.outputs.size(), 0, "Output has no outputs: it IS the field's effect")
 	for id in [&"amplitude", &"step_scale", &"tint_strength"]:
 		check(output.new_table().has(id), "Output has a '%s' row" % id)
