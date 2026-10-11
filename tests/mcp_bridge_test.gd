@@ -34,6 +34,20 @@ func run() -> void:
 	r = await bridge.handle("clear_drawings", {})
 	check_eq(r.get("removed"), 2, "clear_drawings removes everything")
 
+	# Other layers (the call centre) add commands; they may await.
+	bridge.register_command("echo_later", func(args: Dictionary) -> Dictionary:
+		await process_frame
+		return {"echo": args.get("x")})
+	r = await bridge.handle("echo_later", {"x": 7})
+	check_eq(r.get("echo"), 7, "a registered command runs, awaited")
+	r = await bridge.handle("status", {})
+	check((r["extensions"] as Array).has("echo_later"), "status lists registered commands")
+	bridge.unregister_command("echo_later")
+	r = await bridge.handle("echo_later", {})
+	check(r.has("error"), "an unregistered command is unknown again")
+	r = await bridge.handle("chat_say", {"text": "hello from the phone", "source": "phone"})
+	check_eq(r.get("source"), "phone", "chat_say keeps an optional source")
+
 	# Into the game.
 	var main: Node = load("res://src/main.tscn").instantiate()
 	root.add_child(main)

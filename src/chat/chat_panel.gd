@@ -176,6 +176,8 @@ func _append(m: Dictionary) -> void:
 		var who := "You" if human else "Pilot"
 		if m.get("source", "") == "voice":
 			who += "  (voice)"
+		elif not human and m.get("source", "") == "phone":
+			who = "Support  (phone)"   # the call centre's voice agent, said on the call
 		stack.add_child(_label(who, FONT_SIZE - 3, NAME_HUMAN if human else NAME_AGENT))
 		stack.add_child(_label(m["text"], FONT_SIZE, Color(1, 1, 1, 0.95)))
 		bubble.add_child(stack)

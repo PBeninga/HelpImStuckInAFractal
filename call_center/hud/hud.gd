@@ -1,9 +1,10 @@
 extends CanvasLayer
-## The call centre's HUD over the game: the scrolling SHIP DIAGNOSTICS log (top
-## right), ship status (top left), the SUB-DIMENSIONAL SUPPORT call panel with
-## a live transcript (bottom left), the feature overlay's brackets, and a banner
-## for big moments. Drawn under the game's pause menu (layer 10) and never
-## takes the mouse.
+## The call centre's HUD over the game, down the left (McpBridge's pilot chat,
+## where the conversation itself shows, has the right): ship status, the
+## scrolling SHIP DIAGNOSTICS log, the SUB-DIMENSIONAL SUPPORT panel (the
+## number to call, the call's state), the feature overlay's brackets, and a
+## banner for big moments. Drawn under the game's pause menu (layer 10) and
+## never takes the mouse.
 
 const Features := preload("res://call_center/features.gd")
 const FeatureOverlay := preload("res://call_center/hud/feature_overlay.gd")
@@ -21,14 +22,12 @@ const STYLE_COLORS := {
 const STYLE_PREFIX := {
 	"error": "", "ok": "  -> ", "fail": "!! ", "pilot": "?? ", "info": "", "agent": "AGENT> ", "system": "-- ",
 }
-const TRANSCRIPT_LINES := 6
 const ELEMENTS := ["diagnostics_log", "ship_status", "call_panel", "exit_marker", "reticle"]
 
 var overlay: FeatureOverlay
 var log_label: RichTextLabel
 var status_label: Label
 var call_status: Label
-var transcript_label: RichTextLabel
 var banner: PanelContainer
 
 var _panels := {}            # element name -> PanelContainer
@@ -43,7 +42,6 @@ var _agent_name := ""
 var _call_started := 0.0
 var _clock := 0.0
 var _status_wait := 0.0
-var _transcript: Array[Dictionary] = []   # {item_id, role, text}
 var _mono: Font
 var _mono_bold: Font
 var _banner_title: Label
@@ -114,8 +112,9 @@ func _panel(element: String, anchor_preset: int, at: Vector2, panel_size: Vector
 	p.add_theme_stylebox_override("panel", sb)
 	_root.add_child(p)
 	p.set_anchors_preset(anchor_preset)
-	p.size = panel_size
-	p.custom_minimum_size = panel_size
+	if anchor_preset != Control.PRESET_LEFT_WIDE:
+		p.size = panel_size
+		p.custom_minimum_size = panel_size
 	match anchor_preset:
 		Control.PRESET_TOP_RIGHT:
 			p.offset_left = -panel_size.x - at.x
@@ -127,6 +126,12 @@ func _panel(element: String, anchor_preset: int, at: Vector2, panel_size: Vector
 			p.offset_right = at.x + panel_size.x
 			p.offset_top = -panel_size.y - at.y
 			p.offset_bottom = -at.y
+		Control.PRESET_LEFT_WIDE:
+			# from `at.y` below the top to `panel_size.y` above the bottom
+			p.offset_left = at.x
+			p.offset_right = at.x + panel_size.x
+			p.offset_top = at.y
+			p.offset_bottom = -panel_size.y
 		_:
 			p.position = at
 	var box := VBoxContainer.new()
@@ -147,7 +152,8 @@ func _title(box: VBoxContainer, text: String) -> Label:
 
 
 func _build_diagnostics() -> void:
-	var box := _panel("diagnostics_log", Control.PRESET_TOP_RIGHT, Vector2(16, 16), Vector2(460, 360))
+	# between the status panel and the support panel
+	var box := _panel("diagnostics_log", Control.PRESET_LEFT_WIDE, Vector2(16, 162), Vector2(440, 122))
 	_title(box, "SHIP DIAGNOSTICS  //  AUTO-RESOLUTION ACTIVE")
 	log_label = RichTextLabel.new()
 	log_label.bbcode_enabled = true
@@ -162,7 +168,7 @@ func _build_diagnostics() -> void:
 
 
 func _build_status() -> void:
-	var box := _panel("ship_status", Control.PRESET_TOP_LEFT, Vector2(16, 16), Vector2(330, 150))
+	var box := _panel("ship_status", Control.PRESET_TOP_LEFT, Vector2(16, 16), Vector2(440, 134))
 	_title(box, "ICEBOX  //  SUB-DIMENSIONAL DRIFT")
 	status_label = Label.new()
 	status_label.add_theme_font_override("font", _mono)
@@ -172,20 +178,13 @@ func _build_status() -> void:
 
 
 func _build_call_panel() -> void:
-	var box := _panel("call_panel", Control.PRESET_BOTTOM_LEFT, Vector2(16, 16), Vector2(600, 210))
+	var box := _panel("call_panel", Control.PRESET_BOTTOM_LEFT, Vector2(16, 16), Vector2(440, 94))
 	_title(box, "SUB-DIMENSIONAL SUPPORT")
 	call_status = Label.new()
-	call_status.add_theme_font_size_override("font_size", 18)
+	call_status.add_theme_font_size_override("font_size", 17)
 	call_status.add_theme_color_override("font_color", AMBER)
 	call_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(call_status)
-	transcript_label = RichTextLabel.new()
-	transcript_label.bbcode_enabled = true
-	transcript_label.scroll_following = true
-	transcript_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	transcript_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	transcript_label.add_theme_font_size_override("normal_font_size", 14)
-	box.add_child(transcript_label)
 	_refresh_call()
 
 
@@ -281,26 +280,11 @@ func set_call_state(state: String, info: Dictionary = {}) -> void:
 		_agent_name = str(info["agent_name"])
 	if state == "connected":
 		_call_started = _clock
-		_transcript.clear()
-		_render_transcript()
 	_refresh_call()
 
 
 func call_state() -> String:
 	return _call_state
-
-
-## Show (or update, by item_id) a transcript line. role: "agent" or the caller.
-func show_transcript(role: String, item_id: String, text: String) -> void:
-	for line in _transcript:
-		if item_id != "" and line["item_id"] == item_id:
-			line["text"] = text
-			_render_transcript()
-			return
-	_transcript.append({"item_id": item_id, "role": role, "text": text})
-	while _transcript.size() > TRANSCRIPT_LINES:
-		_transcript.pop_front()
-	_render_transcript()
 
 
 func highlight_feature(id: String, label: String, seconds: float) -> void:
@@ -428,20 +412,11 @@ func _refresh_call() -> void:
 				(": " + _support_number) if _support_number != "" else "")
 		_:
 			if not _link_up:
-				call_status.text = "Support line offline. Start the relay (call_center/server) to call for help."
+				call_status.text = "Support line not linked. Start the phone link (server/: npm run link)."
 			elif _support_number != "":
 				call_status.text = "CALL %s FOR ASSISTANCE" % _support_number
 			else:
 				call_status.text = "Support line ready. Call your support number for assistance."
-
-
-func _render_transcript() -> void:
-	var lines: Array[String] = []
-	for line in _transcript:
-		var who := "AGENT" if line["role"] == "agent" else "YOU"
-		var color := "#8fd8ff" if line["role"] == "agent" else "#ffffff"
-		lines.append("[color=%s][b]%s:[/b] %s[/color]" % [color, who, _escape(line["text"])])
-	transcript_label.text = "\n".join(lines)
 
 
 static func _escape(s: String) -> String:

@@ -1,14 +1,25 @@
 # Phone server
 
-Call a phone number and pilot the fractal by voice. Twilio answers the call and
-turns speech into text (and text back into speech) with
-[ConversationRelay](https://www.twilio.com/docs/voice/conversationrelay); this
-server, deployed on Railway, carries that text to the game on your machine and
-back.
+Call a phone number and get flown out of the fractal by voice. Twilio answers;
+this server, deployed on Railway, joins the call to the game on your machine.
+Who answers is `VOICE_AGENT`:
+
+- **`openai`** (the default when `OPENAI_API_KEY` is set). The call
+  centre's **voice agent**, "Gary from Sub-Dimensional Support", answers.
+  Twilio streams the call's audio (`<Connect><Stream>`, G.711 μ-law) to
+  `/twilio/media`. The server joins that audio to an **OpenAI Realtime**
+  session, which listens and speaks directly. The agent flies the ship with
+  the **call centre's ship tools** (`call_center/` in the game: scan,
+  highlight, autopilot, diagnostics questions …), called through the link.
+- **`relay`**. Twilio's
+  [ConversationRelay](https://www.twilio.com/docs/voice/conversationrelay)
+  turns speech into text and back. The text goes to the game's pilot chat,
+  for an agent such as Claude on the `pilot` loop (`mcp/`).
 
 ```
- phone ──► Twilio ──wss /twilio/relay──► server (Railway) ◄──wss /game/link── link ──tcp :9077──► game
-          speech⇄text                    src/                                   link/            McpBridge
+ phone ──► Twilio ──wss /twilio/media (audio)──► server (Railway) ──► OpenAI Realtime   (VOICE_AGENT=openai)
+                 └─wss /twilio/relay (text)───►    src/  ◄──wss /game/link── link ──tcp :9077──► game: McpBridge
+                                                                              link/                  + call_center/
 ```
 
 The game is behind NAT, so it never takes connections from the internet: the
@@ -25,18 +36,42 @@ the server and holds the socket open.
   (`game.call(cmd, args)` in `src/game_link.mjs`, or `POST /api/game/:cmd`),
   for anything that later drives the game straight from the server.
 
+**With the OpenAI voice agent** (`src/voice/`):
+
+- **Tools.** The agent's tools are the call centre's ship tools
+  (`ship_tools`), and each call runs on the game (`ship_tool`). A tool the
+  game registers mid-call reaches the live session.
+- **Ship events.** The link long-polls the call centre's events
+  (`ship_events`) and sends them to the server. The agent hears them as
+  `SHIP EVENT` system messages and reacts: a waypoint reached, a diagnostics
+  question for the caller (answered with `resolve_issue`), the escape.
+- **The pilot chat.** The conversation is mirrored there: the caller's words
+  as voice messages (live in the input box while they speak), the agent's as
+  "Support (phone)" lines, never spoken twice. What the pilot **types** in
+  the chat goes to the agent during a call.
+- **The call centre's HUD.** It shows the support number and the call's state
+  (the link's `call_center` command).
+- **Barge-in.** When the caller talks over the agent, the agent's speech is
+  cut exactly where the caller stopped hearing it (Twilio marks), and
+  Twilio's buffer is cleared.
+- **One call at a time.** There is one ship; other callers hear a polite
+  busy message.
+
 | route | |
 |---|---|
 | `GET /health` | liveness, whether a game is linked, live call count (Railway healthcheck) |
-| `POST /twilio/voice` | the number's incoming-call webhook: refuses callers not in `ALLOWED_CALLERS`, says so when no game is linked, else `<Connect><ConversationRelay>` |
-| `POST /twilio/session-end` | `<Connect action>`: logs how the relay session ended |
+| `POST /twilio/voice` | the number's incoming-call webhook: refuses callers not in `ALLOWED_CALLERS`, says so when no game is linked, else `<Connect><Stream>` (openai; with a one-time token) or `<Connect><ConversationRelay>` (relay) |
+| `POST /twilio/session-end` | `<Connect action>`: logs how the session ended |
+| `WS /twilio/media` | the call's audio for the OpenAI voice agent |
 | `WS /twilio/relay` | ConversationRelay, one socket per call |
 | `WS /game/link` | the link (Bearer `GAME_LINK_TOKEN`) |
 | `GET /api/status`, `POST /api/game/:cmd` | debug: link and calls; run a bridge command (Bearer `GAME_LINK_TOKEN`) |
+| `POST /mcp` | the call centre's ship tools as an MCP server (Streamable HTTP; Bearer `GAME_LINK_TOKEN`), for any MCP client |
 
-Every Twilio request and the relay handshake must carry a valid
-`X-Twilio-Signature` (checked against `PUBLIC_BASE_URL` + the path); the
-relay's `setup` message re-checks the caller.
+Every Twilio request and both Twilio socket handshakes must carry a valid
+`X-Twilio-Signature` (checked against `PUBLIC_BASE_URL` + the path). The
+relay's `setup` message re-checks the caller. A media stream must present the
+one-time token its webhook issued.
 
 ## Set up
 
@@ -45,12 +80,14 @@ relay's `setup` message re-checks the caller.
 Node), the start command and the `/health` healthcheck. Generate a public domain
 (Settings → Networking). Set the variables from `.env.example`:
 `TWILIO_AUTH_TOKEN`, `ALLOWED_CALLERS`, `GAME_LINK_TOKEN` (`openssl rand -hex 32`),
-and `PUBLIC_BASE_URL` only for a custom domain.
+and `PUBLIC_BASE_URL` only for a custom domain. For the voice agent, also set
+`OPENAI_API_KEY` (and optionally `TWILIO_PHONE_NUMBER`, which the HUD shows,
+plus `OPENAI_REALTIME_MODEL`, `OPENAI_VOICE` and `AGENT_NAME`).
 
-**2. Set up Twilio.** Accept the *Predictive and Generative AI/ML Features
-Addendum* (Voice → Settings), which ConversationRelay needs. Buy or pick a voice
-number and set its *A call comes in* webhook to
-`POST https://<your domain>/twilio/voice`.
+**2. Set up Twilio.** Buy or pick a voice number and set its *A call comes
+in* webhook to `POST https://<your domain>/twilio/voice`. For
+`VOICE_AGENT=relay`, also accept the *Predictive and Generative AI/ML Features
+Addendum* (Voice → Settings), which ConversationRelay needs.
 
 **3. Link the game.** On the machine running the game:
 
@@ -60,15 +97,35 @@ cp .env.example .env      # FRACTAL_SERVER_URL + the same GAME_LINK_TOKEN
 npm run link
 ```
 
-Start the game (`tools/launch.sh -- --play`, or the MCP `launch_game`) and an
-agent on the `pilot` loop, then call the number.
+Start the game **with its call centre**: `call_center/run.sh` from the repo
+root, or `tools/launch.sh -- --play --call-center`, or the MCP `launch_game
+{call_center: "on"}`. Then call the number. With `VOICE_AGENT=relay`, also
+start an agent on the `pilot` loop.
 
 ## Develop
 
 ```bash
-npm test          # fake Twilio + the real link + a fake game bridge, all local
+npm test          # fake Twilio + fake OpenAI + the real link + a fake game bridge, all local
 npm run dev       # the server, reading .env
+npm run demo      # a whole call against the real game, no accounts (below)
 ```
+
+**`npm run demo`** plays one complete support call against the real game.
+Start the game with `call_center/run.sh --demo` first. The demo runs the real
+server and the real link in-process, with two stand-ins:
+
+- a fake Twilio caller: signed webhook, signed media stream, μ-law audio both
+  ways;
+- a scripted agent that speaks the OpenAI Realtime protocol in place of the
+  model.
+
+Every hop of a real call runs: Twilio's wire format → the server → Realtime
+events → tool calls → the link → McpBridge → the call centre → the ship. Only
+the agent's choices are scripted. It reads the ship's status, follows
+whatever route the game exposes, answers the diagnostics questions as the
+caller, and flies out of the exit. Use `-- --fast` for shorter pauses and
+`DEMO_DEBUG=1` to see every event. It works for rehearsal, as an end-to-end
+check, and as a fallback when the venue Wi-Fi gives up.
 
 To take real calls against a local server, expose it with a tunnel (e.g.
 `cloudflared tunnel --url http://localhost:3000`), set `PUBLIC_BASE_URL` to the

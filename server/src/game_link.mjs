@@ -6,6 +6,8 @@
 //                    {type: "rpc", id, cmd, args}            any McpBridge command
 //   link -> server   {type: "rpc_result", id, ok, result | error}
 //                    {type: "say", text}                     the agent spoke in the pilot chat
+//                    {type: "chat", text}                    the pilot typed in the pilot chat
+//                    {type: "ship_event", event}             the call centre has news for the agent
 //                    {type: "hello", game: {...}}            sent once on connect
 
 import { EventEmitter } from "node:events";
@@ -80,6 +82,12 @@ export class GameLink extends EventEmitter {
         break;
       case "say":
         if (typeof msg.text === "string" && msg.text.trim()) this.emit("say", msg.text.trim());
+        break;
+      case "chat":
+        if (typeof msg.text === "string" && msg.text.trim()) this.emit("chat", msg.text.trim());
+        break;
+      case "ship_event":
+        if (msg.event && typeof msg.event === "object") this.emit("ship_event", msg.event);
         break;
       case "rpc_result": {
         const p = this.#pending.get(msg.id);

@@ -1,8 +1,8 @@
 #!/bin/sh
-# The call centre's tests: its Godot suites (call_center/tests/*_test.gd), the
-# boundary check (only the adapter may name game classes), and the relay's
-# Node tests when its dependencies are installed. Exit status is non-zero if
-# anything fails. The game's own suite is tests/run_all.sh.
+# The call centre's tests: its Godot suites (call_center/tests/*_test.gd) and
+# the boundary check (only the adapter may name game classes). Exit status is
+# non-zero if anything fails. The game's own suite is tests/run_all.sh; the
+# phone server's is `cd server && npm test`.
 cd "$(dirname "$0")/../.." || exit 2
 GODOT="${GODOT:-godot4}"
 status=0
@@ -30,13 +30,4 @@ for t in call_center/tests/*_test.gd; do
   fi
 done
 
-if [ -d call_center/server/node_modules ]; then
-  echo "=== call_center/server (npm test)"
-  out=$(cd call_center/server && npm test 2>&1)
-  code=$?
-  printf '%s\n' "$out" | grep -E '^# (tests|pass|fail)|^ *not ok'
-  [ "$code" -eq 0 ] || { status=1; echo "*** relay tests FAILED"; }
-else
-  echo "=== call_center/server: run 'npm install' there to include the relay's tests"
-fi
 exit $status

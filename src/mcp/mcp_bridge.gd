@@ -19,8 +19,13 @@ extends Node
 ## FRACTAL_MCP_PORT is set, so the test suite never holds the port. Run with
 ## `-- --play` to skip the title menu. It also parks the window for a Claude
 ## session launch (see SessionLaunch).
+##
+## Other layers add commands with register_command() (the call centre's ship
+## tools, for one). `-- --call-center` (or FRACTAL_CALL_CENTER=1) starts the
+## call centre (call_center/), `-- --call-center-demo` with its sample route.
 
 const DEFAULT_PORT := 9077
+const CALL_CENTER_SCRIPT := "res://call_center/call_center.gd"
 const GAME_SCENE := "res://src/main.tscn"
 const TRAIL_ID := "trail"
 const TRAIL_MAX := 5000
@@ -38,6 +43,8 @@ var _shapes: Array = []
 var _next_id := 1
 var _trail_on := false
 var _trail: Array = []   # Vector3 eye positions
+## Commands added by other layers: name -> Callable(args: Dictionary) -> Dictionary.
+var _extensions := {}
 
 
 func _ready() -> void:
@@ -68,6 +75,37 @@ func _ready() -> void:
 
 	if "--play" in OS.get_cmdline_user_args():
 		_start_game.call_deferred()
+
+	_start_call_center()
+
+
+## The call centre (call_center/) beside the game, when asked for. It adds its
+## own commands here once it is up.
+func _start_call_center() -> void:
+	var user_args := OS.get_cmdline_user_args()
+	var demo := "--call-center-demo" in user_args
+	if not (demo or "--call-center" in user_args or OS.get_environment("FRACTAL_CALL_CENTER") == "1"):
+		return
+	if not ResourceLoader.exists(CALL_CENTER_SCRIPT) or get_node_or_null(^"/root/CallCenter") != null:
+		return
+	var cc: Node = load(CALL_CENTER_SCRIPT).new()
+	cc.name = "CallCenter"
+	cc.set("demo", demo)
+	get_tree().root.add_child.call_deferred(cc)
+
+
+## Add a command. `handler` takes the args Dictionary and returns a result
+## Dictionary ({"error": "..."} to fail); it may await.
+func register_command(cmd: String, handler: Callable) -> void:
+	_extensions[cmd] = handler
+
+
+func unregister_command(cmd: String) -> void:
+	_extensions.erase(cmd)
+
+
+func has_command(cmd: String) -> bool:
+	return _extensions.has(cmd)
 
 
 func _process(_delta: float) -> void:
@@ -140,6 +178,13 @@ func _reply(peer: StreamPeerTCP, msg: Dictionary) -> void:
 ## Run one command. Returns its result, or {"error": "..."}. May await (camera
 ## animation, screenshots).
 func handle(cmd: String, args: Dictionary) -> Dictionary:
+	if _extensions.has(cmd):
+		var handler: Callable = _extensions[cmd]
+		if not handler.is_valid():
+			_extensions.erase(cmd)
+			return {"error": "'%s' is no longer available" % cmd}
+		var r: Variant = await handler.call(args)
+		return r if r is Dictionary else {"result": r}
 	match cmd:
 		"status": return _status()
 		"start_game": return await _start_game()
@@ -192,6 +237,7 @@ func _status() -> Dictionary:
 		"window_size": _v2(get_viewport().get_visible_rect().size),
 		"drawings": _shapes.size(),
 		"trail": {"on": _trail_on, "points": _trail.size()},
+		"extensions": _extensions.keys(),
 	}
 	if main != null:
 		out["camera"] = _camera_json(main)
@@ -540,7 +586,7 @@ func _chat_say(args: Dictionary) -> Dictionary:
 	var text := str(args.get("text", "")).strip_edges()
 	if text.is_empty():
 		return {"error": "say needs some text"}
-	return chat.add("agent", text, "")
+	return chat.add("agent", text, str(args.get("source", "")))
 
 
 ## A message from outside the panel: a voice transcript ("human", source

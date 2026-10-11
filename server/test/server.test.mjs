@@ -130,7 +130,7 @@ async function until(fn, ms = 3000) {
 
 test("health reports no game linked", async () => {
   const r = await (await fetch(base + "/health")).json();
-  assert.deepEqual(r, { ok: true, game_linked: false, calls: 0 });
+  assert.deepEqual(r, { ok: true, game_linked: false, calls: 0, voice_agent: "relay" });
 });
 
 test("an unsigned voice webhook is refused", async () => {

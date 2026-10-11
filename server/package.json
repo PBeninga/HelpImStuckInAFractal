@@ -2,13 +2,14 @@
   "name": "fractal-phone-server",
   "version": "0.1.0",
   "private": true,
-  "description": "Call in and pilot Help I'm Stuck In A Fractal by phone: Twilio ConversationRelay on Railway, linked to the game on your machine",
+  "description": "Call in and get flown out of the fractal: Twilio on Railway, answered by the call centre's OpenAI Realtime voice agent (or ConversationRelay into the pilot chat), linked to the game on your machine",
   "type": "module",
   "scripts": {
     "start": "node src/index.mjs",
     "link": "node --env-file-if-exists=.env link/link.mjs",
     "test": "node --test --test-force-exit test/*.test.mjs",
-    "dev": "node --env-file-if-exists=.env src/index.mjs"
+    "dev": "node --env-file-if-exists=.env src/index.mjs",
+    "demo": "node scripts/demo_call.mjs"
   },
   "engines": {
     "node": ">=22.9"

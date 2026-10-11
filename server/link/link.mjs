@@ -5,7 +5,10 @@
 //
 // What a caller says lands in the game's pilot chat (chat_post / chat_draft),
 // whatever the agent says there is spoken back on the call, and the server can
-// run any bridge command through it (rpc).
+// run any bridge command through it (rpc). With the call centre in the game
+// (call_center/), the link also tells it about the line and the call (the
+// call_center command), forwards its ship events to the server, and passes
+// what the pilot types in the chat to the server's voice agent.
 //
 //   FRACTAL_SERVER_URL  the server's public URL (https:// or wss://), e.g. https://fractal.up.railway.app
 //   GAME_LINK_TOKEN     the same secret as the server's
@@ -39,6 +42,7 @@ export function startLink({
     sock.on("open", async () => {
       backoff = 1000;
       log.info(`linked to ${url}`);
+      callCenter({ link_up: true });
       let game = null;
       try {
         game = await bridge.call("status");
@@ -59,6 +63,7 @@ export function startLink({
     sock.on("error", (err) => log.warn(`link: ${err.message}`));
     sock.on("close", (code) => {
       if (ws === sock) ws = null;
+      callCenter({ link_up: false });
       if (stopped) return;
       if (code === 4000) log.warn("another link replaced this one");
       setTimeout(connect, backoff);
@@ -66,16 +71,33 @@ export function startLink({
     });
   }
 
+  // Tell the call centre (if the game runs one) about the line and the call.
+  function callCenter(args) {
+    return bridge.call("call_center", args).catch(() => {});
+  }
+
   async function onEvent(e) {
     switch (e.type) {
+      case "config":
+        await callCenter({ support_number: e.support_number || "", link_up: true });
+        break;
+      case "call_ringing":
+        await callCenter({ call_state: "ringing" });
+        break;
       case "call_started":
+        await callCenter({ call_state: "connected", agent_name: e.agent_name || "" });
         await post({ role: "system", text: `Phone call connected (${e.from})` });
+        break;
+      case "agent_said":
+        // the voice agent said it on the call; "phone" keeps it from being spoken again
+        await bridge.call("chat_say", { text: e.text, source: "phone" });
         break;
       case "utterance":
         if (e.final) await post({ text: e.text, source: "voice" });
         else await bridge.call("chat_draft", { text: e.text }).catch(() => {});
         break;
       case "call_ended":
+        await callCenter({ call_state: "ended" });
         await bridge.call("chat_draft", { text: "" }).catch(() => {});
         await post({ role: "system", text: "Phone call ended" });
         break;
@@ -100,7 +122,9 @@ export function startLink({
     }
   }
 
-  // Follow the pilot chat and send each agent reply to the server to be spoken.
+  // Follow the pilot chat: send each agent reply to the server to be spoken
+  // (not the phone agent's own lines, which it already said), and what the
+  // pilot types, for a voice agent on a call.
   async function watchChat() {
     let after = null;
     while (!stopped) {
@@ -108,7 +132,10 @@ export function startLink({
         if (after === null) after = (await bridge.call("chat_watch", {})).last_id;
         const r = await bridge.call("chat_watch", { after, timeout: 20 }, 35_000);
         after = r.last_id;
-        for (const m of r.messages) if (m.role === "agent") send({ type: "say", text: m.text });
+        for (const m of r.messages) {
+          if (m.role === "agent" && m.source !== "phone") send({ type: "say", text: m.text });
+          else if (m.role === "human" && m.source === "typed") send({ type: "chat", text: m.text });
+        }
       } catch {
         after = null; // the game restarted: its ids start over
         await new Promise((res) => setTimeout(res, 2000));
@@ -116,8 +143,26 @@ export function startLink({
     }
   }
 
+  // Follow the call centre's ship events (waypoints, questions for the pilot,
+  // the escape) and send them to the server for the voice agent.
+  async function watchShipEvents() {
+    let after = null;
+    while (!stopped) {
+      try {
+        if (after === null) after = (await bridge.call("ship_events", {})).last_id;
+        const r = await bridge.call("ship_events", { after, timeout: 20 }, 35_000);
+        after = r.last_id;
+        for (const event of r.events) send({ type: "ship_event", event });
+      } catch {
+        after = null; // the game restarted, or runs without its call centre
+        await new Promise((res) => setTimeout(res, 3000));
+      }
+    }
+  }
+
   connect();
   watchChat();
+  watchShipEvents();
 
   return {
     bridge,

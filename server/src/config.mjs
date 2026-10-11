@@ -29,7 +29,29 @@ export function loadConfig(env = process.env) {
     // Unfinalised transcripts (needs Deepgram's flux model): shown live in the
     // game's chat input as you speak.
     partialPrompts: env.PARTIAL_PROMPTS === "true",
+    // Who answers: "openai" (the call centre's voice agent: Twilio streams the
+    // audio to OpenAI Realtime, which flies the ship with the call centre's
+    // tools) or "relay" (ConversationRelay into the pilot chat, for an agent
+    // such as Claude on the pilot loop). Defaults to openai when its key is set.
+    voiceAgent: (env.VOICE_AGENT || (env.OPENAI_API_KEY ? "openai" : "relay")).toLowerCase(),
+    openai: {
+      apiKey: env.OPENAI_API_KEY || "",
+      url: env.OPENAI_REALTIME_URL || "wss://api.openai.com/v1/realtime",
+      model: env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1",
+      voice: env.OPENAI_VOICE || "cedar",
+      transcribeModel: env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe",
+      reasoningEffort: env.OPENAI_REASONING_EFFORT ?? "low",
+    },
+    // The support agent's name, and the number shown on the game's HUD.
+    agentName: env.AGENT_NAME || "Gary",
+    supportNumber: env.SUPPORT_NUMBER || env.TWILIO_PHONE_NUMBER || "",
   };
+}
+
+// "+15550109001" -> "+1 (555) 010-9001"; anything else is returned as is.
+export function formatPhoneNumber(n) {
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(n || "");
+  return m ? `+1 (${m[1]}) ${m[2]}-${m[3]}` : n || "";
 }
 
 // Problems that make the server unusable for real calls; logged at boot.
@@ -39,5 +61,7 @@ export function configProblems(config) {
   if (config.validateTwilio && !config.twilioAuthToken) out.push("TWILIO_AUTH_TOKEN is not set");
   if (!config.gameLinkToken) out.push("GAME_LINK_TOKEN is not set: the game cannot link");
   if (config.allowedCallers.length === 0) out.push("ALLOWED_CALLERS is empty: every call is refused");
+  if (config.voiceAgent === "openai" && !config.openai.apiKey) out.push("VOICE_AGENT=openai but OPENAI_API_KEY is not set");
+  if (!["openai", "relay"].includes(config.voiceAgent)) out.push(`VOICE_AGENT must be openai or relay, not '${config.voiceAgent}'`);
   return out;
 }

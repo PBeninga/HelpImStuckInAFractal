@@ -29,6 +29,7 @@ var _clock := 0.0
 var _los_wait := 0.0
 var _scan_t := -1.0
 var _exit_occluded := false
+var _placed: Array = []      # label boxes drawn this frame
 
 
 func setup(p_adapter: Node, p_features: Features) -> void:
@@ -84,6 +85,7 @@ func _ready_to_draw() -> bool:
 
 
 func _draw() -> void:
+	_placed.clear()
 	if not _ready_to_draw():
 		return
 	_draw_reticle()
@@ -196,7 +198,19 @@ func _brackets(c: Vector2, s: float, col: Color) -> void:
 func _label(at: Vector2, title: String, sub: String, col: Color) -> void:
 	var w := maxf(_font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x,
 		_font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x)
-	draw_rect(Rect2(at + Vector2(-6, -16), Vector2(w + 12, 38)), Color(0.0, 0.03, 0.08, 0.72 * col.a))
+	var box := Rect2(at + Vector2(-6, -16), Vector2(w + 12, 38))
+	# Markers close together on screen: stack their labels instead of overlapping.
+	for _i in 8:
+		var hit := false
+		for other: Rect2 in _placed:
+			if box.intersects(other):
+				hit = true
+				box.position.y = other.end.y + 2.0
+		if not hit:
+			break
+	at = box.position + Vector2(6, 16)
+	_placed.append(box)
+	draw_rect(box, Color(0.0, 0.03, 0.08, 0.72 * col.a))
 	draw_string(_font, at, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(col, maxf(col.a, 0.75)))
 	draw_string(_font, at + Vector2(0, 16), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(col, maxf(col.a, 0.75) * 0.85))
 
