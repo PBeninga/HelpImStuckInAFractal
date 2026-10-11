@@ -329,6 +329,75 @@ ported from the sibling project spellfactory. Extend or refresh it with the
 `/visualize` skill (`.claude/skills/visualize/`). The links 404 until the
 pinned commit is pushed.
 
+## MCP server (agent control)
+
+`mcp/` is an [MCP](https://modelcontextprotocol.io) server that lets an agent
+fly through the fractal, look at it and draw on the screen. It speaks MCP over
+stdio and relays each tool call to the **`McpBridge`** autoload
+(`src/mcp/mcp_bridge.gd`), which listens on `127.0.0.1:9077`
+(`FRACTAL_MCP_PORT` to change it) for newline-delimited JSON while the game runs.
+The server is off in a web build and in headless runs.
+
+```bash
+cd mcp && npm install     # once
+```
+
+The repo's `.mcp.json` registers it as `fractal` for Claude Code in this folder.
+Elsewhere: `claude mcp add fractal -- node /path/to/repo/mcp/server.mjs`.
+
+| tool | what it does |
+|---|---|
+| `launch_game` | start the game straight into the explorer and wait for the bridge (see below) |
+| `status`, `start_game` | where things stand; leave the title or pause menu |
+| `get_camera`, `set_camera` | eye / look_at / forward / up, optionally animated (`duration`) |
+| `move` | move in the camera's frame, in **surface units** by default (multiples of the distance to the nearest surface, so `forward: 0.5` always halves the gap at any zoom depth); `safe` stops short of walls |
+| `rotate` | yaw (about +Z) / pitch / roll in degrees |
+| `dive` | fly part of the way to the surface under a pixel and face it: repeat to zoom into a feature |
+| `raycast`, `probe`, `project` | surface point + normal under a pixel; distance estimate at a point; pixel of a point |
+| `get_shape`, `set_shape` | every Mandelbox knob with ranges and descriptions; set any of them by id |
+| `list_views`, `load_view`, `save_view` | the JSON views in `saves/` |
+| `screenshot` | the window as an image, after the full-quality still frame (`overlay: false` for the bare fractal) |
+| `draw` | line, polygon, circle, text or labelled point, in **screen** pixels or **world** (fractal) coordinates that stay attached to the fractal as you fly |
+| `clear_drawings`, `list_drawings` | remove one drawing by id, or all |
+| `trail` | record the camera's path as a world-space line |
+| `wait_for_message`, `say`, `chat_history` | the pilot chat (below) |
+
+Traversal tools take `look: true` to return a screenshot of the new view with
+the result. World drawings are drawn on top of the fractal (not occluded) and
+clipped where they pass behind the camera.
+
+**Pilot chat.** A translucent column down the right of the view holds the
+conversation between you and the agent (`src/chat/`). **Enter** focuses its
+input (WASD and the axis keys fall silent while you type), Enter sends, Escape
+or a click on the view leaves it; clicks elsewhere on the column go through to
+the view. The agent long-polls `wait_for_message`, acts, and answers with `say`;
+the header shows whether an agent is listening, working, or absent. The MCP
+server's `pilot` prompt starts that loop. The log lives in `McpBridge`, so it
+survives Back to Menu.
+
+It is built for voice input: a speech-to-text process talks straight to the
+bridge socket with `chat_post {text, source: "voice"}` for a finished utterance
+(shown tagged "(voice)") and `chat_draft {text}` for the live transcript, which
+fills the input box as you speak.
+
+**Phone.** `server/` takes this to a phone call: a Twilio number answered by
+ConversationRelay, a server on Railway, and a link on your machine that posts
+the caller's words with `chat_post` and speaks the agent's replies (it follows
+the chat with `chat_watch`). See `server/README.md`.
+
+**Launching from a Claude session.** `launch_game` runs `tools/launch.sh -- --play
+--background-window`, the same way Spellgraft launches: the window is parked
+off screen bar a 4 px always-on-top corner (a fully hidden macOS window draws no
+frames; screenshots read the viewport, so they are still full size), and the
+launcher hands focus back to whatever app had it every time Godot takes it.
+Any game started from a Claude Code session (`CLAUDECODE=1`) parks itself the
+same way (`src/session/session_launch.gd`); `-- --foreground-window` or
+`FRACTAL_PLAY=1` gives a normal window, and `launch_game {foreground: true}`
+opens one for a person to watch. `./run.sh` stays the launcher for people.
+
+`node mcp/smoke.mjs` drives the real server end to end (launch, raycast, draw,
+dive, trail, screenshots into `mcp/out/`).
+
 ## Web export
 
 A single **Web** export preset (threads off) targets the git-ignored
