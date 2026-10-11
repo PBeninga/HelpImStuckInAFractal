@@ -78,6 +78,11 @@ func run() -> void:
 	# lobe is a flat sheen (e = 0), never an inverted rim.
 	check(sh.code.contains("max(0.0, 2.0 / max(r_eff2, 1e-9) - 2.0)"),
 		"the specular exponent is clamped non-negative")
+
+	# the shadow ray marches through march_de, so while the march is perturbed its
+	# estimates keep their precision at depth (de from the 32-bit point would be noise)
+	check(sh.code.contains("march_de(ro + ldir * t, oo + ldir * t, n_coarse)"),
+		"the shadow ray's estimates go through march_de")
 	check_eq(with_default, FractalParams.LOOK_KEYS.size(), "every look uniform declares its default")
 
 	# the record arrays are as long as ReferenceOrbit's record, the handoff points

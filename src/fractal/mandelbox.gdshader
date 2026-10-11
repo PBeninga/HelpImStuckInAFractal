@@ -463,9 +463,14 @@ vec3 scatter(vec3 col, float t, vec3 dir, vec3 ldir) {
 // fully; otherwise the closest approach, scaled by the lamp's angular size, is the
 // penumbra. k widens the penumbra as the lamp widens (light_size); a size-0 lamp
 // is near-hard. Costs one extra ray per pixel; skipped when shadow_steps is 0.
-float soft_shadow(vec3 v, vec3 n, vec3 ldir, float total) {
+// off is the hit's offset from the eye (dir * total): while the march is perturbed
+// the shadow ray's estimates go through march_de, so they keep their precision
+// at depth instead of being formed from the 32-bit point v.
+float soft_shadow(vec3 v, vec3 off, vec3 n, vec3 ldir, float total) {
 	float eps0 = hit_eps(total);
-	vec3 ro = v + n * 4.0 * eps0;
+	vec3 lift = n * 4.0 * eps0;
+	vec3 ro = v + lift;
+	vec3 oo = off + lift;
 	float far = box_intersect(ro, ldir, box_half).y;
 	float k = 1.0 / tan(max(radians(light_size), radians(0.5)));
 	int n_coarse = clamp(coarse_iters, 16, 32);
@@ -473,7 +478,7 @@ float soft_shadow(vec3 v, vec3 n, vec3 ldir, float total) {
 	float t = eps0;
 	for (int i = 0; i < 64; i++) {
 		if (i >= shadow_steps) { break; }
-		float d = de(ro + ldir * t, n_coarse);
+		float d = march_de(ro + ldir * t, oo + ldir * t, n_coarse);
 		if (d < eps0) { return 0.0; }
 		res = min(res, k * d / t);
 		t += d * noise_step_scale();
@@ -610,7 +615,7 @@ void fragment() {
 			// ray retraces the view ray and would self-shadow the whole surface.
 			float sh = 1.0;
 			if (shadows > 0.0 && shadow_steps > 0 && swung) {
-				sh = mix(1.0, soft_shadow(v, n, ldir, total), shadows);
+				sh = mix(1.0, soft_shadow(v, dir * total, n, ldir, total), shadows);
 			}
 			float nl = abs(dot(n, ldir));
 			// The specular exponent from roughness; the lamp's size widens the lobe.
