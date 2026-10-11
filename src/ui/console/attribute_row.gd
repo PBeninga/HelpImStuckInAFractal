@@ -19,8 +19,6 @@ const OPTION_MIN_WIDTH := 92.0
 const WIDE_ROW_MIN_WIDTH := 627.0
 const FLASH_SECONDS := 0.3
 const FLASH_COLOR := Color(1.0, 0.45, 0.45)
-const FLOAT_SIGNIFICANT_DIGITS := 17
-const FLOAT_SPIN_RESOLUTION := 1e-17
 
 const WAVE_LABELS := ["Linear", "Sine", "Triangle"]
 
@@ -41,9 +39,9 @@ var _option: OptionButton
 var _picker: ColorPickerButton
 var _readout: Label
 var _source: OptionButton
-var _gain: SpinBox
+var _gain: DecimalSpinBox
 var _wave: OptionButton
-var _period: SpinBox
+var _period: DecimalSpinBox
 var _updating := false
 var _flash: Tween
 ## Array of {id: StringName, label: String} for the source dropdown's axes.
@@ -83,7 +81,6 @@ func refresh() -> void:
 		_slider.value = _to_slider(float(value))
 	if _spin != null:
 		_spin.value = float(value)
-		_set_spin_text(_spin, value, spec.type == AttributeSpec.Type.INT)
 	if _check != null:
 		_check.button_pressed = bool(value)
 	if _option != null:
@@ -95,10 +92,8 @@ func refresh() -> void:
 		if b != null:
 			_select_source(b.source)
 			_gain.value = b.gain
-			_set_spin_text(_gain, b.gain)
 			_select_id(_wave, int(b.waveform))
 			_period.value = b.period
-			_set_spin_text(_period, b.period)
 			_period.editable = b.waveform != Binding.Waveform.LINEAR
 			if not b.is_active():
 				_readout.visible = false
@@ -199,20 +194,23 @@ func _build_value() -> void:
 			_slider.value_changed.connect(_on_slider_changed)
 			row.add_child(_slider)
 
-			_spin = SpinBox.new()
+			if spec.type == AttributeSpec.Type.FLOAT:
+				var decimal := DecimalSpinBox.new()
+				# Steps no coarser than the slider range: 0 in a ±0.1 range steps 0.1, not 1.
+				decimal.max_unit = DecimalSpinBox.power_of_ten_below(spec.max_value - spec.min_value)
+				decimal.number_changed.connect(_on_spin_changed)
+				_spin = decimal
+			else:
+				_spin = SpinBox.new()
+				_spin.step = spec.step
+				_spin.value_changed.connect(_on_spin_changed)
 			_spin.min_value = spec.hard_min
 			_spin.max_value = spec.hard_max
-			if spec.type == AttributeSpec.Type.FLOAT:
-				_set_float_spin_precision(_spin, spec.step)
-			else:
-				_spin.step = spec.step
 			_spin.custom_minimum_size = Vector2(SPIN_MIN_WIDTH, 0)
 			_spin.tooltip_text = "Type an exact value. The slider covers %s ... %s; typing is allowed out to %s ... %s, and anything beyond that is clamped (the box flashes red)." % [
 				_format_number(spec.min_value), _format_number(spec.max_value),
 				_format_number(spec.hard_min), _format_number(spec.hard_max)]
-			_spin.value_changed.connect(_on_spin_changed)
 			_spin.get_line_edit().text_submitted.connect(_on_spin_text_submitted)
-			_spin.get_line_edit().focus_exited.connect(_on_spin_focus_exited.bind(_spin))
 			row.add_child(_spin)
 
 			if spec.log_scale:
@@ -282,14 +280,12 @@ func _build_binding() -> void:
 	box.add_child(_source)
 	_rebuild_source_items()
 
-	_gain = SpinBox.new()
+	_gain = DecimalSpinBox.new()
 	_gain.min_value = -1000000.0
 	_gain.max_value = 1000000.0
-	_set_float_spin_precision(_gain, 0.01)
-	_gain.get_line_edit().focus_exited.connect(_on_spin_focus_exited.bind(_gain))
 	_gain.custom_minimum_size = Vector2(SMALL_SPIN_WIDTH, 0)
 	_gain.tooltip_text = GAIN_TOOLTIP
-	_gain.value_changed.connect(_on_gain_changed)
+	_gain.number_changed.connect(_on_gain_changed)
 	box.add_child(_gain)
 
 	_wave = OptionButton.new()
@@ -300,14 +296,12 @@ func _build_binding() -> void:
 	_wave.item_selected.connect(_on_wave_selected)
 	box.add_child(_wave)
 
-	_period = SpinBox.new()
+	_period = DecimalSpinBox.new()
 	_period.min_value = 0.001
 	_period.max_value = 1000000.0
-	_set_float_spin_precision(_period, 0.01)
-	_period.get_line_edit().focus_exited.connect(_on_spin_focus_exited.bind(_period))
 	_period.custom_minimum_size = Vector2(SMALL_SPIN_WIDTH, 0)
 	_period.tooltip_text = PERIOD_TOOLTIP
-	_period.value_changed.connect(_on_period_changed)
+	_period.number_changed.connect(_on_period_changed)
 	box.add_child(_period)
 
 
@@ -368,11 +362,6 @@ func _on_spin_text_submitted(text: String) -> void:
 	var typed := float(text)
 	if typed < spec.hard_min or typed > spec.hard_max:
 		_flash_spin()
-
-
-func _on_spin_focus_exited(spin: SpinBox) -> void:
-	var integer := spin == _spin and spec.type == AttributeSpec.Type.INT
-	_set_spin_text(spin, spin.value, integer)
 
 
 func _on_check_toggled(pressed: bool) -> void:
@@ -471,7 +460,7 @@ func _from_slider(t: float) -> float:
 
 
 func _format_number(value: float) -> String:
-	return _significant(value, FLOAT_SIGNIFICANT_DIGITS)
+	return DecimalSpinBox.format(value)
 
 
 func _format(value: Variant) -> String:
@@ -485,40 +474,4 @@ func _format(value: Variant) -> String:
 				if spec.enum_values[i] == int(value):
 					return spec.enum_labels[i]
 			return str(value)
-	return _significant(float(value), FLOAT_SIGNIFICANT_DIGITS)
-
-
-func _significant(value: float, digits: int) -> String:
-	if not is_finite(value):
-		return str(value)
-	if value == 0.0:
-		return "0"
-	var exponent := int(floor(log(absf(value)) / log(10.0)))
-	if absf(value) / pow(10.0, float(exponent)) >= 10.0:
-		exponent += 1
-	if exponent < -4 or exponent >= digits:
-		var mantissa := value / pow(10.0, float(exponent))
-		var sign_text := "-" if exponent < 0 else "+"
-		return "%se%s%02d" % [_trim_zeros(String.num(mantissa, maxi(digits - 1, 0))), sign_text, absi(exponent)]
-	return _trim_zeros(String.num(value, maxi(digits - 1 - exponent, 0)))
-
-
-func _set_float_spin_precision(spin: SpinBox, arrow_step: float) -> void:
-	# Range.step controls both displayed decimal places and value quantization.
-	# Keep its quantization below double precision, then retain the old arrow
-	# increment separately.
-	spin.step = FLOAT_SPIN_RESOLUTION
-	spin.custom_arrow_step = arrow_step
-
-
-func _set_spin_text(spin: SpinBox, value: Variant, integer := false) -> void:
-	var line_edit := spin.get_line_edit()
-	if line_edit.has_focus():
-		return
-	line_edit.text = str(int(value)) if integer else _significant(float(value), FLOAT_SIGNIFICANT_DIGITS)
-
-
-func _trim_zeros(text: String) -> String:
-	if not text.contains("."):
-		return text
-	return text.rstrip("0").rstrip(".")
+	return DecimalSpinBox.format(float(value))

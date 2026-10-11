@@ -243,6 +243,11 @@ func _spin_typing() -> void:
 	await ui.type_text(spin.get_line_edit(), "0.55")
 	check_approx(float(table.get_default(&"min_radius")), 0.55, "typing 0.55 and Enter writes the table")
 	check_approx((row.value_control() as HSlider).value, 0.55, "and the slider follows")
+	check_eq(spin.get_line_edit().text, "0.55", "the field shows what was typed, not 17 digits")
+	await ui.click_at(ui.global_point(spin, Vector2(0.95, 0.25)))
+	await ui.frames(1)
+	check_eq(float(table.get_default(&"min_radius")), 0.56, "the up arrow steps the last digit: 0.55 -> 0.56 exactly")
+	check_eq(spin.get_line_edit().text, "0.56", "and shows 0.56")
 	spin.get_line_edit().release_focus()
 	await ui.frames(1)
 
