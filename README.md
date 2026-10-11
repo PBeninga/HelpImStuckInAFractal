@@ -12,6 +12,15 @@ axes driven by key pairs. It is built on the **GL Compatibility** renderer
 
 GDScript only — no C#, even though the Godot build on disk is the Mono build.
 
+**Story mode: "Help, I'm stuck in a fractal".** Choose **Engage Hyperdrive** on
+the title screen. Your hyperspace punch jump fails and drops the ship inside
+the Mandelbox. The ship fixes most of its problems on its own, in a scrolling
+diagnostics log. Getting out is another matter: you phone **Sub-Dimensional
+Support**, a real phone number. An AI support agent, cheerfully corporate and
+fluent in mathematical babble, flies you to the exit as you talk. It does this
+through the game's own MCP server. See [Story mode](#story-mode-the-support-line)
+below and [`server/README.md`](server/README.md).
+
 ## Run
 
 ```bash
@@ -21,8 +30,9 @@ GDScript only — no C#, even though the Godot build on disk is the Mono build.
 
 `run.sh` finds `godot4` on your `PATH` (or falls back to `Godot_mono.app` /
 `Godot.app`), refreshes Godot's script-class cache when a script has changed,
-and then launches the main scene: the **Icebox Nav** title menu (Play Game,
-Settings, Quit; Quit is hidden in a web build). Set `GODOT=/path/to/godot` to use a different
+and then launches the main scene: the **Icebox Nav** title menu (Engage
+Hyperdrive for the story, Free Explore for the explorer, Settings, Quit; Quit
+is hidden in a web build). Set `GODOT=/path/to/godot` to use a different
 binary.
 
 ## Controls
@@ -167,6 +177,66 @@ toggle (let the resolution governor drop render scale while you interact), a
 way in when a browser swallows the Ctrl tap), a **Noise editor…** button, and
 Resume / **Settings** / Back to Menu. Settings holds the mouse sensitivity.
 
+## Story mode: the support line
+
+**Engage Hyperdrive** runs `src/story/story.tscn`. That scene wraps the
+explorer (`Main`) in a story:
+
+1. **The failed jump** (`story_intro.gd`, `fx/warp.gdshader`,
+   `fx/glitch.gdshader`). A hyperspace warp accelerates, then stutters: the
+   stars jump backwards and the frame tears. It whites out and lands the ship
+   in the chamber behind the cube's great round port. Any key or click skips
+   it.
+2. **The crash report** (`issue_log.gd`, `issue_catalogue.gd`). The HUD's
+   SHIP DIAGNOSTICS log plays the scripted report: *Error #13432 Mandelbrought
+   recurrence generator has animalifolds instead of manifolds… Resolved
+   successfully, via forced evfoldlution… Error #33423 Stuck in fractal space…
+   Unable to automatically resolve, connecting to agent*. After that, new
+   problems keep arriving and fixing themselves every few seconds. Now and
+   then one **needs the pilot**, and the agent asks you about it on the call.
+3. **The call** (`ship_link.gd`, `ship_tools.gd`, `server/`). The support
+   panel shows the number to ring. On the call, the agent scans for
+   "Mandelbrought characteristics", highlights what it is talking about
+   (brackets in the view, or an arrow at the screen edge), writes to the log,
+   and flies the ship as you ask: turns, thrusts, and an autopilot to named
+   waypoints. Any id or name the agent says out loud is highlighted
+   automatically.
+4. **The way out** (`route.gd`, `mission.gd`). The route is four straight legs
+   through the tunnels, #2312 → #4096 → #7071 → #8128. Then comes the
+   **Egress Rift (#9001)**, a swirling disc drawn by the fractal shader. The
+   fractal in front of the rift hides it, so you first see it as a light at the
+   end of the tunnel. The autopilot refuses any leg that would scrape the
+   fractal, so there are no shortcuts. Near the rift, the **egress waiver**
+   needs the pilot's name. Fly into the rift and the jump resumes. An end card
+   shows how long you were stuck, then offers *Keep Exploring* or *Back to
+   Menu*.
+
+The game works without a call too. You can fly out with the keyboard, and
+pilot questions time out to a default answer after 25 s (120 s while an agent
+is on the line). WASD during an autopilot flight takes manual control.
+
+**The ship's MCP tools**, which the agent (or any MCP client, through the
+relay's `/mcp`) can call:
+
+| tool | |
+|---|---|
+| `get_ship_status` | stage, clearance, heading, autopilot, next waypoint, exit (range, bearing, clear?), open pilot issues, fractal parameters |
+| `scan_surroundings` | nearby characteristics, each with id, name, blurb, range, bearing, elevation, whether it is on screen, whether the path is clear |
+| `highlight` / `clear_highlights` | bracket a characteristic, or flash a HUD panel |
+| `turn_ship`, `face_feature`, `thrust` | small moves; a thrust stops 5 m short of the fractal |
+| `fly_to_feature`, `full_stop` | the autopilot (refuses blocked legs and suggests the next waypoint) |
+| `resolve_issue` | answer a pilot-input issue with the pilot's words |
+| `post_to_log` | write an AGENT line to the diagnostics log |
+| `set_visual_filter` | change colour mode ("recalibrating optical sensors") |
+
+Distances are in metres (1 world unit = 1 km). The tunnels are 20–80 m wide.
+
+**The relay** (`server/`, Node 20+) connects Twilio's media stream for the
+call to an OpenAI Realtime voice agent. The agent calls the game's tools over
+the ship link, and the HUD gets the transcript. `npm run demo` plays a
+scripted call that really flies the ship, with no accounts needed. Setup,
+keys and security notes are in [`server/README.md`](server/README.md).
+
 ## Keymap
 
 The virtual axes and their key pairs live in **`saves/keymap.json`**, separate
@@ -280,6 +350,9 @@ site reports at `(x, y, z)` is `(2x, 2y, 2z)` here.
 tests/run_all.sh      # every headless SceneTree test
 tests/screenshots.sh  # windowed render check (writes PNGs to screenshots/)
 ```
+
+`server/` has its own tests (`cd server && npm test`). They use fakes for
+Twilio, OpenAI and the game.
 
 `tests/run_all.sh` imports the project (refreshing the class cache) and then runs
 each `tests/*_test.gd` headlessly; it exits non-zero if any test fails. Because

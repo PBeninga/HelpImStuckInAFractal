@@ -6,7 +6,8 @@ extends "res://tests/test_case.gd"
 
 const RENDERER_UNIFORMS := ["eye", "cam_right", "cam_up", "cam_forward",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
-	"coarse_steps", "fine_steps", "fog_dist", "fog_color"]
+	"coarse_steps", "fine_steps", "fog_dist", "fog_color",
+	"rift_on", "rift_pos", "rift_normal", "rift_radius"]
 
 
 func run() -> void:
