@@ -2,11 +2,15 @@
 // WebSockets for ConversationRelay (one per call) and for the game link.
 //
 //   GET  /health              liveness + whether a game is linked (Railway's healthcheck)
-//   POST /twilio/voice        incoming call: TwiML that connects it to ConversationRelay
-//   POST /twilio/session-end  <Connect action>: the relay session finished
+//   POST /twilio/voice        incoming call: TwiML that connects it to the voice agent
+//                             (VOICE_AGENT=openai: <Stream> to /twilio/media) or to
+//                             ConversationRelay (VOICE_AGENT=relay)
+//   POST /twilio/session-end  <Connect action>: the session finished
+//   WS   /twilio/media        Media Stream audio for the OpenAI voice agent (Twilio-signed)
 //   WS   /twilio/relay        ConversationRelay (Twilio-signed)
 //   WS   /game/link           the game's link (Bearer GAME_LINK_TOKEN)
 //   POST /api/game/:cmd       run any McpBridge command on the linked game (Bearer GAME_LINK_TOKEN)
+//   POST /mcp                 the call centre's ship tools as an MCP server (Bearer GAME_LINK_TOKEN)
 
 import http from "node:http";
 import crypto from "node:crypto";
@@ -15,11 +19,24 @@ import twilio from "twilio";
 import { WebSocketServer } from "ws";
 import { GameLink } from "./game_link.mjs";
 import { Calls, mask } from "./calls.mjs";
+import { VoiceCalls } from "./voice/voice_calls.mjs";
+import { handleMcp } from "./mcp_http.mjs";
+import { formatPhoneNumber } from "./config.mjs";
 
-export function createApp(config, { log = console } = {}) {
+export function createApp(config, { log = console, WebSocketImpl, heartbeatMs = 25_000 } = {}) {
   const game = new GameLink();
   const calls = new Calls(game, { allowedCallers: config.allowedCallers, log });
-  game.on("connected", () => log.info("game linked"));
+  const voice = new VoiceCalls(game, config, { log, WebSocketImpl });
+  game.on("connected", () => {
+    log.info("game linked");
+    // the support number and who answers, for the call centre's HUD
+    game.notify({
+      type: "config",
+      support_number: formatPhoneNumber(config.supportNumber),
+      voice_agent: config.voiceAgent,
+      agent_name: config.agentName,
+    });
+  });
   game.on("disconnected", () => log.info("game unlinked"));
 
   const app = express();
@@ -56,6 +73,15 @@ export function createApp(config, { log = console } = {}) {
     } else if (!game.connected) {
       vr.say("The fractal is offline. Start the game and its phone link on your computer, then call back.");
       vr.hangup();
+    } else if (config.voiceAgent === "openai") {
+      if (voice.busy) {
+        vr.say("Thank you for calling Sub-Dimensional Support. All of our agents are currently assisting other pilots stranded in other fractals. Your call is important to us, at every scale. Please try again shortly.");
+        vr.hangup();
+      } else {
+        game.notify({ type: "call_ringing", from: mask(from) });
+        const stream = vr.connect({ action: `${config.publicBaseUrl}/twilio/session-end` }).stream({ url: wsUrl(config.publicBaseUrl, "/twilio/media") });
+        stream.parameter({ name: "token", value: voice.issueToken(from) });
+      }
     } else {
       const relay = {
         url: wsUrl(config.publicBaseUrl, "/twilio/relay"),
@@ -84,7 +110,7 @@ export function createApp(config, { log = console } = {}) {
   // ---------------------------------------------------------------- status / debug
 
   app.get("/health", (req, res) => {
-    res.json({ ok: true, game_linked: game.connected, calls: calls.active.length });
+    res.json({ ok: true, game_linked: game.connected, calls: calls.active.length + voice.active.length, voice_agent: config.voiceAgent });
   });
 
   const tokenOnly = (req, res, next) => {
@@ -93,8 +119,12 @@ export function createApp(config, { log = console } = {}) {
   };
 
   app.get("/api/status", tokenOnly, (req, res) => {
-    res.json({ game_linked: game.connected, game: game.info, calls: calls.active });
+    res.json({ game_linked: game.connected, game: game.info, voice_agent: config.voiceAgent, calls: [...calls.active, ...voice.active] });
   });
+
+  // The ship's tools for any MCP client (Streamable HTTP, stateless JSON).
+  app.post("/mcp", tokenOnly, (req, res) => handleMcp(req, res, game, log));
+  app.all("/mcp", (req, res) => res.set("Allow", "POST").status(405).end());
 
   app.post("/api/game/:cmd", tokenOnly, async (req, res) => {
     try {
@@ -116,15 +146,25 @@ export function createApp(config, { log = console } = {}) {
       socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
       socket.destroy();
     };
-    if (pathname === "/twilio/relay") {
+    if (pathname === "/twilio/relay" || pathname === "/twilio/media") {
       if (config.validateTwilio && !validRelaySignature(config, req)) {
-        log.warn("rejected unsigned relay socket");
+        log.warn(`rejected unsigned ${pathname} socket`);
         return refuse("403 Forbidden");
       }
-      relayWss.handleUpgrade(req, socket, head, (ws) => calls.attach(ws));
+      // handleUpgrade does not emit "connection" itself; emitting it starts
+      // the heartbeat's pong tracking (below), without which every socket was
+      // dropped as dead after two heartbeats.
+      relayWss.handleUpgrade(req, socket, head, (ws) => {
+        relayWss.emit("connection", ws, req);
+        if (pathname === "/twilio/media") voice.attach(ws);
+        else calls.attach(ws);
+      });
     } else if (pathname === "/game/link") {
       if (!checkBearer(req.headers.authorization, config.gameLinkToken)) return refuse("401 Unauthorized");
-      linkWss.handleUpgrade(req, socket, head, (ws) => game.attach(ws));
+      linkWss.handleUpgrade(req, socket, head, (ws) => {
+        linkWss.emit("connection", ws, req);
+        game.attach(ws);
+      });
     } else {
       refuse("404 Not Found");
     }
@@ -142,7 +182,7 @@ export function createApp(config, { log = console } = {}) {
         ws.ping();
       }
     }
-  }, 25_000);
+  }, heartbeatMs);
   for (const wss of [relayWss, linkWss]) {
     wss.on("connection", (ws) => {
       ws.isAlive = true;
@@ -151,7 +191,7 @@ export function createApp(config, { log = console } = {}) {
   }
   server.on("close", () => clearInterval(heartbeat));
 
-  return { server, app, game, calls };
+  return { server, app, game, calls, voice };
 }
 
 export function wsUrl(base, path) {

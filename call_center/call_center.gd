@@ -1,15 +1,23 @@
 extends Node
 ## The call centre: Sub-Dimensional Support, the AI help line a stranded pilot
-## phones. One node, normally at /root/CallCenter (see boot.gd), that sits
-## beside the game rather than inside it:
+## phones. One node at /root/CallCenter (McpBridge starts it with
+## `-- --call-center`; see call_center/run.sh) that sits beside the game
+## rather than inside it:
 ##
 ## - finds the game scene by itself (the current scene, or a node in it, that
 ##   offers `call_center_adapter()` or looks like the explorer's Main) and
 ##   flies the ship only through a ship adapter (adapter/ship_adapter.gd);
-## - shows its own HUD: the diagnostics log, the call panel and transcript,
-##   brackets on what the agent talks about;
-## - serves the ship's MCP tools to the support-line relay (mcp/), which
-##   connects the phone call (Twilio) to the voice agent (OpenAI Realtime).
+## - shows its own HUD: the diagnostics log, ship status, the support-line
+##   panel and brackets on whatever the agent talks about (the conversation
+##   itself is in McpBridge's pilot chat);
+## - adds the ship's tools and events to McpBridge as commands, which the
+##   phone link carries to the phone server's voice agent and mcp/server.mjs
+##   offers to Claude:
+##
+##     ship_tools                 -> {tools: [{name, description, inputSchema}]}
+##     ship_tool {name, arguments} -> the tool's result {ok, message, ...}
+##     ship_events {after, timeout} -> {events: [{id, kind, summary, notify_agent, ...}], last_id}
+##     call_center {support_number, call_state, agent_name, link_up} -> {status}
 ##
 ## The game never has to know it is here. When it wants to, it talks to
 ## /root/CallCenter through the API below (all optional), e.g.
@@ -36,7 +44,6 @@ const IssueLog := preload("res://call_center/log/issue_log.gd")
 const IssueCatalogue := preload("res://call_center/log/issue_catalogue.gd")
 const Hud := preload("res://call_center/hud/hud.gd")
 const ShipTools := preload("res://call_center/mcp/ship_tools.gd")
-const ShipLink := preload("res://call_center/mcp/ship_link.gd")
 const ExplorerAdapter := preload("res://call_center/adapter/explorer_adapter.gd")
 const DemoMission := preload("res://call_center/demo/demo_mission.gd")
 
@@ -47,14 +54,15 @@ const EXIT_RADIUS_M := 60.0
 const FIRST_PILOT_ISSUE := 45.0
 const PILOT_ISSUE_GAP := Vector2(80.0, 130.0)
 const FEATURE_ID_PATTERN := "#?\\b(\\d{4})\\b"
+const MAX_EVENTS := 200
+## The McpBridge commands this adds.
+const COMMANDS := ["ship_tools", "ship_tool", "ship_events", "call_center"]
 
 ## Begin (HUD in, crash report) by itself this long after a game appears. A
 ## game with its own intro sets auto_begin = false and calls begin() itself.
 @export var auto_begin := true
 @export var begin_delay := 1.5
 @export var max_random_pilot_issues := 3
-## Off in tests: the ship link opens no socket.
-@export var link_enabled := true
 ## Load the sample escape route and its rules (demo/).
 @export var demo := false
 
@@ -62,7 +70,6 @@ var features := Features.new()
 var issues: IssueLog
 var hud: Hud
 var tools: ShipTools
-var link: ShipLink
 ## The ship adapter while a game is up, else null.
 var adapter: Node
 ## Set by the game (lock_exit) while the way out is closed; the autopilot
@@ -70,7 +77,14 @@ var adapter: Node
 var exit_lock_reason := ""
 ## name -> {definition, handler}; see register_tool().
 var custom_tools := {}
+## The support line as the phone link reports it (the call_center command).
+var link_up := false
+var call_state := "idle"
 
+var _bridge: Node
+var _chat_listener := false      # holding one of the pilot chat's listeners
+var _events: Array = []          # {id, kind, summary, notify_agent, ...}
+var _next_event_id := 1
 var _game: Node
 var _owns_adapter := false
 var _begun := false
@@ -79,7 +93,6 @@ var _pilot_issue_wait := FIRST_PILOT_ISSUE
 var _pilot_issues_raised := 0
 var _at_exit := false
 var _id_regex := RegEx.new()
-var _mentioned := {}
 
 
 func _ready() -> void:
@@ -94,26 +107,41 @@ func _ready() -> void:
 	hud.setup(features, issues)
 	hud.set_adapter(null)
 	tools = ShipTools.new(self)
-	link = ShipLink.new()
-	link.name = "ShipLink"
-	link.tools = tools
-	link.enabled = link_enabled
-	add_child(link)
 	issues.intro_script_finished.connect(_on_crash_report_done)
 	issues.pilot_input_required.connect(_on_pilot_input_required)
 	issues.issue_resolved.connect(func(issue: Dictionary, answer: String, by: String):
 		pilot_issue_resolved.emit(issue["issue_id"], answer, by))
-	link.connection_changed.connect(_on_link_changed)
-	link.config_received.connect(func(c: Dictionary): hud.set_support_number(str(c.get("support_number", ""))))
-	link.call_state_changed.connect(_on_call_state)
-	link.transcript_received.connect(_on_transcript)
+	_attach_bridge()
 	if demo:
 		var d := DemoMission.new()
 		d.name = "DemoMission"
 		add_child(d)
 		d.setup(self)
-	if link_enabled:
-		link.start()
+
+
+func _exit_tree() -> void:
+	if _bridge != null and is_instance_valid(_bridge):
+		_hold_chat_listener(false)
+		for cmd in COMMANDS:
+			_bridge.unregister_command(cmd)
+		var chat: Object = _bridge.get("chat")
+		if chat != null and chat.message_added.is_connected(_on_chat_message):
+			chat.message_added.disconnect(_on_chat_message)
+
+
+## Hook into McpBridge (the game's command socket and pilot chat), if present.
+func _attach_bridge() -> void:
+	_bridge = get_node_or_null(^"/root/McpBridge")
+	if _bridge == null or not _bridge.has_method("register_command"):
+		_bridge = null
+		return
+	_bridge.register_command("ship_tools", func(_a: Dictionary) -> Dictionary: return {"tools": tools.definitions()})
+	_bridge.register_command("ship_tool", _cmd_ship_tool)
+	_bridge.register_command("ship_events", _cmd_ship_events)
+	_bridge.register_command("call_center", _cmd_call_center)
+	var chat: Object = _bridge.get("chat")
+	if chat != null:
+		chat.message_added.connect(_on_chat_message)
 
 
 # ------------------------------------------------------------- the game API
@@ -127,7 +155,7 @@ func begin() -> void:
 	_begin_wait = -1.0
 	hud.reveal()
 	issues.play_intro_script()
-	link.send_event("stage", "The ship has landed in fractal space after the failed punch jump.", {"stage": "stranded"}, false)
+	notify_agent("stage", "The ship has landed in fractal space after the failed punch jump.", {"stage": "stranded"}, false)
 
 
 func has_begun() -> bool:
@@ -163,10 +191,23 @@ func unlock_exit() -> void:
 	exit_lock_reason = ""
 
 
-## Put something into the call: the agent hears `summary` as a SHIP EVENT and
-## reacts. notify = false only informs the relay (no reaction).
+## Put something into the call: the voice agent hears `summary` as a SHIP
+## EVENT and reacts. notify = false only informs the phone server.
 func notify_agent(kind: String, summary: String, data: Dictionary = {}, notify := true) -> void:
-	link.send_event(kind, summary, data, notify)
+	var ev := data.duplicate()
+	ev["id"] = _next_event_id
+	ev["kind"] = kind
+	ev["summary"] = summary
+	ev["notify_agent"] = notify
+	_next_event_id += 1
+	_events.append(ev)
+	if _events.size() > MAX_EVENTS:
+		_events.pop_front()
+
+
+## Ship events after `after` (for the ship_events command).
+func events_after(after: int) -> Array:
+	return _events.filter(func(e): return e["id"] > after)
 
 
 ## Ask the pilot something through the agent. `outcome` formats their answer
@@ -192,15 +233,61 @@ func highlight(id: Variant, label := "", seconds := 12.0) -> void:
 
 ## Give the agent a new tool. `input_schema` is a JSON Schema object;
 ## `handler` takes the arguments Dictionary and returns {ok, message, ...}.
+## The phone server hears "tools_changed" and updates a live call.
 func register_tool(tool_name: String, description: String, input_schema: Dictionary, handler: Callable) -> void:
 	custom_tools[tool_name] = {"handler": handler, "definition": {
 		"name": tool_name, "description": description, "inputSchema": input_schema}}
-	link.notify_tools_changed()
+	notify_agent("tools_changed", "The ship's tool list changed.", {}, false)
 
 
 func unregister_tool(tool_name: String) -> void:
 	if custom_tools.erase(tool_name):
-		link.notify_tools_changed()
+		notify_agent("tools_changed", "The ship's tool list changed.", {}, false)
+
+
+# ------------------------------------------------------------- bridge commands
+
+func _cmd_ship_tool(args: Dictionary) -> Dictionary:
+	var tool_name := str(args.get("name", ""))
+	if not tools.has_tool(tool_name):
+		return {"error": "unknown ship tool '%s'" % tool_name}
+	var a: Variant = args.get("arguments", {})
+	return tools.call_tool(tool_name, a if a is Dictionary else {})
+
+
+## Long-poll: events after `after`, waiting up to `timeout` seconds for one.
+## Without `after` it answers at once with just the newest id.
+func _cmd_ship_events(args: Dictionary) -> Dictionary:
+	var last_id: int = _events[-1]["id"] if not _events.is_empty() else 0
+	if not args.has("after"):
+		return {"events": [], "last_id": last_id}
+	var after := int(args["after"])
+	var timeout := clampf(float(args.get("timeout", 20.0)), 0.0, 120.0)
+	var fresh := events_after(after)
+	var waited := 0.0
+	while fresh.is_empty() and waited < timeout and is_inside_tree():
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+		fresh = events_after(after)
+	last_id = _events[-1]["id"] if not _events.is_empty() else 0
+	return {"events": fresh, "last_id": maxi(last_id, after)}
+
+
+## The phone side reports in: the number to show, the call, the link.
+func _cmd_call_center(args: Dictionary) -> Dictionary:
+	if args.has("support_number"):
+		hud.set_support_number(str(args["support_number"]))
+	if args.has("link_up"):
+		_set_link_up(bool(args["link_up"]))
+	if args.has("call_state"):
+		_set_call_state(str(args["call_state"]), args)
+	return status()
+
+
+func status() -> Dictionary:
+	return {"begun": _begun, "in_flight": adapter != null, "call_state": call_state,
+		"link_up": link_up, "features": features.all().size(), "open_issues": issues.pending().size(),
+		"exit_locked": exit_lock_reason != ""}
 
 
 # ------------------------------------------------------------- finding the game
@@ -211,9 +298,7 @@ func _process(delta: float) -> void:
 		_detach()
 		if scene != null:
 			_attach(scene)
-	if adapter == null or not _begun and _begin_wait < 0.0:
-		return
-	if get_tree().paused:
+	if adapter == null or (not _begun and _begin_wait < 0.0) or get_tree().paused:
 		return
 	if not _begun:
 		_begin_wait -= delta
@@ -297,7 +382,7 @@ func _check_positions() -> void:
 			if not nxt.is_empty():
 				var rel := Features.relative(adapter.pose(), nxt["pos"], m)
 				summary += " Next on the way out: #%s %s, %d m %s." % [nxt["id"], nxt["name"], rel["range_m"], rel["direction"]]
-			link.send_event("waypoint_reached", summary, {"feature_id": "#" + id,
+			notify_agent("waypoint_reached", summary, {"feature_id": "#" + id,
 				"next_feature_id": "" if nxt.is_empty() else "#" + nxt["id"]})
 			arrived.emit(id)
 	var ex := features.exit()
@@ -320,21 +405,21 @@ func _on_maneuver_finished(kind: String, info: Dictionary) -> void:
 	var summary := "Autopilot arrived at #%s %s." % [f["id"], f["name"]]
 	if f["kind"] == "exit" and exit_lock_reason != "":
 		summary += " The ship is holding outside it: it is locked (%s)." % exit_lock_reason
-	link.send_event("arrived", summary, {"feature_id": "#" + f["id"]})
+	notify_agent("arrived", summary, {"feature_id": "#" + f["id"]})
 
 
 func _on_manual_override() -> void:
 	issues.add("Manual override: autopilot disengaged", "info")
-	link.send_event("manual_override", "The pilot took manual control with the flight keys; the autopilot has disengaged.")
+	notify_agent("manual_override", "The pilot took manual control with the flight keys; the autopilot has disengaged.")
 
 
 func _on_crash_report_done() -> void:
 	issues.auto_running = true
-	link.send_event("stage", "The crash report is done; the ship is waiting for the pilot to call support.", {"stage": "awaiting_call"}, false)
-	if link.connected or not link.enabled:
+	notify_agent("stage", "The crash report is done; the ship is waiting for the pilot to call support.", {"stage": "awaiting_call"}, false)
+	if link_up:
 		issues.add("Support line open. Awaiting pilot's call.", "system")
 	else:
-		issues.add("Support relay unreachable at %s. Retrying..." % link.url, "system")
+		issues.add("Support line not linked yet: start the phone link (server/: npm run link).", "system")
 	hud.flash("call_panel")
 
 
@@ -343,19 +428,26 @@ func _on_pilot_input_required(issue: Dictionary) -> void:
 		issue["issue_id"], issue["problem"], issue["question"]]
 	if issue["blocks_exit"]:
 		summary += " The exit will not open until this is resolved."
-	link.send_event("pilot_input_required", summary, issue)
+	notify_agent("pilot_input_required", summary, issue)
 	hud.flash("diagnostics_log")
 
 
 # ------------------------------------------------------------- the line
 
-func _on_link_changed(up: bool) -> void:
+func _set_link_up(up: bool) -> void:
+	if up == link_up:
+		return
+	link_up = up
 	hud.set_link_state(up)
 	if _begun:
-		issues.add("Support relay %s" % ("connected" if up else "lost; retrying"), "system")
+		issues.add("Support line %s" % ("linked" if up else "lost; retrying"), "system")
+	_hold_chat_listener(link_up and call_state == "connected")
 
 
-func _on_call_state(state: String, info: Dictionary) -> void:
+func _set_call_state(state: String, info: Dictionary) -> void:
+	if state == call_state and state != "connected":
+		return
+	call_state = state
 	hud.set_call_state(state, info)
 	match state:
 		"ringing":
@@ -368,28 +460,35 @@ func _on_call_state(state: String, info: Dictionary) -> void:
 		"ended":
 			issues.add("Support call ended", "system")
 			issues.set_agent_available(false)
+	_hold_chat_listener(link_up and call_state == "connected")
 	call_state_changed.emit(state, info)
 
 
-## Show the line and highlight any feature it names ("#2312", "2312" or its
-## name), once per transcript item.
-func _on_transcript(role: String, item_id: String, text: String, final: bool) -> void:
-	hud.show_transcript(role, item_id, text)
-	if role != "agent":
-		if final:
-			pilot_said.emit(text)
+## While a call is up, the phone agent hears what the pilot types (the link
+## passes it on), so the pilot chat shows an agent listening.
+func _hold_chat_listener(on: bool) -> void:
+	if on == _chat_listener or _bridge == null or not is_instance_valid(_bridge):
 		return
-	if final:
-		agent_said.emit(text)
-	var seen: Dictionary = _mentioned.get(item_id, {})
-	for id in mentioned_features(text):
-		if not seen.has(id):
-			seen[id] = true
-			hud.highlight_feature(id, "", 12.0)
-	if text.to_lower().contains("diagnostic") and not seen.has("log"):
-		seen["log"] = true
-		hud.flash("diagnostics_log")
-	_mentioned[item_id] = seen
+	var chat: Object = _bridge.get("chat")
+	if chat == null:
+		return
+	_chat_listener = on
+	chat.listeners += 1 if on else -1
+
+
+## A pilot-chat message (typed, voice, the phone agent, or Claude piloting):
+## highlight any feature the agent names, by "#2312", "2312" or name.
+func _on_chat_message(m: Dictionary) -> void:
+	var text := str(m.get("text", ""))
+	match str(m.get("role", "")):
+		"agent":
+			agent_said.emit(text)
+			for id in mentioned_features(text):
+				hud.highlight_feature(id, "", 12.0)
+			if text.to_lower().contains("diagnostic"):
+				hud.flash("diagnostics_log")
+		"human":
+			pilot_said.emit(text)
 
 
 ## The feature ids a line of speech refers to, by number or by name.

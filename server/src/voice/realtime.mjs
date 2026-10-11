@@ -178,7 +178,15 @@ export class RealtimeSession extends EventEmitter {
         this.emit('transcript', { role: 'agent', itemId: ev.item_id, text, final: true });
         break;
       }
+      case 'conversation.item.input_audio_transcription.delta': {
+        const key = `in:${ev.item_id}`;
+        const text = (this._transcripts.get(key) ?? '') + (ev.delta ?? '');
+        this._transcripts.set(key, text);
+        this.emit('transcript', { role: 'caller', itemId: ev.item_id, text: text.trim(), final: false });
+        break;
+      }
       case 'conversation.item.input_audio_transcription.completed':
+        this._transcripts.delete(`in:${ev.item_id}`);
         this.emit('transcript', { role: 'caller', itemId: ev.item_id, text: (ev.transcript ?? '').trim(), final: true });
         break;
       case 'input_audio_buffer.speech_started':

@@ -152,13 +152,19 @@ server.registerTool(
       "for a person to watch. Does nothing if the game is already running.",
     inputSchema: {
       foreground: z.boolean().optional().describe("Normal, focused window instead of parked (default false)"),
+      call_center: z
+        .enum(["off", "on", "demo"])
+        .optional()
+        .describe("Start the call centre (call_center/) too: its HUD, diagnostics log and ship tools; 'demo' adds its sample escape route (default off)"),
     },
   },
-  async ({ foreground = false } = {}) => {
+  async ({ foreground = false, call_center = "off" } = {}) => {
     try {
       return json({ already_running: true, ...(await call("status")) });
     } catch {}
     const gameArgs = ["--play", foreground ? "--foreground-window" : "--background-window"];
+    if (call_center === "on") gameArgs.push("--call-center");
+    if (call_center === "demo") gameArgs.push("--call-center-demo");
     const child = spawn(path.join(REPO, "tools", "launch.sh"), ["--", ...gameArgs], {
       cwd: REPO,
       detached: true,
@@ -408,6 +414,59 @@ server.registerPrompt(
       },
     ],
   }),
+);
+
+// ---------------------------------------------------------------- the call centre's ship
+
+server.registerTool(
+  "ship_tools",
+  {
+    description:
+      "The call centre's ship tools (when the game runs with it: launch_game {call_center: 'on'}): " +
+      "high-level controls built for a support agent, each with its JSON input schema: get_ship_status, " +
+      "scan_surroundings (named Mandelbrought characteristics with bearings), highlight, turn_ship, thrust, " +
+      "fly_to_feature (a collision-checked autopilot), resolve_issue (answer a diagnostics question with " +
+      "the person's words), post_to_log, and any the game adds. Run one with `ship`.",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      return json(await call("ship_tools"));
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+server.registerTool(
+  "ship",
+  {
+    description: "Run one of the call centre's ship tools (see ship_tools), e.g. {name: 'fly_to_feature', arguments: {feature_id: '#2312'}}.",
+    inputSchema: {
+      name: z.string(),
+      arguments: z.record(z.string(), z.any()).optional(),
+    },
+  },
+  async ({ name, arguments: args = {} }) => {
+    try {
+      const r = await call("ship_tool", { name, arguments: args });
+      return { ...json(r), isError: r.ok === false };
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+relay(
+  "ship_events",
+  "ship_events",
+  "What the call centre has to tell an agent: waypoints reached, diagnostics questions for the person " +
+    "(answer them with ship resolve_issue), the escape. Without `after` returns just the newest id; with it, " +
+    "waits up to `timeout` seconds for events after that id.",
+  {
+    after: z.number().int().optional(),
+    timeout: z.number().min(0).max(25).optional().describe("Seconds to wait (default 20, at most 25)"),
+  },
 );
 
 // ---------------------------------------------------------------- drawing

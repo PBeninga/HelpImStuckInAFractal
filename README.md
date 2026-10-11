@@ -380,10 +380,19 @@ bridge socket with `chat_post {text, source: "voice"}` for a finished utterance
 (shown tagged "(voice)") and `chat_draft {text}` for the live transcript, which
 fills the input box as you speak.
 
-**Phone.** `server/` takes this to a phone call: a Twilio number answered by
-ConversationRelay, a server on Railway, and a link on your machine that posts
-the caller's words with `chat_post` and speaks the agent's replies (it follows
-the chat with `chat_watch`). See `server/README.md`.
+**Phone.** `server/` takes this to a phone call: a Twilio number, a server on
+Railway, and a link on your machine. The call is answered either by the call
+centre's OpenAI Realtime voice agent (`VOICE_AGENT=openai`, which flies the
+ship with the call centre's tools) or by ConversationRelay into the pilot chat
+(the link posts the caller's words with `chat_post` and speaks the agent's
+replies, following the chat with `chat_watch`). See `server/README.md`.
+
+**The call centre.** `call_center/` is the help line's in-game half, apart from
+the game: the crash report and self-resolving diagnostics log, the support
+panel, brackets on whatever the agent names, and high-level ship tools
+(`ship_tools`, `ship_tool`, `ship_events`) that McpBridge serves. Run the game
+with it via `call_center/run.sh` (`--demo` for its sample escape route); see
+`call_center/README.md`.
 
 **Launching from a Claude session.** `launch_game` runs `tools/launch.sh -- --play
 --background-window`, the same way Spellgraft launches: the window is parked
