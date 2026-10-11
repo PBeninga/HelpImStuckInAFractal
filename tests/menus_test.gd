@@ -22,8 +22,7 @@ func run() -> void:
 	check(title != null, "the title reads Icebox Nav")
 	if title:
 		check(title.get_theme_font_size("font_size") >= 64, "in big text")
-	check_eq(menu.story_button.text, "Engage Hyperdrive", "Engage Hyperdrive button (story mode)")
-	check_eq(menu.play_button.text, "Free Explore", "Free Explore button (the explorer)")
+	check_eq(menu.play_button.text, "Play Game", "Play Game button")
 	check_eq(menu.settings_button.text, "Settings", "Settings button")
 	check_eq(menu.quit_button.text, "Quit", "Quit button")
 	check(not menu.settings_menu.visible, "settings start hidden")
