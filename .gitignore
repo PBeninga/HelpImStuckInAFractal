@@ -34,3 +34,7 @@ screenshots/
 
 # Agent worktrees kept inside the repo
 .claude/worktrees/
+
+# Support-line relay (server/): dependencies and secrets
+server/node_modules/
+server/.env
