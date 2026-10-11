@@ -26,13 +26,6 @@ uniform int fine_steps;
 // into fog_color on the way there. fog_dist 0 is no fog.
 uniform float fog_dist;
 uniform vec3 fog_color;
-// The story mode's exit rift: a glowing disc at rift_pos facing rift_normal,
-// composited over the march (the fractal in front of it occludes it). Off by
-// default, so the explorer's picture is unchanged.
-uniform bool rift_on;
-uniform vec3 rift_pos;
-uniform vec3 rift_normal;
-uniform float rift_radius;
 
 // --- shape uniforms (names == catalogue ids) ---
 uniform float box_scale;
@@ -242,44 +235,6 @@ vec2 box_intersect(vec3 ro, vec3 rd, float half_size) {
 	return vec2(t_enter, t_exit);
 }
 
-// The rift's disc colour at normalised radius r and angle a: a bright rim, a
-// swirl of cyan and magenta arms, and a white core.
-vec3 rift_disc(float r, float a) {
-	float arms = 0.5 + 0.5 * sin(5.0 * a + 14.0 * r);
-	vec3 swirl = mix(vec3(0.15, 0.85, 1.0), vec3(1.0, 0.25, 0.9), arms);
-	float core = exp(-r * r * 9.0);
-	float rim = exp(-pow((r - 0.92) / 0.06, 2.0));
-	return swirl * (0.55 + 0.45 * (1.0 - r)) + vec3(core) + vec3(0.7, 0.95, 1.0) * rim * 1.5;
-}
-
-// Composite the rift over `col`, where the march hit at ray distance hit_t
-// (1e20 for a miss). The disc only shows where it is nearer than the hit; the
-// halo is the ray's closest approach to the rift's centre.
-vec3 rift_composite(vec3 col, vec3 dir, float hit_t) {
-	vec3 n = normalize(rift_normal);
-	vec3 rel = rift_pos - eye;
-	float tc = dot(rel, dir);
-	if (tc > 0.0 && tc < hit_t) {
-		float d = length(eye + dir * tc - rift_pos) / max(rift_radius, 1e-6);
-		col += vec3(0.35, 0.8, 1.0) * exp(-d * d * 0.35) * 0.9;
-	}
-	float denom = dot(dir, n);
-	if (abs(denom) > 1e-5) {
-		float t_d = dot(rel, n) / denom;
-		if (t_d > 0.0 && t_d < hit_t) {
-			vec3 q = eye + dir * t_d - rift_pos;
-			float r = length(q) / max(rift_radius, 1e-6);
-			if (r < 1.0) {
-				vec3 u = normalize(abs(n.z) < 0.9 ? cross(n, vec3(0.0, 0.0, 1.0)) : cross(n, vec3(1.0, 0.0, 0.0)));
-				vec3 v = cross(n, u);
-				float a = atan(dot(q, v), dot(q, u));
-				col = mix(col, rift_disc(r, a), smoothstep(1.0, 0.97, r));
-			}
-		}
-	}
-	return col;
-}
-
 void fragment() {
 	vec2 ndc = (UV - 0.5) * 2.0;
 	ndc.y = -ndc.y;  // +y up
@@ -292,7 +247,6 @@ void fragment() {
 	// into it without a seam.
 	if (fog_dist > 0.0) { bg = fog_color; }
 
-	float hit_t = 1e20;   // ray distance of the surface hit; 1e20 is a miss
 	vec2 tb = box_intersect(eye, dir, box_half);
 	if (tb.y < max(tb.x, 0.0)) {
 		COLOR = vec4(bg, 1.0);
@@ -332,7 +286,6 @@ void fragment() {
 		if (left_cube) {
 			COLOR = vec4(bg, 1.0);  // the only misses: leaving the cube, or reaching the fog
 		} else {
-			hit_t = total;
 			// Step-count shading stays on the original 128-step scale whatever the
 			// budget, so a ray that hits looks the same; one that ran out is 1.
 			float ce = n2 == fine_steps ? 1.0 : min(float(n1 + n2) / 128.0, 1.0);
@@ -400,8 +353,5 @@ void fragment() {
 				COLOR = vec4(mix(noise_tint(col, v), fog_color, fog_amount(total)), 1.0);
 			}
 		}
-	}
-	if (rift_on) {
-		COLOR.rgb = rift_composite(COLOR.rgb, dir, hit_t);
 	}
 }

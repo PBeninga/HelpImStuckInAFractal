@@ -12,8 +12,6 @@ const SPRINT_MULTIPLIER := 4.0               # Shift (the "sprint" action) scale
 var enabled := false
 ## The load shedder's cap on travel speed: 1.0 normally, lower at its top level.
 var speed_limit := 1.0
-## Story mode holds the controls during its intro and outro: no look, no move.
-var input_locked := false
 
 var _params: FractalParams
 var _camera: CameraState
@@ -36,7 +34,7 @@ func set_text_viewports(viewports: Array) -> void:
 ## Returns true when the event was consumed. Look only while captured; wheel
 ## adjusts the speed factor.
 func handle_event(event: InputEvent) -> bool:
-	if not enabled or input_locked:
+	if not enabled:
 		return false
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		# macOS sends zero-delta motion while a captured mouse rests; apply_look
@@ -54,7 +52,7 @@ func handle_event(event: InputEvent) -> bool:
 
 
 func _physics_process(delta: float) -> void:
-	if not enabled or input_locked:
+	if not enabled:
 		return
 	var dir := move_direction()
 	if dir.length() == 0.0:

@@ -34,8 +34,6 @@ var _base_shader: Shader
 var _base_code := ""
 var _noise_graph: NoiseGraph
 var _shed: Dictionary = LoadShedder.settings(0)
-## The story mode's exit rift (see set_rift); off in the explorer.
-var _rift := {"on": false, "pos": Vector3.ZERO, "normal": Vector3(1, 0, 0), "radius": 0.1}
 
 
 func _ready() -> void:
@@ -190,18 +188,6 @@ func capture() -> Image:
 	return _viewport.get_texture().get_image()
 
 
-## Show (or hide) the exit rift: a glowing disc of `radius` at `pos` facing
-## `normal`, which the fractal in front of it occludes.
-func set_rift(on: bool, pos: Vector3 = Vector3.ZERO, normal: Vector3 = Vector3(1, 0, 0), radius: float = 0.1) -> void:
-	_rift = {"on": on, "pos": pos, "normal": normal, "radius": radius}
-	_push_rift()
-	request_frame()
-
-
-func rift() -> Dictionary:
-	return _rift.duplicate()
-
-
 func set_render_scale(s: float) -> void:
 	render_scale = clampf(s, FractalParams.RENDER_SCALE_FLOOR, 1.0)
 	_apply_size()
@@ -336,17 +322,7 @@ func _push_params() -> void:
 	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
 	_material.set_shader_parameter("fog_dist", _shed["fog"])
 	_material.set_shader_parameter("fog_color", _params.fog_color())
-	_push_rift()
 	_push_near()
-
-
-func _push_rift() -> void:
-	if _material == null:
-		return
-	_material.set_shader_parameter("rift_on", _rift["on"])
-	_material.set_shader_parameter("rift_pos", _rift["pos"])
-	_material.set_shader_parameter("rift_normal", _rift["normal"])
-	_material.set_shader_parameter("rift_radius", _rift["radius"])
 
 
 func _push_camera() -> void:

@@ -12,8 +12,7 @@ var BASE_UNIFORMS: Array = []
 func _base_uniforms() -> Array:
 	var out: Array = ["eye", "cam_right", "cam_up", "cam_forward", "tan_half_fov",
 		"aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
-		"coarse_steps", "fine_steps", "fog_dist", "fog_color",
-	"rift_on", "rift_pos", "rift_normal", "rift_radius"]
+		"coarse_steps", "fine_steps", "fog_dist", "fog_color"]
 	for id in MandelboxShape.catalogue_ids():
 		out.append(String(id))
 	return out

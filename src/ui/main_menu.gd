@@ -1,16 +1,12 @@
 class_name MainMenu
 extends Control
-## The title screen: "Icebox Nav" over Engage Hyperdrive (story mode: the
-## failed jump and the support call), Free Explore (the explorer), Settings and
-## Quit. Settings swaps the list for the shared SettingsMenu.
+## The title screen: "Icebox Nav" over Play Game, Settings and Quit. Settings
+## swaps the list for the shared SettingsMenu. Play loads the explorer.
 
 const GAME_SCENE := "res://src/main.tscn"
-const STORY_SCENE := "res://src/story/story.tscn"
 ## The main window's size in points (logical units); see UiScale.
 const WINDOW_SIZE := Vector2i(1280, 800)
 
-var story_button: Button
-## Free Explore: the explorer without the story.
 var play_button: Button
 var settings_button: Button
 var quit_button: Button
@@ -45,18 +41,11 @@ func _ready() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 96)
 	_list.add_child(title)
-	var tagline := Label.new()
-	tagline.text = "Help, I'm stuck in a fractal"
-	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tagline.add_theme_font_size_override("font_size", 22)
-	tagline.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
-	_list.add_child(tagline)
 	_list.add_child(Control.new())   # a gap under the title
-	story_button = MenuButtons.make("Engage Hyperdrive")
-	play_button = MenuButtons.make("Free Explore")
+	play_button = MenuButtons.make("Play Game")
 	settings_button = MenuButtons.make("Settings")
 	quit_button = MenuButtons.make("Quit")
-	for b in [story_button, play_button, settings_button, quit_button]:
+	for b in [play_button, settings_button, quit_button]:
 		_list.add_child(b)
 	# A browser tab cannot be quit from inside the page.
 	quit_button.visible = not OS.has_feature("web")
@@ -66,20 +55,15 @@ func _ready() -> void:
 	settings_menu.visible = false
 	stack.add_child(settings_menu)
 
-	story_button.pressed.connect(play_story)
 	play_button.pressed.connect(play)
 	settings_button.pressed.connect(show_settings.bind(true))
 	quit_button.pressed.connect(func(): get_tree().quit())
 	settings_menu.back.connect(show_settings.bind(false))
-	story_button.grab_focus.call_deferred()
+	play_button.grab_focus.call_deferred()
 
 
 func play() -> void:
 	get_tree().change_scene_to_file(GAME_SCENE)
-
-
-func play_story() -> void:
-	get_tree().change_scene_to_file(STORY_SCENE)
 
 
 func show_settings(on: bool) -> void:
