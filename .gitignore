@@ -34,3 +34,6 @@ screenshots/
 
 # Agent worktrees kept inside the repo
 .claude/worktrees/
+
+# Local secrets
+/key
