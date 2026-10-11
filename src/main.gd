@@ -4,7 +4,7 @@ extends Node
 ## child, selects the active camera from camera_mode, owns the mouse capture,
 ## and is the single mouse-event dispatcher. Each frame it resolves the shape
 ## table + axis values + clock into the params every consumer reads. Saving and
-## loading a view: WorkspaceFiles picks the file, Workspace does the reading and
+## loading a level: WorkspaceFiles picks the file, Workspace does the reading and
 ## writing, the console's View tab shows the result. Escape only frees the
 ## mouse; a Ctrl tap opens the console, whose View tab holds Save / Load, the
 ## camera mode, the renderer and Back to Menu. Reset camera (in the Movement
@@ -84,7 +84,7 @@ func _ready() -> void:
 
 	_table = AttributeTable.new(ShapeCatalogue.specs())
 	_keymap = Keymap.new()
-	_keymap.load_file()   # saves/keymap.json, or the shipped default
+	_keymap.reset_to_default()   # the shipped default (E / Q) until a level is loaded
 
 	view.setup(params, camera)
 	governor.setup(params, view)
@@ -366,8 +366,8 @@ func _build_workspace_files() -> void:
 	_files = WorkspaceFiles.new()
 	_files.name = "WorkspaceFiles"
 	add_child(_files)
-	_files.save_to.connect(save_view_to)
-	_files.load_from.connect(load_view_from)
+	_files.save_to.connect(save_level_to)
+	_files.load_from.connect(load_level_from)
 	_files.current_changed.connect(_on_file_current_changed)
 	_files.prompting.connect(_on_prompting)
 	var directory := WorkspaceFiles.directory()
@@ -404,9 +404,9 @@ func _resolve_once() -> void:
 
 # ------------------------------------------------------------- save / load
 
-func save_view_to(path: String) -> void:
+func save_level_to(path: String) -> void:
 	var noise: Dictionary = _noise.to_dict() if _noise != null else {}
-	var err := Workspace.save_file(path, _table, _keymap.axes(), params, camera, noise)
+	var err := Workspace.save_file(path, _table, _keymap, params, camera, noise)
 	if err != OK:
 		_report("Save failed (error %d): %s" % [err, path])
 		return
@@ -415,9 +415,9 @@ func save_view_to(path: String) -> void:
 	_report("Saved %s" % path.get_file())
 
 
-func load_view_from(path: String) -> void:
+func load_level_from(path: String) -> void:
 	_loading = true
-	var result := Workspace.load_file(path, _table, _keymap.axes(), params, camera)
+	var result := Workspace.load_file(path, _table, _keymap, params, camera)
 	_loading = false
 	params.mouse_sensitivity = Settings.mouse_sensitivity
 	var warnings: Array = result["warnings"]
@@ -553,6 +553,12 @@ func _on_window_key(event: InputEventKey) -> void:
 
 func _active_camera() -> Node:
 	return fly if params.camera_mode == FractalParams.CameraMode.FLY else _orbit
+
+
+## Every key press first lets go of a modifier the OS no longer holds (Cmd and
+## Shift left stuck by Cmd+Shift+5, which would stop WASD), before anything reads it.
+func _input(event: InputEvent) -> void:
+	StaleModifiers.release(event)
 
 
 # The only mouse dispatcher: Ctrl tap -> Escape/screenshot -> noise -> marker -> camera.

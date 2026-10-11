@@ -69,6 +69,17 @@ func run() -> void:
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "no fog at level 0")
 	var base_prec: float = mat.get_shader_parameter("precision")
 	var base_coarse: int = mat.get_shader_parameter("coarse_steps")
+
+	# the shadow march's budget sheds with the ladder: 48, 24, 0
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), FractalParams.SHADOW_STEPS,
+		"level 0 pushes the full 48-step shadow march")
+	view.set_load_level(1)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), 24, "level 1 halves the shadow march to 24")
+	view.set_load_level(2)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), 0, "level 2 skips the shadow march")
+	view.set_load_level(0)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), FractalParams.SHADOW_STEPS, "and back to 48 at level 0")
+
 	view.set_load_level(3)
 	var l3 := LoadShedder.settings(3)
 	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "level 3 pushes its fog distance")
@@ -84,8 +95,47 @@ func run() -> void:
 	check_eq(int(mat.get_shader_parameter("coarse_steps")) + int(mat.get_shader_parameter("fine_steps")),
 		FractalParams.MAX_STEPS_MIN, "the shed budget never drops below MAX_STEPS_MIN")
 	params.max_steps = 128
+	# a level drop eases in over RESTORE_FRAMES frames: the fog recedes (and when
+	# it is leaving entirely it thins as it goes) while the detail and step
+	# budget climb back
+	var l3_prec: float = mat.get_shader_parameter("precision")
+	var l3_coarse: int = mat.get_shader_parameter("coarse_steps")
+	view.set_load_level(2)
+	var l2 := LoadShedder.settings(2)
+	var mid := float(mat.get_shader_parameter("fog_dist"))
+	check(mid > l3["fog"] and mid < l2["fog"], "a drop to level 2 starts the fog receding (%s)" % mid)
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "a fog that stays does not thin")
+	var mid_prec := float(mat.get_shader_parameter("precision"))
+	var l2_prec: float = base_prec / l2["detail"]
+	check(mid_prec < l3_prec and mid_prec > l2_prec, "and the detail starts climbing (%s)" % mid_prec)
+	check(view.restoring(), "and the view is still easing it")
+	await frames(FractalView.RESTORE_FRAMES / 2 + 1)
+	check(int(mat.get_shader_parameter("coarse_steps")) > l3_coarse, "half way the step budget has grown")
+	check(float(mat.get_shader_parameter("precision")) < mid_prec, "and the detail climbed further")
+	await frames(FractalView.RESTORE_FRAMES)
+	check_approx(mat.get_shader_parameter("fog_dist"), l2["fog"], "it lands on level 2's fog")
+	check_approx(mat.get_shader_parameter("precision"), l2_prec, "and level 2's detail", 1e-12)
+	var l2_budget: int = maxi(FractalParams.MAX_STEPS_MIN, int(round(params.max_steps * l2["steps"])))
+	check_eq(int(mat.get_shader_parameter("coarse_steps")), params.coarse_steps(l2_budget),
+		"and level 2's step budget")
+	check(not view.restoring(), "and stops easing")
 	view.set_load_level(0)
+	var first := float(mat.get_shader_parameter("fog_dist"))
+	var clear := float(mat.get_shader_parameter("fog_clear"))
+	check(first > l2["fog"], "back to level 0 the fog first recedes (%s)" % first)
+	check(clear > 0.0 and clear < 1.0, "and thins (%s)" % clear)
+	await frames(2)   # process_frame fires before the view's _process steps the fog
+	check(float(mat.get_shader_parameter("fog_dist")) > first, "a frame later it is further out")
+	check(float(mat.get_shader_parameter("fog_clear")) > clear, "and thinner")
+	view.set_load_level(3)
+	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "a shed mid-ease snaps the fog straight in")
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "at full strength")
+	check_approx(mat.get_shader_parameter("precision"), l3_prec, "and the detail straight down", 1e-12)
+	check(not view.restoring(), "with no easing")
+	view.set_load_level(0)
+	await frames(FractalView.RESTORE_FRAMES)
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "back to level 0: no fog")
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "and nothing left to thin")
 	check_approx(mat.get_shader_parameter("precision"), base_prec, "and the original precision", 1e-12)
 	check_eq(int(mat.get_shader_parameter("coarse_steps")), base_coarse, "and the original budget")
 
@@ -93,6 +143,15 @@ func run() -> void:
 	for key in FractalParams.LOOK_KEYS:
 		check_approx(float(mat.get_shader_parameter(key)), float(params.get(key)),
 			"the view pushes '%s'" % key, 1e-9)
+	# the two COLOR keys are pushed as Vector3 (the shader's vec3 uniforms)
+	params.light_color = Color(0.2, 0.4, 0.6)
+	params.surface_color = Color(0.7, 0.5, 0.3)
+	check(Vector3(mat.get_shader_parameter("light_color")).is_equal_approx(Vector3(0.2, 0.4, 0.6)),
+		"light_color pushes as a Vector3")
+	check(Vector3(mat.get_shader_parameter("surface_color")).is_equal_approx(Vector3(0.7, 0.5, 0.3)),
+		"surface_color pushes as a Vector3")
+	params.light_color = Color(1, 1, 1)
+	params.surface_color = Color(1, 1, 1)
 	params.apply_resolved({&"light_specular": 2.5, &"palette_d_b": 0.1, &"palette_source": 2})
 	check_approx(float(mat.get_shader_parameter("light_specular")), 2.5, "a resolved Specular reaches the shader")
 	check_approx(float(mat.get_shader_parameter("palette_d_b")), 0.1, "so does a palette component")

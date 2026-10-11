@@ -669,8 +669,8 @@ const arch = {
       blurb: "`t += delta` every `_process`, never saved (nothing pauses the tree any more). The source a `Time` binding reads.",
       links: [RL("clock", 11, "t += delta")] },
     { id: "keymap", label: "Keymap · Axes", sub: "key pairs → InputMap · axis values", ctx: "shape", zone: "shape", x: 30, y: 700, ...R("keymap", 1),
-      blurb: "The virtual axes (unbounded floats) and the key pair that pushes each, loaded from saves/keymap.json (Q/E push Axis A by default). Each pair is registered as two InputMap actions, so held keys need no special code.",
-      links: [RL("keymap", 23, "axes()"), RL("keymap", 113, "load_file"), RL("main", 70, "loaded at startup")] },
+      blurb: "The virtual axes (unbounded floats) and the key pair that pushes each (E/Q push Axis A by default, from reset_to_default). Each pair is registered as two InputMap actions, so held keys need no special code. The keys and axes are saved inside the level, not in a file of their own.",
+      links: [RL("keymap", 23, "axes()"), RL("keymap", 108, "to_list / apply_list"), RL("main", 66, "reset_to_default at startup")] },
     { id: "axisCtl", label: "AxisController", sub: "steps axes from held keys", ctx: "shape", zone: "shape", x: 30, y: 790, ...R("axisCtl", 1),
       blurb: "Every `_process`: for each axis, the strength of its two actions → `axes().step(id, direction, delta)`, unless a text field has focus in any window.",
       links: [RL("axisCtl", 28, "step"), RL("main", 163, "given the focus viewports")] },
@@ -684,23 +684,23 @@ const arch = {
       blurb: "Runs on every FractalParams change: enables exactly one camera from `camera_mode`, calls the orbit's `enter()` only on a real switch (not on every resolved frame), then `_update_mouse`: captured in FLY unless Escape, a Ctrl tap or a file panel has freed it, or the noise editor is open. The console's visibility does not gate capture, and nothing pauses.",
       links: [RL("main", 362, "enter() only on a real switch"), RL("main", 368, "_update_mouse")] },
     { id: "viewPane", label: "ViewPane", sub: "console View tab: Save/Load · Camera · Renderer", ctx: "input", zone: "input", x: 30, y: 60, ...R("viewPane", 1),
-      blurb: "The console's View tab took everything the old pause menu held (which had taken it from the retired Q panel): Save view… / Load view… with the current file and the status line, the Camera mode, the mouse sensitivity, Noise editor…, the Renderer options (with Fast Controls and Reset camera) and Back to Menu. It hands each choice back through signals; Main owns the files, the noise window and the scene change.",
+      blurb: "The console's View tab took everything the old pause menu held (which had taken it from the retired Q panel): Save level… / Load level… with the current file and the status line, the Camera mode, the mouse sensitivity, Noise editor…, the Renderer options (with Fast Controls and Reset camera) and Back to Menu. It hands each choice back through signals; Main owns the files, the noise window and the scene change.",
       links: [RL("main", 191, "_build_view_pane"), RL("viewPane", 148, "the Camera row"), RL("viewPane", 101, "the Renderer options")] },
     { id: "renderer", label: "RendererOptions", sub: "View tab ▸ Renderer options", ctx: "input", zone: "input", x: 380, y: 60, ...R("renderer", 1),
-      blurb: "Edits the open view's level of detail (`detail`, `detail_range`, `detail_falloff`), the step budget `max_steps`, `min_render_scale` and Fast Controls, all saved with the view, plus Reset camera. It lives in the console's View tab now (the title menu's Settings lost its Renderer tab), so every edit renders live behind the console.",
+      blurb: "Edits the open level's level of detail (`detail`, `detail_range`, `detail_falloff`), the step budget `max_steps`, `min_render_scale` and Fast Controls, all saved with the level, plus Reset camera. It lives in the console's View tab now (the title menu's Settings lost its Renderer tab), so every edit renders live behind the console.",
       links: [RL("renderer", 62, "the writes"), RL("viewPane", 101, "in the View tab"), RL("main", 195, "Reset camera")] },
     { id: "wsf", label: "WorkspaceFiles", sub: "file panels · current file · ⌘S", ctx: "input", zone: "input", x: 30, y: 150, ...R("wsf", 1),
       blurb: "Owns the two file panels and the current file's path, nothing else: it never reads or writes a save. The View tab's Save / Load buttons open them; picking a file emits `save_to` / `load_from`; ⌘S saves over the current file. It keeps processing while the tree is paused, or Godot's own panel would ignore every key.",
       links: [RL("wsf", 11, "signals"), RL("wsf", 114, "quick_save")] },
 
-    { id: "msave", label: "Main save / load", sub: "save_view_to · load_view_from", ctx: "input", zone: "files", x: 30, y: 340, ...R("main", 273),
+    { id: "msave", label: "Main save / load", sub: "save_level_to · load_level_from", ctx: "input", zone: "files", x: 30, y: 340, ...R("main", 273),
       blurb: "Main does the saving and loading the file panels ask for, through Workspace, and only then marks the file current. After a load it resolves once (so the loaded table reaches FractalParams this frame), applies the noise section, and in ORBIT re-runs `enter()`.",
-      links: [RL("main", 284, "load_view_from"), RL("main", 295, "resolve after a load"), RL("main", 301, "re-centre after a load")] },
-    { id: "ws", label: "Workspace", sub: "capture · restore · JSON v2", ctx: "input", zone: "files", x: 290, y: 340, ...R("ws", 1),
-      blurb: "Saves and loads a view as version-2 JSON: the table (defaults + active bindings), the axis values, the non-shape `fractal` keys and the camera. Unknown ids warn and are skipped; a version-1 file is migrated to the new ids without a warning.",
-      links: [RL("ws", 31, "capture"), RL("ws", 56, "restore"), RL("ws", 181, "_migrate_v1")] },
-    { id: "saves", label: "saves/*.json", sub: "the committed views", ctx: "input", zone: "files", x: 30, y: 420, ...R("saveDef", 1),
-      blurb: "default.json, juliaIceField.json, juliaIceTerraces.json (tab 4 loads their values), noiseRidges.json and keymap.json. A source build saves into `res://saves/`; an exported build cannot write into its PCK, so it uses `user://saves/`.",
+      links: [RL("main", 284, "load_level_from"), RL("main", 295, "resolve after a load"), RL("main", 301, "re-centre after a load")] },
+    { id: "ws", label: "Workspace", sub: "capture · restore · JSON v3", ctx: "input", zone: "files", x: 290, y: 340, ...R("ws", 1),
+      blurb: "Saves and loads a level as version-3 JSON (kind \"level\"): the table (defaults + active bindings), the keymap (keys and axes via to_list / apply_list), the non-shape `fractal` keys, the camera and the noise graph. Unknown ids warn and are skipped; a v2 file (axes a dict of values) and a v1 file still load; a sequence or old keymap file is refused by name.",
+      links: [RL("ws", 40, "capture"), RL("ws", 68, "restore"), RL("ws", 176, "kind_of"), RL("ws", 198, "_migrate_v1")] },
+    { id: "saves", label: "saves/*.json", sub: "the committed levels", ctx: "input", zone: "files", x: 30, y: 420, ...R("saveDef", 1),
+      blurb: "default.json, juliaIceField.json, juliaIceTerraces.json (tab 4 loads their values) and noiseRidges.json. A source build saves into `res://saves/`; an exported build cannot write into its PCK, so it uses `user://saves/`.",
       links: [RL("saveField", 1, "juliaIceField.json"), RL("saveTer", 1, "juliaIceTerraces.json"), RL("wsf", 19, "REPO_DIR / EXPORT_DIR")] },
 
     { id: "params", label: "FractalParams", sub: "Resource · resolved shape + renderer options", ctx: "state", zone: "state", x: 800, y: 110, ...R("params", 1),
@@ -769,14 +769,14 @@ const arch = {
     { from: "dispatch", to: "console", kind: "call", label: "Ctrl tap", ...R("main", 413), bow: -10,
       blurb: "`CtrlTap.feed` fires on a bare Ctrl press-and-release; `_on_console_toggle` frees the mouse and opens the console when captured, toggles it when free.",
       links: [RL("main", 384, "_on_console_toggle"), RL("ctrlTap", 21, "CtrlTap.feed")] },
-    { from: "viewPane", to: "wsf", kind: "signal", label: "Save / Load view…", ...R("main", 197),
+    { from: "viewPane", to: "wsf", kind: "signal", label: "Save / Load level…", ...R("main", 197),
       blurb: "`save_requested` → `prompt_save`, `load_requested` → `prompt_load`.", links: [RL("main", 198, "load")] },
     { from: "renderer", to: "params", kind: "call", label: "LOD · steps · min scale", ...R("renderer", 62), bow: -0.5,
       blurb: "Each slider assigns one FractalParams field; the setters clamp to the documented ranges (fractal_params.gd:207-216)." },
     { from: "wsf", to: "msave", kind: "signal", label: "save_to / load_from", ...R("main", 240),
       blurb: "A picked file (or ⌘S on a current file) emits `save_to(path)` or `load_from(path)`; Main does the work." },
     { from: "msave", to: "ws", kind: "call", label: "save_file / load_file", ...R("main", 275), bow: 0,
-      blurb: "`Workspace.save_file(path, table, axes, params, camera, noise)` and `load_file`; the result's warnings go to the View tab's status line.",
+      blurb: "`Workspace.save_file(path, table, keymap, params, camera, noise)` and `load_file`; the keymap is passed whole so its keys and axes go into the level, and the result's warnings go to the View tab's status line.",
       links: [RL("main", 286, "load_file")] },
     { from: "ws", to: "saves", kind: "data", label: "JSON", ...R("ws", 108),
       blurb: "Written as indented JSON with `store_string`; read back with `JSON.new().parse()` so a bad file is a warning, not an engine error.",
@@ -2350,6 +2350,78 @@ const cards = {
   ],
 };
 
+// ================================================================== plain-words companions
+// One cards block under each shape figure: the same mechanism retold without the maths, for reading
+// the figure before (or instead of) the formulas. No file:line here; the figure above carries them.
+const PLAIN = { tag: "in plain words", hue: 1 };
+const plain = (title, cards) => ({ type: "cards", title, columns: 3, cardWidth: 500,
+  // Numbered because the masonry places each card in the shortest column, not in reading order.
+  cards: cards.map(([t, body], i) => Object.assign({ title: `${i + 1} · ${t}`, body: body.replace(/\n/g, "\n\n") }, PLAIN)) });
+
+const foldPlain = plain("In plain words: how a point is tested", [
+  ["Start here: the big idea",
+    "The fractal is not stored anywhere as a 3D model. To find out whether a spot in space is part of the shape, the program takes that spot and puts it through the same three-move recipe 32 times over, a bit like kneading dough: fold it, flip it inside out, stretch it and shift it.\nSpots that stay near the middle after all that kneading are part of the shape. Spots that get flung off to huge numbers are empty space. This tab lets you watch one spot get kneaded, one move at a time."],
+  ["What you are looking at",
+    "The big square is a flat slice through 3D space, like one sheet cut from a loaf of bread. Blue means close to the fractal's surface; paler means further away.\nClick it to choose a starting spot. Each press of Step applies one move and draws a coloured line to where the spot went: orange for move 1, pink for move 2, blue for move 3. The orange square is the folding box and the pink circles are the two balls of move 2. The bars and the table on the right show the same journey as numbers."],
+  ["Move 1: the box fold",
+    "Imagine a box whose walls are mirrors. If the spot has wandered outside the box in any direction, it is reflected back inside, the way a ball bounces off a wall: a spot 0.3 past the wall lands 0.3 inside it. A spot already inside is left alone.\nThis is where the Mandelbox gets its square walls and flat plates. The Fold dial sets how big the box is."],
+  ["Move 2: the sphere fold",
+    "Now measure how far the spot is from the centre. Two invisible balls sit there, a small one (Inner Radius) and a bigger one (Outer Radius).\nOutside the big ball, nothing happens. Between the two balls, the spot is turned inside out: the closer it was to the centre, the further out it gets pushed, like turning a glove inside out. Inside the small ball, the spot is just pushed outward by a fixed amount, about 2× at the defaults.\nThis is where the round holes and bubbles come from."],
+  ["Move 3: stretch and shift",
+    "Blow everything up by the Scale number (−2.09 by default; the minus sign also flips it to the opposite side of the centre), then shift it by the spot you started with.\nThe shift is what gives every spot its own story: without it, every spot would behave alike. In Julia mode, every spot is shifted by the same fixed point instead, which gives a whole different family of shapes."],
+  ["The verdict: one distance number",
+    "While kneading, the program also keeps a running total of how much the moves have magnified things (the dz column). After 32 rounds it divides how far the spot ended up from the centre by that total. The answer, D, is a safe guess at how far the starting spot is from the fractal's surface.\nA spot inside the shape stays small while the magnification keeps growing, so D shrinks to almost nothing. A spot outside runs away, and D comes out close to its real distance. Tab 5 (Marching one ray) is built entirely on this number."],
+  ["Words on this tab",
+    "p: the starting spot, written as three numbers (x across, y up, z depth).\nz (in the readouts): the spot being kneaded, where it is right now. Not the same as the z axis, sorry.\n|z|: how far that spot is from the centre.\nOrbit: the list of places the spot visits along the way.\nIteration: one round of all three moves.\nComponent: one of the three numbers x, y or z.\nSample cloud: 121 spots kneaded together, to show the whole slice moving at once."],
+]);
+
+const dialsPlain = plain("In plain words: the distance map and the dials", [
+  ["Start here: the big idea",
+    "This is a map of distances. Every pixel in the square is one spot in a flat slice through space, coloured by how far that spot is from the fractal's surface: deep blue right at the surface, fading to pale far from it. Each step of fading means about ten times further away.\nThe black pixels are the spots close enough that the renderer would say \"this is the surface\". Move a dial and the map redraws, so you can see what that dial does to the shape. Hover anywhere for the exact numbers."],
+  ["Choosing the slice",
+    "X-Y, X-Z and Y-Z choose which way the slice faces: like cutting a loaf from the top versus from the front.\n\"Offset along the third axis\" slides the cut deeper or shallower into the shape.\n\"View half-width\" zooms the map out (bigger) or in (smaller)."],
+  ["Slice (Scale)",
+    "How much the shape is blown up in every round of kneading (move 3 on the Fold by fold tab). It changes how many copies of the pattern nest inside each other and how fine they get. Of all the dials, this one changes the shape's character the most."],
+  ["Fold",
+    "The size of the mirror box from move 1. Smaller boxes carve the walls into thinner and thinner plates."],
+  ["Inner Radius and Outer Radius",
+    "The two balls from move 2. Outer Radius sets how big the turn-inside-out zone is, which shapes the round holes and bubbles. Inner Radius is the small core where spots get a fixed push instead of being turned inside out, so it caps how wildly the inside-out move can throw a spot."],
+  ["Precision is not a shape dial",
+    "It only decides how close counts as touching the surface. Moving it thickens or thins the black edge by a hair; the shape itself does not move. Smaller values give a crisper picture but take the renderer more steps (and so more time) to reach."],
+  ["Julia mode",
+    "Normally each spot is shifted by its own starting position in move 3. Julia mode shifts every spot by the same point, the one set by the Julia X, Y and Z sliders. That gives a different family of shapes, which can reach much further out, so the renderer searches out to 20 units from the centre instead of 2."],
+  ["Presets",
+    "Load the three views saved in the project's saves/ folder, so you can see how a real saved view's dials shape the map."],
+]);
+
+const marchPlain = plain("In plain words: finding the surface along one line of sight", [
+  ["Start here: the big idea",
+    "Every pixel on screen is a line of sight (a ray) from your eye out into the scene. The renderer has to find where that line first touches the fractal, and there is no formula for that. So it creeps along the line instead.\nAt each stop it asks \"how far is the nearest bit of surface from here?\" (the distance number from the Fold by fold tab), then steps forward exactly that far. It cannot pass through anything, because nothing was closer than that. Near the surface the steps get tiny, and once a step is small enough, it calls it a hit."],
+  ["What you are looking at",
+    "A vertical slice through space that contains your eye. The black dot is the eye and the green dot is where it is looking; drag either.\nEach press of Step draws a circle and a hop. The circle is a safe bubble: nothing of the fractal is inside it, so the ray can jump to its edge. Orange hops are the quick rough pass, blue hops the careful pass.\nIn the chart, each bar is one step's distance to the surface, and the dashed line is the \"close enough\" mark. The march stops when a bar dips under it."],
+  ["Step 0: only search the box",
+    "The whole fractal fits inside a cube (2 units from the centre each way, or 20 in Julia mode). A ray that misses the cube is background straight away. A ray that hits it starts creeping where it enters."],
+  ["Two passes: rough, then careful",
+    "Pass 1 uses a cheaper, rougher distance (16 rounds of kneading instead of 32) and a looser \"close enough\", for up to 96 steps. Pass 2 always runs next (unless the ray has already left the cube), with the full 32 rounds and the strict \"close enough\", for up to 32 more steps to polish the hit.\nLike jogging to the right street, then walking to the front door."],
+  ["Why the step count becomes the colour",
+    "The renderer counts how many steps each ray took and turns that into brightness. A ray that slid straight onto an open face took few steps and comes out bright. A ray that squeezed into a crevice, or skimmed along an edge, took many and comes out dark.\nThat is the soft, shadowy look in every colour mode, and it is not real lighting. A ray that uses up every step without ever arriving is not thrown away: it is drawn as the darkest shade, which is the \"dust\" you see floating around the fractal."],
+  ["How close counts as touching",
+    "The \"close enough\" distance grows the further the ray has travelled from your eye, like a torch beam widening: far-off things cover fewer pixels on screen, so they only need to be hit roughly. Precision sets how narrow the beam is.\nThe Renderer tab's level-of-detail dials can widen it further for distant things, starting at a distance measured from how near you are to the surface. Around the eye, the solid ring is that nearness and the dashed ring is where the extra widening starts."],
+]);
+
+const normalsPlain = plain("In plain words: which way the surface faces", [
+  ["Start here: what a normal is",
+    "A normal is the direction a surface faces at one spot: picture an arrow sticking straight out of it. Lighting needs it, because a face turned toward the light is bright and a face turned away is dark.\nThe renderer works out two different arrows for every spot it hits, and the colour modes choose between them."],
+  ["N, the honest arrow (blue)",
+    "Found by nudging the hit spot a tiny bit left and right, up and down, forward and back, and seeing which way the distance to the surface grows fastest. That direction is straight out of the surface. It is the true answer."],
+  ["NF, the deliberately wrong arrow (orange)",
+    "The original website (icefractal.com) worked its arrow out a different way. It measures a different quantity altogether (how far a related spot gets flung after 16 rounds of kneading), and it compares one sample taken at half the spot's position against others taken at the full position. That mismatch tips every arrow toward the same diagonal.\nThe result is often tens of degrees off the true direction, but that tilt is the \"Ice Fractal\" look. So the project copies the site's arithmetic exactly, on purpose."],
+  ["What you are looking at",
+    "The same vertical slice as the Marching one ray tab. Rays fan out from the eye (just off the top right) like torch beams, and at each place one lands, the blue arrow is N and the orange is NF. A short arrow is pointing mostly into or out of the screen.\nThe Show buttons change the background: the quantity NF is built from, that quantity at half position, or the ordinary distance map. In the first two, violet marks spots that stay near the middle and amber marks spots that get flung away. The table compares the two arrows and how bright each would make that spot."],
+  ["Which colour modes use which",
+    "Outside Julia mode, most colour modes use the tilted NF. In Julia mode, they switch to the honest N. Rainbow Metal, Ice Box and Gold always use N, and Grayscale uses neither (it is pure step count)."],
+]);
+
 // The checker (tools/viz/check.mjs) verifies every { file, line } it finds in a pane's data. A
 // figure's tooltips are built inside draw(), so each figure also carries `refs`: every R / RL / SH
 // call with literal arguments in its draw source, plus any listed by hand.
@@ -2390,11 +2462,11 @@ VIZ.pane({
   tabs: [
     arch,
     seq,
-    foldFig,
-    dialsFig,
-    marchFig,
+    { label: "Fold by fold", rows: [[foldFig], [foldPlain]] },
+    { label: "What each dial does", rows: [[dialsFig], [dialsPlain]] },
+    { label: "Marching one ray", rows: [[marchFig], [marchPlain]] },
     { label: "Shading and colour modes", rows: [[shadeFig], [modeTable]] },
-    normalsFig,
+    { label: "The two normals", rows: [[normalsFig], [normalsPlain]] },
     { label: "Cameras", rows: [[camFig], [camTable]] },
     govFig,
     { label: "Dials, uniforms, saves", rows: [[dialTable], [cards]] },

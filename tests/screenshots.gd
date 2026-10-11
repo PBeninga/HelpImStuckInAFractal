@@ -81,7 +81,7 @@ func _run() -> void:
 	# the default view: the Lighting group really reaches the picture.
 	params.color_mode = 1
 	params.apply_resolved({&"light_yaw": 60.0, &"light_pitch": 30.0,
-		&"light_shininess": 12.0, &"light_ambient": 0.2})
+		&"roughness": 0.4, &"light_ambient": 0.2})
 	await _render(view)
 	var raked := view._viewport.get_texture().get_image()
 	if raked == null or def == null:
@@ -90,7 +90,7 @@ func _run() -> void:
 		raked.save_png(ProjectSettings.globalize_path(SHOT_DIR + "/lighting_raked.png"))
 		_check_differs("lighting_raked", raked, def)
 	params.apply_resolved({&"light_yaw": 0.0, &"light_pitch": 0.0,
-		&"light_shininess": 160.0, &"light_ambient": 0.1})
+		&"roughness": 1.0 / 9.0, &"light_ambient": 0.1})
 
 	# noise ridges demo: a saved view with a wired noise field. Rendered through the
 	# same view, which rebuilds the mandelbox shader with the compiled NOISE region.
@@ -98,12 +98,12 @@ func _run() -> void:
 	var np := FractalParams.new()
 	var ncam := CameraState.make_default()
 	var ntable := AttributeTable.new(ShapeCatalogue.specs())
-	var naxes := Axes.new()
-	var loaded := Workspace.load_file("res://saves/noiseRidges.json", ntable, naxes, np, ncam)
+	var nkm := Keymap.new()
+	var loaded := Workspace.load_file("res://saves/noiseRidges.json", ntable, nkm, np, ncam)
 	if not loaded["ok"]:
 		_fail("noise_ridges", "load_failed:%s" % loaded["warnings"])
 	else:
-		np.apply_resolved(BindingResolver.resolve(ntable, naxes.values(), 0.0))
+		np.apply_resolved(BindingResolver.resolve(ntable, nkm.axes().values(), 0.0))
 		view.setup(np, ncam)
 		view.set_render_scale(1.0)
 		var noise: Variant = loaded.get("noise", null)

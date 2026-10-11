@@ -1,7 +1,7 @@
 class_name ViewPane
 extends ScrollContainer
 ## The console's View tab: everything the old pause menu held that is not a
-## shape knob. A Save view… / Load view… row with the current file's name and a
+## shape knob. A Save level… / Load level… row with the current file's name and a
 ## status line, the Camera mode (Fly / Orbit), the Noise editor… button, the
 ## mouse sensitivity, the Window buttons (Fullscreen, Reset window), the
 ## Renderer options (detail, march steps, Fast Controls, Reset camera) and Back
@@ -54,9 +54,9 @@ func _init() -> void:
 	list.add_child(_heading("FILE"))
 	var files_row := HBoxContainer.new()
 	files_row.add_theme_constant_override("separation", 8)
-	save_button = _button("Save view…",
-		"Save the shape, bindings, axes, camera and preferences to a file in saves/ (Cmd/Ctrl+S overwrites the current file).")
-	load_button = _button("Load view…", "Load a saved view from saves/.")
+	save_button = _button("Save level…",
+		"Save the level to a file in saves/: the shape, the bindings, the keys and axes, the camera, the noise graph and the preferences (Cmd/Ctrl+S overwrites the current file).")
+	load_button = _button("Load level…", "Load a saved level from saves/.")
 	file_label = Label.new()
 	files_row.add_child(save_button)
 	files_row.add_child(load_button)

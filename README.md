@@ -10,8 +10,9 @@ Mandelbulb — and
 cylinder, octahedral and abs-fold hybrid folds for the Mandelbox, a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
 while you move, and a **console** window — a Shape inspector of every
-fractal knob with Fractacular's binding model, a Colour tab with
-Fractacular's cosine-palette window and a tunable light, and a Movement pane of
+fractal knob with Fractacular's binding model, Light and Material tabs with
+Fractacular's cosine-palette window, a tunable light with scattering and
+shadows, and noise-driven texture and bump, and a Movement pane of
 virtual axes driven by key pairs. It is built on the **GL Compatibility** renderer
 (WebGL 2) so it is web-exportable.
 
@@ -32,9 +33,10 @@ binary.
 
 ## Controls
 
-Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** and
-**Colour** tabs, with a row for every Mandelbox, colour and lighting knob, and
-the **View** tab (Save / Load view, the Camera mode, the mouse sensitivity, the
+Tap **Ctrl** to open the **console**, a separate OS window: the **Shape**,
+**Light** and **Material** tabs, with a row for every Mandelbox, light and
+material knob, and the **View** tab (Save / Load level, the Camera mode, the
+mouse sensitivity, the
 Noise editor button, the Window buttons, the Renderer options and Back to Menu), stacked above the
 **Movement** pane of virtual axes.
 Everything the console does not own is driven directly by the mouse and
@@ -71,8 +73,8 @@ keyboard, but the keys it does not use — Escape, N, a Ctrl tap, ⌘S, ⌘P —
 reach the game.
 
 The **mouse sensitivity** (the title menu's **Settings**, or the console's View
-tab) is the player's preference, not part of a view: it is kept in
-`user://settings.cfg`, survives restarts, and loading a saved view does not
+tab) is the player's preference, not part of a level: it is kept in
+`user://settings.cfg`, survives restarts, and loading a saved level does not
 change it.
 
 The **Renderer** options on the console's View tab tune how the open view is
@@ -95,7 +97,7 @@ distance along the ray and `d₀` the camera's distance to the nearest surface.
 ### Deep zoom
 
 Several things adjust themselves as you fly close to the fractal. None has a
-setting, and none changes a saved view; at the default view the new ones are
+setting, and none changes a saved level; at the default view the new ones are
 off, so the picture there is exactly the site's.
 
 - **Coarse pass iterations.** Each ray marches in two phases: a cheap coarse
@@ -163,7 +165,7 @@ off, so the picture there is exactly the site's.
   noise field's displacement is still evaluated at the 32-bit position (a
   displaced surface is smooth below its displacement anyway). While a move is
   being refused the console's Movement pane shows `zoom limit` beside the speed
-  readout. Moving away is always allowed, so a saved view already past the
+  readout. Moving away is always allowed, so a saved level already past the
   limit can still leave.
 - **Where 32 iterations run out.** The orbit has 32 iterations, so the surface
   has only so much detail, and past a point (which varies enormously from place
@@ -184,20 +186,27 @@ With Fast Controls on, the render scale is the first thing to give while you
 move. Once it is at **Min resolution** and the frame rate is still under 24 fps,
 the governor sheds quality a level at a time:
 
-| level | distance fog (× d₀) | detail | step budget | Fly speed |
-|---|---|---|---|---|
-| 0 | none | 100% | 100% | — |
-| 1 | 400 | 75% | 100% | — |
-| 2 | 150 | 55% | 75% | — |
-| 3 | 60 | 40% | 50% | — |
-| 4 | 40 | 35% | 50% | capped at 40% |
+| level | distance fog (× d₀) | detail | step budget | shadow march | Fly speed |
+|---|---|---|---|---|---|
+| 0 | none | 100% | 100% | 48 steps | — |
+| 1 | 400 | 75% | 100% | 24 steps | — |
+| 2 | 150 | 55% | 75% | off | — |
+| 3 | 60 | 40% | 50% | off | — |
+| 4 | 40 | 35% | 50% | off | capped at 40% |
+
+The shadow march (when Shadows is on) halves at level 1 and drops out from
+level 2; scattering and bump cost no extra marches and stay at every level.
 
 Rays stop at the fog distance, and the view fades into a tint of the current
 colour mode on the way there. The thresholds are sticky: a shed needs 0.5 s
 under 24 fps (and 1 s since the last change), a restore needs 2 s over 40 fps,
 nothing changes in between, and a shed soon after a restore doubles the next
-restore's wait (up to 16 s). The level is kept while you are still, but the
-still frame always renders at full quality. The console's Movement pane shows
+restore's wait (up to 16 s). A level coming off eases in over 18 frames
+instead of snapping to full quality: the fog recedes, and when it is going
+entirely it also thins, with the march no longer stopping at it, so the far
+geometry fades in; the detail and step budget climb back alongside it. A level
+going on snaps straight in. The level is kept while you are still, but the
+still frame always renders at full quality (eased in over its first frames). The console's Movement pane shows
 `load shed N/4` while a level is active.
 
 ### Fly camera (default)
@@ -250,7 +259,7 @@ captured in this mode.
 ### Console (Ctrl)
 
 A Ctrl tap opens the console, a
-separate OS window: the **Shape**, **Colour** and **View** tabs on top, taking the full
+separate OS window: the **Shape**, **Light**, **Material** and **View** tabs on top, taking the full
 width and most of the height, and the **Movement** pane below them at its
 natural height (drag the bar between them to share the height differently).
 **⌘=** / **⌘−** (Ctrl elsewhere) zoom everything in the console, text and
@@ -310,8 +319,19 @@ Rows and headings of the fractals not chosen are hidden.
   2 from the origin to frame it.
 - **Render** — the ray-march Precision (log slider).
 
-**Colour tab.** Fractacular's Colour window at the top of one scrolling list,
-then rows grouped **Colour** / **Lighting** / **Palette**:
+**Light tab.** The one lamp every lit mode shares — **Light colour**, **Light
+yaw** / **Light pitch** (swing the headlight about the view's up and right
+axes), **Light size** (a point light at 0, a broad soft source above it),
+**Ambient** / **Diffuse**, and **Shadows** (0 is off and casts no shadow ray;
+only visible with the light swung off the headlight). Then **Scattering** —
+**Density**, **Glow** and **Brightness** of a light-tinted distance haze
+(analytic, no extra rays). Then **Picture** — **Exposure** and **Saturation**
+on the final colour of every mode but Grayscale. The defaults are the site's,
+so the picture is unchanged until one is moved.
+
+**Material tab.** Fractacular's Colour window at the top of one scrolling list
+(the twelve cosine-palette sliders, curves and strip), then rows grouped
+**Colour** / **Surface** / **Texture** / **Palette**:
 
 - **Colour window** — the cosine palette `color(t) = A + B · cos(2π (C·t + D))`:
   twelve sliders (A, B, C and D over red, green and blue), the three channel
@@ -325,12 +345,14 @@ then rows grouped **Colour** / **Lighting** / **Palette**:
   **Palette offset** (position = fract(input × frequency + offset); bind the
   offset to Time for a colour cycle) and **Palette occlusion** (how much the
   step count darkens crevices).
-- **Lighting** — **Ambient**, **Diffuse**, **Specular** and **Shininess** (the
-  light term `diffuse·|N·L| + specular·|N·L|^shininess + ambient`), **Light
-  yaw** / **Light pitch** (swing the camera headlight about the view's up and
-  right axes), and **Exposure** / **Saturation** on the final colour. The
-  defaults are the site's constants, so every site mode looks exactly as before
-  until one is moved; they apply to every mode but Grayscale.
+- **Surface** — **Surface colour**, **Roughness** (glassy with tight glints at
+  low, matte at high; it replaces the old Shininess — the specular exponent is
+  `2/roughness² − 2`, so the default 1/9 is the site's 160) and **Specular**
+  (the glint strength). The defaults are the site's, so every mode looks exactly
+  as before until one is moved; they apply to every mode but Grayscale.
+- **Texture** — **Texture** and **Bump**, driven by the noise editor's Texture
+  and Bump outputs: Texture recolours the surface, Bump tilts the normal for a
+  fake relief. Nothing wired, nothing changes.
 - **Palette** (Palette mode only) — the same twelve numbers as rows, so each
   channel's A, B, C or D can have its own Source, gain and waveform: a Sine on
   B.r pulses the red, a Linear Time drive on D.b cycles the blue.
@@ -344,12 +366,14 @@ waveform(source)`, shown as a live readout while a binding is active.
 
 **Movement pane.** One line per virtual axis — an editable label, its id, the
 live value, a **0** button, the push **speed**, two key-capture buttons (click,
-then press a key) and a remove button — plus **Add axis**, the clock readout,
-the fly camera's speed factor beside a **Reset camera** button, and **Save** /
-**Save as…** / **Load…** for the keymap file. Key pairs push an axis at its speed; a Shape row bound to that axis
-reads the value, so the row's gain is the key's sensitivity.
+then press a key) and a remove button — plus **Add axis**, the clock readout and
+the fly camera's speed factor beside a **Reset camera** button. The keys and
+axes have no file of their own: they are saved inside the level (the View tab's
+**Save level…**) and restored when a level is loaded. Key pairs push an axis at
+its speed; a Shape row bound to that axis reads the value, so the row's gain is
+the key's sensitivity.
 
-**⌘S** (Ctrl+S elsewhere) saves the view over the current file without a panel;
+**⌘S** (Ctrl+S elsewhere) saves the level over the current file without a panel;
 with no current file it opens the Save panel.
 
 **⌘P** (Ctrl+P elsewhere) copies a screenshot of the fractal, without any UI, to
@@ -357,43 +381,37 @@ the clipboard as a PNG. On Linux this needs `xclip`.
 
 ### View tab (console)
 
-The console's View tab holds what is not a shape knob: a **Save view…** /
-**Load view…** row with the current file's name and a status line, the
+The console's View tab holds what is not a shape knob: a **Save level…** /
+**Load level…** row with the current file's name and a status line, the
 **Camera** mode (Fly / Orbit), the **mouse sensitivity**, a **Noise editor…**
 button, the **Renderer** options (above, with Fast Controls and Reset camera)
 and **Back to Menu**.
 
-## Keymap
+## Keys and axes
 
-The virtual axes and their key pairs live in **`saves/keymap.json`**, separate
-from any view (a level loads a view and a keymap independently, and the same
-view can play under different keys):
+The virtual axes and their key pairs have no file of their own: they are saved
+inside the level (the `axes` list below) and restored when a level is loaded.
+Until a level is loaded the keymap is the shipped default — one **Axis A** on
+**E** (positive) / **Q** (negative) at one unit per second. Keys are stored by
+name (layout-independent), `""` meaning unbound, and each axis registers two
+input actions, `axis_<id>_pos` and `axis_<id>_neg`.
 
-```json
-{
-  "version": 1,
-  "axes": [
-    {"id": "a", "label": "Axis A", "speed": 1.0, "positive": "E", "negative": "Q"}
-  ]
-}
-```
+## The level save
 
-Keys are stored by name (layout-independent), `""` meaning unbound. The shipped
-default is one Axis A on Q/E at one unit per second. Each axis registers two
-input actions, `axis_<id>_pos` and `axis_<id>_neg`. The Movement pane's Save /
-Load edit this file; a missing or malformed file falls back to the default.
-
-## Saved views
-
-A save is a small JSON file, **version 2**:
+There is one save file — the **level** — a small JSON file tagged
+`"kind": "level"`, **version 3**. (`"kind": "sequence"` is reserved for the
+level-sequence editor to come; a sequence file handed to the level loader is
+refused by name, and so is an old stand-alone keymap file.)
 
 - **`shape`** — `AttributeTable.to_dict()`: a `defaults` map (every catalogue id
   to its value, the fractal among them) and a `bindings` map (only active
   bindings, each a source / gain / waveform / period). A file from before the
   fractal could be chosen has no `shape` id and loads as a Mandelbox.
-- **`axes`** — every virtual axis value by id.
+- **`axes`** — the keymap: a list of `{id, label, speed, positive, negative,
+  value}` entries. Loading a level replaces the keymap in hand with these,
+  rebinding the input actions.
 - **`fractal`** — the non-shape preferences: `fast_controls`, `camera_mode`
-  (`"fly"`/`"orbit"`) and `mouse_sensitivity`.
+  (`"fly"`/`"orbit"`), `mouse_sensitivity` and the renderer options.
 - **`camera`** — the eye, forward and up vectors and the speed factor. The
   eye is written at full precision (all the digits of the 64-bit numbers; the
   other numbers in a save are tidied), so a deep view comes back where it was,
@@ -404,19 +422,21 @@ A save is a small JSON file, **version 2**:
 - **`noise`** — the noise graph, when one is wired (additive; see below).
 
 Loading skips anything it does not recognise or cannot read, with a warning, and
-leaves values a file does not mention as they are. A **version-1** file (the old
-flat `fractal` section) still loads: its keys are mapped (`scale`→`box_scale`,
+leaves values a file does not mention as they are. Older levels still load: a
+**version-2** file (whose `axes` is a dict of values by id) applies those values
+onto the axes in hand and leaves the keys alone; a **version-1** file (the old
+flat `fractal` section) has its keys mapped (`scale`→`box_scale`,
 `inner_radius`→`min_radius`, `outer_radius`→`fixed_radius`,
 `julia_enabled`→`julia_all`, `julia_point`→the three Constants) without a
-warning. Saving always writes version 2. An exported build cannot write into the
+warning. Saving always writes version 3. An exported build cannot write into the
 project, so it saves to `user://saves/` instead.
 
 | file | what it is |
 |---|---|
-| `saves/default.json` | the opening view |
+| `saves/default.json` | the opening level |
 | `saves/juliaIceField.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −2.29, Min 0, Fold 0.72, Fixed 0.29, Ice Fractal, precision 0.00002 |
 | `saves/juliaIceTerraces.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −1.88, Min 0.49, Fold 0.81, Fixed 0.53, Ice Fractal, precision 0.0001 |
-| `saves/noiseRidges.json` | the default Ice Fractal view with a noise field wired: value-noise ridges displacing the surface and tinting it blue (see **Noise fields**) |
+| `saves/noiseRidges.json` | the default Ice Fractal level with a noise field wired: value-noise ridges displacing the surface and tinting it blue (see **Noise fields**) |
 
 ## Noise fields
 
@@ -431,6 +451,11 @@ to the **Output** node does two things to the picture, live as you edit:
   Output's **Step scale** so the march does not step over the displaced surface.
 - **Tint** — the surface colour is blended toward the Output's **Tint colour** by
   the field, scaled by **Tint strength**.
+- **Texture** — a Vec3 (each channel clamped to 0…1) the surface colour is
+  multiplied by, scaled by the Material tab's **Texture** row.
+- **Bump** — a Float height whose across-surface slope tilts the normal for a
+  fake relief (the surface does not move), scaled by the Material tab's **Bump**
+  row.
 
 The editor is a window inside the main window (unlike the console): drag it by its
 title bar; its ✕, or N or Escape while it has the keyboard, closes it. Opening
@@ -449,14 +474,14 @@ wire to remove it.
 | **Noise** | **Value noise**, **Gradient noise** (both with Octaves/Lacunarity/Gain FBM), **Cellular** (Worley F1) |
 | **Vector** | **Transform** (offset, scale, rotate), **Warp** (domain warp), **Combine XYZ**, **Split XYZ** |
 | **Math** | **Constant**, **Math** (Add…Fract), **Remap**, **Clamp**, **Mix**, **Length** |
-| **Output** | **Output** — Displace and Tint inputs, Amplitude, Step scale, Tint colour and strength (one per graph) |
+| **Output** | **Output** — Displace, Tint, **Texture** and **Bump** inputs, Amplitude, Step scale, Tint colour and strength (one per graph). Texture multiplies the surface colour; Bump tilts the normal for a fake relief (the Material tab's Texture and Bump rows scale them). |
 
-**Saving.** The graph is saved with the view, as an additive `"noise"` key in the
-same JSON file — a view without the key leaves the current field alone. The editor
-can also save and load graphs on their own, as `saves/noise/*.json`
-(`{"version": 1, "noise": {…}}`), with its own **Save…** / **Load…** buttons.
-Load **`saves/noiseRidges.json`** for a one-click demo: value-noise ridges
-displacing and blue-tinting the default Ice Fractal view.
+**Saving.** The graph is saved inside the level, as an additive `"noise"` key in
+the same JSON file — a level without the key leaves the current field alone. The
+graph has no file of its own; the editor's **New** button clears it back to the
+default (Position and Output). Load **`saves/noiseRidges.json`** for a one-click
+demo: value-noise ridges displacing and blue-tinting the default Ice Fractal
+level.
 
 A FLOAT parameter edit only re-pushes a shader uniform; an Octaves/op/toggle edit
 (baked into the generated GLSL) recompiles the shader. An unwired graph compiles

@@ -5,15 +5,18 @@ extends RefCounted
 ## Iteration rotation groups (MandelboxShape), KIFS and KIFS rotation
 ## (KifsShape), Kleinian (KleinianShape), Mandelbulb (MandelbulbShape), then
 ## the rows every shape shares —
-## the precision, the colour mode and the Palette mode's controls, the
-## lighting, and the palette's twelve numbers. A shape's own rows show only
-## while that shape is drawn. The console shows SHAPE_GROUPS on its Shape tab
-## and COLOUR_GROUPS on its Colour tab.
+## the precision, the colour mode and the Palette mode's controls, the lamp and
+## its scattering, the surface's colour/roughness/specular, the texture and bump
+## strengths, and the palette's twelve numbers. A shape's own rows show only
+## while that shape is drawn. The console shows SHAPE_GROUPS on its Shape tab,
+## LIGHT_GROUPS on its Light tab (Light, Scattering, Picture) and MATERIAL_GROUPS
+## on its Material tab (Colour, Surface, Texture, Palette).
 ##
 ## The ids are the shader uniform names and the FractalParams field names.
 
 const F := AttributeSpec.Type.FLOAT
 const ENUM := AttributeSpec.Type.ENUM
+const COLOR := AttributeSpec.Type.COLOR
 
 ## What picks the position along the palette (the shader's palette_source).
 enum PaletteSource { STEPS, RADIUS, NORMAL }
@@ -33,10 +36,11 @@ const PALETTE_VECTOR_EFFECTS := [
 ]
 
 
-## Which groups the console's two tabs show.
+## Which groups the console's tabs show.
 const SHAPE_GROUPS: Array[String] = ["Fractal", "Box", "Julia", "Iteration rotation",
 	"KIFS", "KIFS rotation", "Kleinian", "Mandelbulb", "Render"]
-const COLOUR_GROUPS: Array[String] = ["Colour", "Lighting", "Palette"]
+const LIGHT_GROUPS: Array[String] = ["Light", "Scattering", "Picture"]
+const MATERIAL_GROUPS: Array[String] = ["Colour", "Surface", "Texture", "Palette"]
 
 
 ## A show_when for a row of `shape`'s: shown while that shape is drawn and
@@ -150,62 +154,131 @@ static func specs() -> Array[AttributeSpec]:
 		"effects": "0 leaves crevices as bright as open faces (flat, poster-like); 1 lets the deepest crevices fall to black, the depth cue every site mode relies on. 0.5 is a balance.",
 	}))
 
-	# --- Lighting ---
+	# --- Light ---
 	out.append(AttributeSpec.make({
-		"id": "light_ambient", "label": "Ambient", "type": F,
-		"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "hard_max": 4.0,
-		"group": "Lighting",
-		"tooltip": "Light every surface gets whichever way it faces.",
-		"effects": "0.1 is the site's. Raising it lifts the shadowed sides and flattens the picture; 0 leaves faces turned away from the light black (in the modes that multiply by the light).",
-	}))
-	out.append(AttributeSpec.make({
-		"id": "light_diffuse", "label": "Diffuse", "type": F,
-		"default": 0.5, "min": 0.0, "max": 2.0, "step": 0.01, "hard_max": 8.0,
-		"group": "Lighting",
-		"tooltip": "Matte light: brightest where the surface faces the light, falling off as it turns away (|N·L|).",
-		"effects": "0.5 is the site's. More gives stronger form and contrast between faces; 0 leaves only ambient and the specular glints.",
-	}))
-	out.append(AttributeSpec.make({
-		"id": "light_specular", "label": "Specular", "type": F,
-		"default": 1.0, "min": 0.0, "max": 4.0, "step": 0.01, "hard_max": 16.0,
-		"group": "Lighting",
-		"tooltip": "The strength of the glints where a surface faces the light almost exactly.",
-		"effects": "1 is the site's: the bright sparkle on the ice. 0 removes the glints for a chalky look; above 1 they bloom.",
-	}))
-	out.append(AttributeSpec.make({
-		"id": "light_shininess", "label": "Shininess", "type": F,
-		"default": 160.0, "min": 1.0, "max": 512.0, "step": 0.1, "log": true,
-		"group": "Lighting",
-		"tooltip": "The specular exponent: how tightly the glints are focused ((N·L) to this power).",
-		"effects": "160 is the site's: pin-point sparkles. Low values (4 to 20) spread the glint into a broad sheen, like wet plastic; very high values leave only a few pixels lit. The slider is logarithmic.",
+		"id": "light_color", "label": "Light colour", "type": COLOR,
+		"default": Color(1, 1, 1), "group": "Light",
+		"tooltip": "The colour of the lamp. Every lit mode's colour is multiplied by it.",
+		"effects": "White (the default) leaves every mode exactly as it is. Warm it for a sunset, cool it for moonlight; it also tints the scattering haze.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "light_yaw", "label": "Light yaw", "type": F,
 		"default": 0.0, "min": -180.0, "max": 180.0, "step": 0.1, "wrap": true,
-		"group": "Lighting",
+		"group": "Light",
 		"tooltip": "Degrees to swing the light left or right, about the camera's up axis.",
 		"effects": "0 is the site's headlight, which follows the camera. Turning it rakes the light across the surface so the relief shows; bind it to Time and the light orbits.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "light_pitch", "label": "Light pitch", "type": F,
 		"default": 0.0, "min": -90.0, "max": 90.0, "step": 0.1,
-		"group": "Lighting",
+		"group": "Light",
 		"tooltip": "Degrees to tip the light up or down, about the camera's right axis.",
 		"effects": "0 is the site's headlight. Positive raises the light above the view, negative drops it below; either way the light rakes across faces it used to hit head on.",
 	}))
 	out.append(AttributeSpec.make({
+		"id": "light_size", "label": "Light size", "type": F,
+		"default": 0.0, "min": 0.0, "max": 30.0, "step": 0.1, "hard_max": 89.0,
+		"group": "Light",
+		"tooltip": "How wide the lamp is, in degrees. A point light at 0; a broad source above it.",
+		"effects": "0 is the site's pin-sharp glints and hard shadows. Widening it spreads the glint into a soft sheen and softens the shadow edge (a wider penumbra).",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "light_ambient", "label": "Ambient", "type": F,
+		"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "hard_max": 4.0,
+		"group": "Light",
+		"tooltip": "Light every surface gets whichever way it faces.",
+		"effects": "0.1 is the site's. Raising it lifts the shadowed sides and flattens the picture; 0 leaves faces turned away from the light black (in the modes that multiply by the light).",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "light_diffuse", "label": "Diffuse", "type": F,
+		"default": 0.5, "min": 0.0, "max": 2.0, "step": 0.01, "hard_max": 8.0,
+		"group": "Light",
+		"tooltip": "Matte light: brightest where the surface faces the light, falling off as it turns away (|N·L|).",
+		"effects": "0.5 is the site's. More gives stronger form and contrast between faces; 0 leaves only ambient and the specular glints.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "shadows", "label": "Shadows", "type": F,
+		"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,
+		"group": "Light",
+		"tooltip": "How dark the lamp's shadows are. 0 is off (no shadow ray cast).",
+		"effects": "0 is the site's look, with no shadow march. Towards 1 the surface casts shadows of itself, which costs one extra ray per pixel and drops out first under load. Only works when the light is swung off the headlight (Light yaw or pitch non-zero); a headlight casts no visible shadow.",
+	}))
+
+	# --- Scattering ---
+	out.append(AttributeSpec.make({
+		"id": "scatter_density", "label": "Density", "type": F,
+		"default": 0.0, "min": 0.0, "max": 0.5, "step": 0.001, "hard_max": 10.0,
+		"group": "Scattering",
+		"tooltip": "How thick the haze filling the space is. 0 is off.",
+		"effects": "Measured in near-distance units, so it looks the same at any zoom. Small values add depth; large values wash the scene toward the light's colour.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "scatter_glow", "label": "Glow", "type": F,
+		"default": 0.0, "min": 0.0, "max": 0.95, "step": 0.01,
+		"group": "Scattering",
+		"tooltip": "How much the haze bunches around the light's direction (a forward-scatter bias).",
+		"effects": "0 is an even haze. Towards 1 it becomes a bright beam around the lamp, like looking near the sun through mist. (It sets the g in the Henyey-Greenstein phase: how sharply light prefers to carry on forwards.)",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "scatter_brightness", "label": "Brightness", "type": F,
+		"default": 1.0, "min": 0.0, "max": 4.0, "step": 0.01, "hard_max": 16.0,
+		"group": "Scattering",
+		"tooltip": "How bright the haze is, multiplied by the light's colour.",
+		"effects": "1 is a middling haze. Below 1 is a dim fog; above 1 blooms the beam. 0 makes the haze black (a dark fog).",
+	}))
+
+	# --- Picture ---
+	out.append(AttributeSpec.make({
 		"id": "exposure", "label": "Exposure", "type": F,
 		"default": 1.0, "min": 0.0, "max": 4.0, "step": 0.01, "hard_max": 16.0,
-		"group": "Lighting",
+		"group": "Picture",
 		"tooltip": "Multiplies the final colour of every mode but Grayscale.",
 		"effects": "1 leaves the picture alone. Above 1 brightens it (the bright end clips to white first); below 1 darkens it.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "saturation", "label": "Saturation", "type": F,
 		"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.01, "hard_max": 4.0,
-		"group": "Lighting",
+		"group": "Picture",
 		"tooltip": "How colourful the final picture is, in every mode but Grayscale.",
 		"effects": "1 leaves the colours alone, 0 is greys, above 1 pushes the colours harder (the ice goes electric blue).",
+	}))
+
+	# --- Surface ---
+	out.append(AttributeSpec.make({
+		"id": "surface_color", "label": "Surface colour", "type": COLOR,
+		"default": Color(1, 1, 1), "group": "Surface",
+		"tooltip": "A colour the surface is multiplied by, under every lit mode.",
+		"effects": "White (the default) leaves every mode as it is. Use it to tint the whole surface without changing its shading.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "roughness", "label": "Roughness", "type": F,
+		"default": 1.0 / 9.0, "min": 0.02, "max": 1.0, "step": 0.001, "log": true,
+		"group": "Surface",
+		"tooltip": "How rough the surface is: low is glassy with tight glints, high is matte. Replaces the old Shininess.",
+		"effects": "1/9 (the default) is the site's pin-point sparkle. Towards 1 the glint spreads into a broad sheen; towards 0.02 it tightens to a few pixels. (The specular exponent is 2/roughness² − 2, so smaller roughness means a tighter highlight.) The slider is logarithmic.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "light_specular", "label": "Specular", "type": F,
+		"default": 1.0, "min": 0.0, "max": 4.0, "step": 0.01, "hard_max": 16.0,
+		"group": "Surface",
+		"tooltip": "The strength of the glints where a surface faces the light almost exactly.",
+		"effects": "1 is the site's: the bright sparkle on the ice. 0 removes the glints for a chalky look; above 1 they bloom.",
+	}))
+
+	# --- Texture ---
+	out.append(AttributeSpec.make({
+		"id": "texture_strength", "label": "Texture", "type": F,
+		"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,
+		"group": "Texture",
+		"tooltip": "How much the noise editor's Texture output recolours the surface. 0 leaves the colour alone.",
+		"effects": "The surface colour is multiplied by a blend from white toward the Texture colour by this amount. 1 uses the Texture output in full; nothing wired means nothing changes whatever this is.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "bump_strength", "label": "Bump", "type": F,
+		"default": 1.0, "min": 0.0, "max": 4.0, "step": 0.01, "hard_max": 64.0,
+		"group": "Texture",
+		"tooltip": "How much the noise editor's Bump output tilts the surface normal (a fake relief; the surface does not actually move).",
+		"effects": "0 is flat. Larger values deepen the apparent bumps and grooves. Nothing wired means nothing changes; press N to open the editor.",
 	}))
 
 	# --- Palette (the twelve cosine-palette numbers, edited in the Colour window) ---
@@ -228,13 +301,17 @@ static func specs() -> Array[AttributeSpec]:
 
 
 ## Heading tooltips, one per group: each shape's own, plus Fractal, Render,
-## Colour, Lighting and Palette.
+## Colour, Light, Scattering, Picture, Surface, Texture and Palette.
 static func group_tooltips() -> Dictionary:
 	var out := {
 		"Fractal": "Fractal: which shape is drawn, and the 3D slice of its 4D field the camera flies through (the Mandelbulb is 3D, so it has no slice). The rows below change with the shape.",
 		"Render": "Render: how finely the ray march resolves the surface. A look-and-cost knob, not a shape knob.",
 		"Colour": "Colour: which colouring mode paints the surface and, for the Palette mode, what runs it along the palette.",
-		"Lighting": "Lighting: the light every lit colour mode shares, a headlight following the camera by default. Each value's default is the site's, so the default picture is unchanged until you move one.",
+		"Light": "Light: the one lamp every lit colour mode shares, a headlight following the camera by default. Each value's default is the site's, so the default picture is unchanged until you move one.",
+		"Scattering": "Scattering: haze in the space the camera flies through — analytic, no extra rays. Off until you raise the Density.",
+		"Picture": "Picture: adjustments on the final colour of every mode but Grayscale.",
+		"Surface": "Surface: what the surface is made of — its colour, how rough it is, and how strong the glints are.",
+		"Texture": "Texture: the noise editor's Texture and Bump outputs drive these. Nothing wired, nothing changes; press N to open the editor.",
 		"Palette": "Palette: the twelve numbers of the cosine palette color(t) = A + B · cos(2π (C·t + D)), one row per vector and channel. The Colour window's sliders edit the same values; these rows add a Source, gain and waveform to each, so a channel can pulse, ripple or cycle on its own.",
 	}
 	out.merge(MandelboxShape.group_tooltips())

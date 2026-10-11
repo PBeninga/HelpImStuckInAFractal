@@ -5,7 +5,9 @@ extends NoiseNodeType
 ##
 ## Displace (a Float) is multiplied by Amplitude and ADDED to the distance
 ## estimate: a POSITIVE value pushes the surface IN (the ray stops short). Tint
-## (a Float) drives a colour blend toward the Tint colour.
+## (a Float) drives a colour blend toward the Tint colour. Texture (a Vec3)
+## recolours the surface and Bump (a Float) tilts its normal for a fake relief;
+## their strengths are the Material tab's Texture and Bump rows, not Output's.
 
 const TINT_COLOR_TOOLTIP := "The colour the surface is tinted toward where the Tint input is high. Pick something that reads against the colour mode you are using — a warm hue over the cool Ice Fractal palette shows the field clearly."
 
@@ -21,6 +23,10 @@ func _init() -> void:
 			"Displace: added to the distance estimate (times Amplitude). Positive pushes the surface in, negative pulls it out. Unwired it is 0, so the shape is untouched.", 0.0),
 		port("Tint", NoisePort.Type.FLOAT,
 			"Tint: how far to blend the surface colour toward the Tint colour, clamped to 0..1 and scaled by Tint strength. Unwired it is 0, so the colour is untouched.", 0.0),
+		port("Texture", NoisePort.Type.VEC3,
+			"Texture: a colour the surface is multiplied by, each channel clamped to 0..1, scaled by the Material tab's Texture row. Unwired it is white, so the colour is untouched.", 0.0),
+		port("Bump", NoisePort.Type.FLOAT,
+			"Bump: a height in fractal units whose across-surface slope tilts the normal (a fake relief; the surface does not move), scaled by the Material tab's Bump row. Unwired it is flat.", 0.0),
 	]
 
 

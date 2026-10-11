@@ -1,6 +1,6 @@
 extends "res://tests/test_case.gd"
 ## The shape catalogue: every spec has tooltip and effects, defaults in range,
-## ids unique, every group has a heading, and the id set is the expected 90
+## ids unique, every group has a heading, and the id set is the expected 99
 ## catalogue ids; the lighting defaults are the site's constants; the Palette
 ## mode's rows show only in that mode; each shape's rows show only while that
 ## shape is drawn; the console's two tabs between them show every group
@@ -24,8 +24,10 @@ const EXPECTED_IDS := [
 	&"mandelbulb_phase_theta", &"mandelbulb_phase_phi", &"mandelbulb_julia", &"mandelbulb_c_0",
 	&"mandelbulb_c_1", &"mandelbulb_c_2", &"precision", &"color_mode",
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
-	&"light_ambient", &"light_diffuse", &"light_specular", &"light_shininess", &"light_yaw",
-	&"light_pitch", &"exposure", &"saturation", &"palette_a_r", &"palette_a_g", &"palette_a_b",
+	&"light_color", &"light_yaw", &"light_pitch", &"light_size", &"light_ambient",
+	&"light_diffuse", &"shadows", &"scatter_density", &"scatter_glow", &"scatter_brightness",
+	&"exposure", &"saturation", &"surface_color", &"roughness", &"light_specular",
+	&"texture_strength", &"bump_strength", &"palette_a_r", &"palette_a_g", &"palette_a_b",
 	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
 	&"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
@@ -35,7 +37,7 @@ func run() -> void:
 	var specs := ShapeCatalogue.specs()
 	var tips := ShapeCatalogue.group_tooltips()
 
-	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids are the expected 90, in order")
+	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids are the expected 99, in order")
 
 	var seen := {}
 	for s in specs:
@@ -67,22 +69,34 @@ func run() -> void:
 	# --- the console's tabs split the groups between them ---
 	for s in specs:
 		var on_shape := ShapeCatalogue.SHAPE_GROUPS.has(s.group)
-		var on_colour := ShapeCatalogue.COLOUR_GROUPS.has(s.group)
-		check(on_shape != on_colour, "'%s' (group %s) is on exactly one console tab" % [s.id, s.group])
+		var on_light := ShapeCatalogue.LIGHT_GROUPS.has(s.group)
+		var on_material := ShapeCatalogue.MATERIAL_GROUPS.has(s.group)
+		var tabs := int(on_shape) + int(on_light) + int(on_material)
+		check(tabs == 1, "'%s' (group %s) is on exactly one console tab" % [s.id, s.group])
 
 	# --- lighting: the defaults are the site's constants, so the picture is unchanged ---
 	check_approx(table.get_default(&"light_ambient"), 0.1, "ambient defaults to the site's 0.1")
 	check_approx(table.get_default(&"light_diffuse"), 0.5, "diffuse to 0.5")
 	check_approx(table.get_default(&"light_specular"), 1.0, "specular to 1")
-	check_approx(table.get_default(&"light_shininess"), 160.0, "shininess to 160")
+	check_approx(table.get_default(&"roughness"), 1.0 / 9.0, "roughness defaults to 1/9 (the site's exponent 160)")
+	check(table.spec(&"roughness").log_scale, "roughness is logarithmic")
+	check(not table.has(&"light_shininess"), "light_shininess is gone")
 	check_approx(table.get_default(&"light_yaw"), 0.0, "yaw 0: the headlight")
 	check_approx(table.get_default(&"light_pitch"), 0.0, "pitch 0")
 	check_approx(table.get_default(&"exposure"), 1.0, "exposure 1")
 	check_approx(table.get_default(&"saturation"), 1.0, "saturation 1")
-	check(table.spec(&"light_shininess").log_scale, "shininess is logarithmic")
 	check(table.spec(&"light_yaw").wrap, "yaw wraps")
 	for id in [&"light_ambient", &"light_specular", &"light_yaw", &"exposure"]:
 		check(table.spec(id).bindable, "'%s' is bindable" % id)
+	for cid in [&"light_color", &"surface_color"]:
+		var cs := table.spec(cid)
+		check_eq(cs.type, AttributeSpec.Type.COLOR, "'%s' is a COLOR spec" % cid)
+		check(not cs.bindable, "'%s' is not bindable" % cid)
+		check((table.get_default(cid) as Color).is_equal_approx(Color(1, 1, 1, 1)), "'%s' defaults to white" % cid)
+	check(ShapeCatalogue.LIGHT_GROUPS.has("Scattering") and ShapeCatalogue.MATERIAL_GROUPS.has("Surface"),
+		"the Light tab owns Scattering and the Material tab owns Surface")
+	for g in ShapeCatalogue.LIGHT_GROUPS + ShapeCatalogue.MATERIAL_GROUPS:
+		check(tips.has(g), "group '%s' has a heading tooltip" % g)
 
 	# --- the Palette mode and its rows ---
 	check(color.enum_values.has(Palette.MODE_ID), "Palette is a colour mode")

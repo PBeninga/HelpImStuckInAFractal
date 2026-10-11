@@ -40,6 +40,12 @@ func run() -> void:
 	check(LoadShedder.settings(LoadShedder.top())["speed"] < 1.0, "only the top level caps the speed")
 	check_eq(LoadShedder.settings(99), LoadShedder.settings(LoadShedder.top()), "levels clamp to the top")
 
+	# --- shadows: full at level 0, halved at 1, off from level 2 ---
+	check_approx(LoadShedder.settings(0)["shadow"], 1.0, "level 0 marches the full shadow")
+	check_approx(LoadShedder.settings(1)["shadow"], 0.5, "level 1 halves the shadow march")
+	for i in range(2, LoadShedder.top() + 1):
+		check_eq(LoadShedder.settings(i)["shadow"], 0.0, "level %d skips the shadow march" % i)
+
 	# --- no shedding while the render scale can still drop ---
 	var a := LoadShedder.new()
 	check_eq(_run_for(a, 3.0, SLOW, false), 0, "slow but scale not at its floor: no shed")

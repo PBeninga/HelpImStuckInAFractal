@@ -4,11 +4,13 @@ extends RefCounted
 ##
 ##   compile(graph)  -> {code, uniforms, errors}
 ##       The body of the mandelbox shader's NOISE region: the noise library, one
-##       `uniform` per live (FLOAT) node parameter, and the three functions the
-##       renderer calls — noise_displace(p), noise_step_scale() and
-##       noise_tint(col, p). When nothing is wired to the Output, the three are
-##       the inert stubs, so the picture and its cost are exactly as if there were
-##       no editor at all.
+##       `uniform` per live (FLOAT) node parameter, the five functions the
+##       renderer calls — noise_displace(p), noise_step_scale(), noise_tint(col, p),
+##       noise_texture(p) and noise_bump(p) — and the two `const bool`
+##       noise_texture_on / noise_bump_on flags so the shader skips the texture and
+##       bump evaluations when their ports are unwired. When nothing is wired to
+##       the Output, the region is the inert STUB, so the picture and its cost are
+##       exactly as if there were no editor at all.
 ##
 ##   compile_preview(graph, node_id, port) -> String
 ##       A self-contained canvas_item shader that evaluates the subgraph up to one
@@ -27,6 +29,10 @@ const LIBRARY_PATH := "res://src/noise/noise_library.gdshaderinc"
 const STUB := """float noise_displace(vec3 p) { return 0.0; }
 float noise_step_scale() { return 1.0; }
 vec3 noise_tint(vec3 col, vec3 p) { return col; }
+vec3 noise_texture(vec3 p) { return vec3(1.0); }
+float noise_bump(vec3 p) { return 0.0; }
+const bool noise_texture_on = false;
+const bool noise_bump_on = false;
 """
 
 static var _library_cache := ""
@@ -47,18 +53,18 @@ static func compile(graph: NoiseGraph) -> Dictionary:
 	var errors: Array = []
 	var disp := graph.input_link(graph.output_id(), 0)
 	var tint := graph.input_link(graph.output_id(), 1)
-	var wired := not disp.is_empty() or not tint.is_empty()
+	var tex := graph.input_link(graph.output_id(), 2)
+	var bump := graph.input_link(graph.output_id(), 3)
+	var wired := not disp.is_empty() or not tint.is_empty() or not tex.is_empty() or not bump.is_empty()
 	if not wired:
 		return {"code": STUB, "uniforms": [], "errors": errors}
 
-	# Every node used by either function, for the shared uniform block.
+	# Every node used by any of the four functions, for the shared uniform block.
 	var used: Dictionary = {}
-	if not disp.is_empty():
-		for id in _ancestors(graph, disp["from"]):
-			used[id] = true
-	if not tint.is_empty():
-		for id in _ancestors(graph, tint["from"]):
-			used[id] = true
+	for link in [disp, tint, tex, bump]:
+		if not link.is_empty():
+			for id in _ancestors(graph, link["from"]):
+				used[id] = true
 
 	var names: Array = []
 	var decls := _uniform_decls(graph, used, names, errors)
@@ -76,6 +82,10 @@ static func compile(graph: NoiseGraph) -> Dictionary:
 	code += _displace_fn(graph, disp, errors)
 	code += _step_scale_fn(not disp.is_empty())
 	code += _tint_fn(graph, tint, errors)
+	code += _texture_fn(graph, tex, errors)
+	code += _bump_fn(graph, bump, errors)
+	code += "const bool noise_texture_on = %s;\n" % ("true" if not tex.is_empty() else "false")
+	code += "const bool noise_bump_on = %s;\n" % ("true" if not bump.is_empty() else "false")
 	return {"code": code, "uniforms": names, "errors": errors}
 
 
@@ -199,6 +209,28 @@ static func _tint_fn(graph: NoiseGraph, tint: Dictionary, errors: Array) -> Stri
 	var body := _emit_nodes(graph, _ordered(graph, used), errors)
 	var result := "v_%s_%d" % [tint["from"], tint["from_port"]]
 	return "vec3 noise_tint(vec3 col, vec3 p) {\n%s\tcol = mix(col, n_output_0_tint_color, clamp(%s, 0.0, 1.0) * n_output_0_tint_strength);\n\treturn col;\n}\n" % [body, result]
+
+
+static func _texture_fn(graph: NoiseGraph, tex: Dictionary, errors: Array) -> String:
+	if tex.is_empty():
+		return "vec3 noise_texture(vec3 p) { return vec3(1.0); }\n"
+	var used: Dictionary = {}
+	for id in _ancestors(graph, tex["from"]):
+		used[id] = true
+	var body := _emit_nodes(graph, _ordered(graph, used), errors)
+	var result := "v_%s_%d" % [tex["from"], tex["from_port"]]
+	return "vec3 noise_texture(vec3 p) {\n%s\treturn clamp(%s, 0.0, 1.0);\n}\n" % [body, result]
+
+
+static func _bump_fn(graph: NoiseGraph, bump: Dictionary, errors: Array) -> String:
+	if bump.is_empty():
+		return "float noise_bump(vec3 p) { return 0.0; }\n"
+	var used: Dictionary = {}
+	for id in _ancestors(graph, bump["from"]):
+		used[id] = true
+	var body := _emit_nodes(graph, _ordered(graph, used), errors)
+	var result := "v_%s_%d" % [bump["from"], bump["from_port"]]
+	return "float noise_bump(vec3 p) {\n%s\treturn %s;\n}\n" % [body, result]
 
 
 ## GLSL statements for every node in `ordered`, each declaring its output locals.

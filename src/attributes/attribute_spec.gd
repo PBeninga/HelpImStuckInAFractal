@@ -9,7 +9,7 @@ extends RefCounted
 ## Vector quantities are several specs sharing a `group`, so the inspector has
 ## exactly one row shape.
 
-enum Type { FLOAT, INT, BOOL, ENUM }
+enum Type { FLOAT, INT, BOOL, ENUM, COLOR }
 
 const REQUIRED_KEYS := ["id", "label", "type", "default", "tooltip", "effects"]
 
@@ -90,10 +90,13 @@ static func make(d: Dictionary) -> AttributeSpec:
 			s.step = 1.0
 			s.default_value = int(d["default"])
 			s.bindable = false
+		Type.COLOR:
+			s.default_value = sanitize_color(d["default"])
+			s.bindable = false
 	s.hard_min = float(d.get("hard_min", s.min_value))
 	s.hard_max = float(d.get("hard_max", s.max_value))
 	if d.has("bindable"):
-		s.bindable = bool(d["bindable"]) and s.type != Type.BOOL and s.type != Type.ENUM
+		s.bindable = bool(d["bindable"]) and s.type != Type.BOOL and s.type != Type.ENUM and s.type != Type.COLOR
 	if d.has("show_when"):
 		s.show_when = d["show_when"]
 	if d.has("enabled_when"):
@@ -124,4 +127,18 @@ func sanitize(value: Variant) -> Variant:
 		Type.ENUM:
 			var iv := int(value)
 			return iv if enum_values.has(iv) else default_value
+		Type.COLOR:
+			return sanitize_color(value)
 	return value
+
+
+## A candidate colour as an opaque Color: a Color (alpha forced to 1), or the
+## 3- or 4-element Array that JSON round-trips (alpha, element 4, is ignored).
+static func sanitize_color(value: Variant) -> Color:
+	if value is Color:
+		var c: Color = value
+		return Color(c.r, c.g, c.b, 1.0)
+	if value is Array and (value as Array).size() >= 3:
+		var a: Array = value
+		return Color(float(a[0]), float(a[1]), float(a[2]), 1.0)
+	return Color.WHITE

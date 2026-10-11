@@ -1,6 +1,6 @@
 class_name WorkspaceFiles
 extends Node
-## Which file a view is saved to or loaded from, and which one is current.
+## Which file a level is saved to or loaded from, and which one is current.
 ##
 ## It owns the two file panels and the current file's path, and nothing
 ## else: it never reads a save, never writes one, and knows nothing about the
@@ -18,22 +18,23 @@ signal prompting
 ## write there — res:// is inside the read-only PCK — so it uses user://.
 const REPO_DIR := "res://saves/"
 const EXPORT_DIR := "user://saves/"
-const DEFAULT_NAME := "view.json"
-const FILTER := "*.json ; Saved views"
+const DEFAULT_NAME := "level.json"
+const FILTER := "*.json ; Levels"
 
 var current_path := ""
 
-## An optional subdirectory under the saves directory, with a trailing slash, e.g.
-## "noise/". The noise editor points a second instance at saves/noise/ this way.
-var subdir := ""
-## Whether this instance answers the Cmd/Ctrl+S quick-save action. The view's
-## instance does; the noise editor's does not (it has only a Save… panel), so two
-## instances never both fire on one key press.
+## Whether this instance answers the Cmd/Ctrl+S quick-save action. Left on for
+## the one level instance; a build that ever ran two instances turned the extra
+## one off so they would not both fire on one key press.
 var quick_save_enabled := true
 
-## The file-dialog filter. The view and noise editor keep the default; the
-## console's Movement pane narrows it to keymap files.
+## The file-dialog filter. On macOS the native panel takes the text after
+## "*." as an extension, so it must be a plain "*.ext" pattern.
 var file_filter := FILTER
+## What the panels call the file ("Save level", "Load level") and the name the
+## save panel offers when no file is current.
+var noun := "level"
+var default_name := DEFAULT_NAME
 
 var _save_dialog: FileDialog
 var _load_dialog: FileDialog
@@ -63,10 +64,10 @@ func _init() -> void:
 
 
 func _ready() -> void:
-	_ensure_subdir()
-	_save_dialog = _make_dialog(FileDialog.FILE_MODE_SAVE_FILE, "Save view")
+	ensure_directory()
+	_save_dialog = _make_dialog(FileDialog.FILE_MODE_SAVE_FILE, "Save %s" % noun)
 	_save_dialog.file_selected.connect(_on_save_selected)
-	_load_dialog = _make_dialog(FileDialog.FILE_MODE_OPEN_FILE, "Load view")
+	_load_dialog = _make_dialog(FileDialog.FILE_MODE_OPEN_FILE, "Load %s" % noun)
 	_load_dialog.file_selected.connect(_on_load_selected)
 
 
@@ -74,18 +75,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if quick_save_enabled and event.is_action_pressed(&"workspace_quick_save"):
 		quick_save()
 		get_viewport().set_input_as_handled()
-
-
-## This instance's directory: the saves directory plus its subdir.
-func _dir() -> String:
-	return directory() + subdir
-
-
-func _ensure_subdir() -> Error:
-	var absolute := ProjectSettings.globalize_path(_dir())
-	if DirAccess.dir_exists_absolute(absolute):
-		return OK
-	return DirAccess.make_dir_recursive_absolute(absolute)
 
 
 func save_dialog() -> FileDialog:
@@ -102,7 +91,7 @@ func display_name() -> String:
 
 
 func prompt_save() -> void:
-	_open(_save_dialog, display_name() if current_path != "" else DEFAULT_NAME)
+	_open(_save_dialog, display_name() if current_path != "" else default_name)
 
 
 func prompt_load() -> void:
@@ -129,8 +118,10 @@ func note_loaded(path: String) -> void:
 
 func _make_dialog(mode: FileDialog.FileMode, title: String) -> FileDialog:
 	var dialog := FileDialog.new()
-	dialog.title = title
 	dialog.file_mode = mode
+	# Setting the mode replaces the title ("Open a File") unless told not to.
+	dialog.mode_overrides_title = false
+	dialog.title = title
 	# The native panel is only used with filesystem access; the other access
 	# modes fall back to Godot's own dialog.
 	dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -141,8 +132,8 @@ func _make_dialog(mode: FileDialog.FileMode, title: String) -> FileDialog:
 
 
 func _open(dialog: FileDialog, file_name: String) -> void:
-	_ensure_subdir()
-	dialog.current_dir = ProjectSettings.globalize_path(_dir())
+	ensure_directory()
+	dialog.current_dir = ProjectSettings.globalize_path(directory())
 	dialog.current_file = file_name
 	prompting.emit()
 	dialog.popup_centered_ratio(0.6)

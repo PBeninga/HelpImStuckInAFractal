@@ -56,8 +56,16 @@ func run() -> void:
 	for k in FractalParams.LOOK_KEYS:
 		check(FractalParams.RESOLVED_KEYS.has(k), "look key '%s' is resolved" % k)
 	check(not FractalParams.LOOK_KEYS.has(&"color_mode"), "color_mode is pushed on its own, not as a look key")
-	check_eq(FractalParams.LOOK_KEYS.size() + FractalParams.RESOLVED_KEYS.find(&"color_mode") + 1,
-		FractalParams.RESOLVED_KEYS.size(), "the look keys are everything after color_mode")
+	check_eq(FractalParams.LOOK_KEYS.size() + FractalParams.COLOR_KEYS.size()
+		+ FractalParams.RESOLVED_KEYS.find(&"color_mode") + 1,
+		FractalParams.RESOLVED_KEYS.size(),
+		"look keys + colour keys are everything after color_mode")
+	for k in FractalParams.COLOR_KEYS:
+		check(FractalParams.RESOLVED_KEYS.has(k), "colour key '%s' is resolved" % k)
+		check(not FractalParams.LOOK_KEYS.has(k), "a colour key is not a scalar look key")
+		check(p.get(k) is Color, "field '%s' is a Color" % k)
+	check(not FractalParams.RESOLVED_KEYS.has(&"light_shininess"), "light_shininess is gone")
+	check_eq(FractalParams.SHADOW_STEPS, 48, "the full shadow march is 48 steps")
 
 	# --- apply_resolved emits once, only on a difference ---
 	var fires := [0]

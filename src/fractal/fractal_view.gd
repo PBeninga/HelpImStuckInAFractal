@@ -12,6 +12,11 @@ const TAN_HALF_FOV := 0.36397023426620234  # tan(20 degrees), half of a 40 deg v
 ## The probe dot's radius as a fraction of its distance: about 5 px across the
 ## 800 px-high view's 40 deg field, whatever the distance.
 const PROBE_ANGULAR_RADIUS := 0.005
+## Frames a level drop takes to ease in, instead of popping to full quality:
+## the shed fog recedes to the full view distance, and the detail and step
+## budget climb back to the level's. A shed is never eased: that is the governor
+## buying frame time back now.
+const RESTORE_FRAMES := 18
 
 ## A noise rebuild failed to compile, or recovered. "" means all clear. The panel
 ## shows the message on its status line; the console gets it too.
@@ -45,6 +50,18 @@ var _base_shader: Shader
 var _base_code := ""
 var _noise_graph: NoiseGraph
 var _shed: Dictionary = LoadShedder.settings(0)
+# What is on screen, which trails _shed while a restore eases in. The fog is an
+# inverse distance (1 / fog_dist, 0 = none) so a fog on its way out recedes
+# towards infinity in even steps; a fog leaving entirely also thins
+# (_fog_clear 0 -> 1) as it recedes. _detail and _steps are the shed factors on
+# the detail and the step budget.
+var _fog_inv := 0.0
+var _fog_clear := 0.0
+var _detail := 1.0
+var _steps := 1.0
+var _from := {}                       # the on-screen values the restore started from
+var _restore_frame := RESTORE_FRAMES  # frames into the restore tween; done at RESTORE_FRAMES
+var _restore_stepped_on := -1         # the process frame the tween last stepped on
 var _center_ray: CenterRay
 ## The perturbed march's iteration count last pushed (0: off). Main shows it in
 ## the Movement pane as "deep N".
@@ -237,9 +254,51 @@ func set_load_level(level: int) -> void:
 	level = clampi(level, 0, LoadShedder.top())
 	if level == load_level:
 		return
+	var shedding := level > load_level
 	load_level = level
 	_shed = LoadShedder.settings(level)
+	if shedding:
+		_fog_inv = _fog_target()
+		_fog_clear = 0.0
+		_detail = _shed["detail"]
+		_steps = _shed["steps"]
+		_restore_frame = RESTORE_FRAMES
+	else:
+		_from = {"fog_inv": _fog_inv, "detail": _detail, "steps": _steps}
+		_restore_frame = 0
+		_step_restore()
 	_push_params()
+
+
+## True while a level drop is still easing in.
+func restoring() -> bool:
+	return _restore_frame < RESTORE_FRAMES
+
+
+func _process(_delta: float) -> void:
+	if restoring() and _restore_stepped_on != Engine.get_process_frames():
+		_step_restore()
+		_push_shed()
+		request_frame()
+
+
+func _fog_target() -> float:
+	var fog: float = _shed["fog"]
+	return 1.0 / fog if fog > 0.0 else 0.0
+
+
+## One frame of the restore tween: the fog recedes towards the target level's
+## (thinning on the way when the target is none) while the detail and step
+## budget climb towards it.
+func _step_restore() -> void:
+	_restore_frame += 1
+	_restore_stepped_on = Engine.get_process_frames()
+	var t := float(_restore_frame) / RESTORE_FRAMES
+	var target := _fog_target()
+	_fog_inv = lerpf(_from["fog_inv"], target, t)
+	_fog_clear = t if target == 0.0 and t < 1.0 else 0.0
+	_detail = lerpf(_from["detail"], _shed["detail"], t)
+	_steps = lerpf(_from["steps"], _shed["steps"], t)
 
 
 func request_frame() -> void:
@@ -344,22 +403,40 @@ func _push_probe() -> void:
 func _push_params() -> void:
 	if _material == null or _params == null:
 		return
-	# Every catalogue id is a uniform of the same name, pushed as it is; the
-	# precision folds in the detail and the load shedder's factor.
+	# Every catalogue id is a uniform of the same name, pushed as it is; the two
+	# COLOR keys go as a vec3 (the shader's colour uniforms); the precision folds
+	# in the detail and the load shedder's factor.
 	for key in FractalParams.RESOLVED_KEYS:
-		if key != &"precision":
+		if key == &"precision":
+			continue
+		if FractalParams.COLOR_KEYS.has(key):
+			var c: Color = _params.get(key)
+			_material.set_shader_parameter(key, Vector3(c.r, c.g, c.b))
+		else:
 			_material.set_shader_parameter(key, _params.get(key))
-	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _shed["detail"]))
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
 	_material.set_shader_parameter("box_half", _params.bound_half())
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
-	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _shed["steps"])))
+	_push_shed()
+	_push_near()
+
+
+## The values the load-shed level (or a restore easing in) bends: the precision,
+## the step budget and the fog.
+func _push_shed() -> void:
+	if _material == null or _params == null:
+		return
+	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _detail))
+	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _steps)))
 	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
 	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
-	_material.set_shader_parameter("fog_dist", _shed["fog"])
+	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 else 0.0)
+	_material.set_shader_parameter("fog_clear", _fog_clear)
 	_material.set_shader_parameter("fog_color", _params.fog_color())
-	_push_near()
+	# The self-shadow march's budget, shed with the ladder (full 48 at level 0;
+	# it steps with the level rather than easing, since it is a step count).
+	_material.set_shader_parameter("shadow_steps", int(round(FractalParams.SHADOW_STEPS * _shed["shadow"])))
 
 
 func _push_camera() -> void:

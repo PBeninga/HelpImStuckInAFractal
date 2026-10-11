@@ -47,21 +47,38 @@ func run() -> void:
 	check_approx(console.content_scale_factor, UiScale.factor_for(console), "and takes its content scale")
 	check(console.position.y >= 0, "it opens inside the main window, title bar reachable")
 
-	# --- the Shape and Colour tabs share the specs out: one row per spec in all ---
-	var colour := console.colour_inspector()
-	check_eq(inspector.row_count() + colour.row_count(), table.specs.size(), "one row per spec across the two tabs")
-	check(inspector.row(&"box_scale") != null and colour.row(&"box_scale") == null, "Scale is on the Shape tab")
-	check(colour.row(&"color_mode") != null and inspector.row(&"color_mode") == null, "Colour is on the Colour tab")
-	check(colour.row(&"light_specular") != null, "so is the lighting")
-	check(colour.row(&"palette_a_r") != null, "and the palette's twelve numbers")
-	check_eq(console.tabs().get_tab_count(), 3, "three tabs")
+	# --- the Shape, Light and Material tabs share the specs out: one row per spec in all ---
+	var light := console.light_inspector()
+	var material := console.material_inspector()
+	check_eq(inspector.row_count() + light.row_count() + material.row_count(), table.specs.size(),
+		"one row per spec across the three inspectors")
+	check(inspector.row(&"box_scale") != null and light.row(&"box_scale") == null and material.row(&"box_scale") == null,
+		"Scale is on the Shape tab")
+	check(light.row(&"light_color") != null and light.row(&"shadows") != null,
+		"Light colour and Shadows are on the Light tab")
+	check(material.row(&"color_mode") != null and material.row(&"roughness") != null and material.row(&"texture_strength") != null,
+		"Colour mode, Roughness and Texture are on the Material tab")
+	check(material.row(&"light_color") == null and light.row(&"color_mode") == null,
+		"neither tab holds the other's rows")
+	check(material.row(&"palette_a_r") != null, "the palette's twelve numbers are on the Material tab")
+	check_eq(console.tabs().get_tab_count(), 4, "four tabs")
 	check_eq(console.tabs().get_tab_title(0), "Shape", "the first is Shape")
-	check_eq(console.tabs().get_tab_title(1), "Colour", "the second Colour")
-	check_eq(console.tabs().get_tab_title(2), "View", "the third View")
+	check_eq(console.tabs().get_tab_title(1), "Light", "the second Light")
+	check_eq(console.tabs().get_tab_title(2), "Material", "the third Material")
+	check_eq(console.tabs().get_tab_title(3), "View", "the fourth View")
 	check(console.view_pane() != null and console.view_pane().get_parent() == console.tabs(), "which is the View pane")
-	check(console.palette_window() != null and console.palette_window().get_parent() != null
-		and colour.is_ancestor_of(console.palette_window()), "the palette window heads the Colour tab's list")
+	check(console.palette_window() != null and material.is_ancestor_of(console.palette_window()),
+		"the palette window heads the Material tab's list")
 	check(console.palette().table() == table, "and edits the console's own table")
+
+	# --- a COLOR row's value control is a ColorPickerButton; changing it writes the table ---
+	var lc_row := light.row(&"light_color")
+	var picker := lc_row.value_control() as ColorPickerButton
+	check(picker != null, "the Light colour row's value control is a ColorPickerButton")
+	picker.color = Color(0.2, 0.4, 0.6)
+	picker.color_changed.emit(picker.color)
+	check((table.get_default(&"light_color") as Color).is_equal_approx(Color(0.2, 0.4, 0.6, 1.0)),
+		"changing the picker writes the table")
 
 	# --- the self-similarity line: read-only, at the head of the Shape tab ---
 	var ss := console.self_similarity_label()
@@ -107,6 +124,9 @@ func run() -> void:
 	console.show_zoom_limit(false)
 	check(not movement.zoom_label.visible, "and false hides it again")
 
+	# --- Movement pane: the keymap-file strip is gone (keys travel in the level) ---
+	check_eq(movement.get_node_or_null("KeymapFiles"), null, "the Movement pane has no keymap file panel")
+	check(not (&"save_button" in movement), "and no Save keymap button")
 	# --- Movement pane: "deep N" (the records in use) while the march is perturbed, hidden at 0 ---
 	check(movement.deep_label != null and not movement.deep_label.visible, "the deep readout starts hidden")
 	console.show_deep(14)

@@ -105,3 +105,26 @@ func run() -> void:
 	check_approx(t2.get_default(&"f"), 0.25, "apply_dict restores a default")
 	check_eq(t2.binding(&"f").source, &"axis_q", "apply_dict restores a binding")
 	check_eq(warnings.size(), 1, "one warning for the unknown id")
+
+	# --- COLOR: sanitize an Array to a Color, round-trip through JSON ---
+	var col := AttributeSpec.make({"id": "lc", "label": "Light colour",
+		"type": AttributeSpec.Type.COLOR, "default": Color(1, 1, 1),
+		"tooltip": "t", "effects": "e"})
+	check(not col.bindable, "a COLOR spec is not bindable")
+	check(col.default_value is Color, "its default is a Color")
+	check((col.sanitize([0.2, 0.4, 0.6]) as Color).is_equal_approx(Color(0.2, 0.4, 0.6, 1.0)),
+		"sanitize turns a 3-array into an opaque Color")
+	check((col.sanitize([0.2, 0.4, 0.6, 0.3]) as Color).is_equal_approx(Color(0.2, 0.4, 0.6, 1.0)),
+		"a 4-array drops alpha to 1 (what JSON round-trips, alpha ignored)")
+	check((col.sanitize(Color(0.1, 0.2, 0.3, 0.5)) as Color).is_equal_approx(Color(0.1, 0.2, 0.3, 1.0)),
+		"a Color keeps its rgb with alpha forced to 1")
+
+	var ctab := AttributeTable.new([col])
+	ctab.set_default(&"lc", Color(0.3, 0.5, 0.7))
+	var cdict := ctab.to_dict()
+	check(cdict["defaults"]["lc"] is Array and (cdict["defaults"]["lc"] as Array).size() == 3,
+		"to_dict writes a COLOR as a 3-element [r, g, b] array (Color is not JSON)")
+	var round := AttributeTable.new([col])
+	round.apply_dict(cdict)
+	check((round.get_default(&"lc") as Color).is_equal_approx(Color(0.3, 0.5, 0.7, 1.0)),
+		"apply_dict restores the COLOR through set_default/sanitize")

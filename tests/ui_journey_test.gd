@@ -5,8 +5,8 @@ extends "res://tests/test_case.gd"
 ## reaches the shader; Fold limit bound to Axis A at gain 0.5 moves while E is
 ## held; WASD flies the camera and the wheel changes its speed; Escape only
 ## frees the mouse and never closes the console; the console's View tab opens
-## the noise window; a Value noise is added and wired; Save view… then New +
-## Load view… (on the View tab) restores the shape, the binding, the camera and
+## the noise window; a Value noise is added and wired; Save level… then New +
+## Load level… (on the View tab) restores the shape, the binding, the camera and
 ## the noise; a resized window asks the view for a frame; the View tab's Back
 ## to Menu returns to the title.
 ##
@@ -247,13 +247,13 @@ func _show_view_tab() -> ViewPane:
 		await ui.tap(KEY_CTRL)
 		await ui.frames(1)
 	var bar := console.tabs().get_tab_bar()
-	var title := ui.control_point(bar, bar.get_tab_rect(2).get_center())
+	var title := ui.control_point(bar, bar.get_tab_rect(3).get_center())
 	await ui.click_at(title)
-	if console.tabs().current_tab != 2:
+	if console.tabs().current_tab != 3:
 		# The console had lost focus (a file panel closed over it): the first
 		# click only focuses it, as it would for a player.
 		await ui.click_at(title)
-	check_eq(console.tabs().current_tab, 2, "a click on the View tab shows it")
+	check_eq(console.tabs().current_tab, 3, "a click on the View tab shows it")
 	return console.view_pane()
 
 
@@ -284,7 +284,7 @@ func _wire_value_noise() -> void:
 	check(main.view.shader_uniform_names().has(StringName("n_%s_scale" % vn)), "wired to Displace, it reaches the view's shader")
 
 
-## On the console's View tab, click Save view… or Load view…, point the panel at
+## On the console's View tab, click Save level… or Load level…, point the panel at
 ## user:// and type the file name. Returns the panel.
 func _use_view_panel(save: bool) -> FileDialog:
 	var vp := await _show_view_tab()
@@ -292,7 +292,7 @@ func _use_view_panel(save: bool) -> FileDialog:
 	await ui.frames(1)
 	var files: WorkspaceFiles = main.workspace_files()
 	var dialog := files.save_dialog() if save else files.load_dialog()
-	check(dialog.visible, "a click on %s opens the file panel" % ("Save view…" if save else "Load view…"))
+	check(dialog.visible, "a click on %s opens the file panel" % ("Save level…" if save else "Load level…"))
 	if not dialog.visible:
 		return dialog
 	dialog.current_dir = ProjectSettings.globalize_path(SAVE.get_base_dir())
@@ -310,7 +310,7 @@ func _save_new_and_reload() -> void:
 	check(not nw.visible, "N closes the noise window")
 
 	var dialog := await _use_view_panel(true)
-	check(not dialog.visible, "typing a name into the Save view… panel and Enter closes it")
+	check(not dialog.visible, "typing a name into the Save level… panel and Enter closes it")
 	check(FileAccess.file_exists(SAVE), "and writes user://ui_journey.json")
 	check_eq(main.view_pane().file_label.text, SAVE.get_file(), "the View tab names the saved file")
 	main.console().hide_console()
@@ -334,7 +334,7 @@ func _save_new_and_reload() -> void:
 	check(main.camera.eye().distance_to(saved_eye) > 1e-4, "the camera moved away since the save")
 
 	var load_dialog := await _use_view_panel(false)
-	check(not load_dialog.visible, "typing the name into the Load view… panel and Enter loads it and closes the panel")
+	check(not load_dialog.visible, "typing the name into the Load level… panel and Enter loads it and closes the panel")
 	await ui.frames(2)
 	check_approx(float(main.table().get_default(&"box_scale")), -1.5, "loading restores the shape (Scale -1.5)")
 	var b: Binding = main.table().binding(&"fold_limit")

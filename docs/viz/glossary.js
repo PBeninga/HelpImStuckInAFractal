@@ -34,8 +34,74 @@ VIZ.glossary({
   "box-fold": {
     term: "Box fold",
     match: ["box fold"],
-    body: "Mirrors each coordinate on its own at the walls ±fold_limit. A value past +fold_limit is reflected back inside (x becomes 2·fold_limit − x), and the same goes past −fold_limit. Values already inside don't change. Picture a box with mirror walls: anything sticking out gets flipped back in. In the shader it is one line: `clamp(p, -fold_limit, fold_limit) * 2.0 - p`.",
+    body: "Mirrors each coordinate on its own at the walls ±fold_limit. A value past +fold_limit is reflected back inside (x becomes 2·fold_limit − x), and the same goes past −fold_limit. Values already inside don't change. Picture a box with mirror walls: anything sticking out gets flipped back in. In the shader it is one line: `clamp(p, -fold_limit, fold_limit) * 2.0 - p`. The Kleinian uses the same rule with its own half-width per axis (kleinian_box_0..3), which is what tiles space into its lattice of cells.",
     links: [SYNTOPIA_MANDELBOX, WIKI("Mandelbox")],
+  },
+  kifs: {
+    term: "KIFS (kaleidoscopic iterated function system)",
+    match: ["KIFS", "kaleidoscopic", /\bIFS\b/g],
+    body: "An iterated function system (IFS) builds a shape out of smaller copies of itself: apply a few shrinking maps to the shape and take the union, over and over. A kaleidoscopic IFS (Knighty's name, 2010) does that with one recipe per iteration: fold space into one wedge with a set of mirrors (so every copy lands on the same wedge, as a kaleidoscope's mirrors do), then scale it away from a fixed offset by s. Run backwards from a point, that tells you whether the point is in the shape and how far it is from it. The folds set the symmetry: coordinate mirrors give the Menger sponge, diagonal mirrors the Sierpinski tetrahedron, an angular mirror the polyfold's k-fold stars.",
+    links: [WIKI("Iterated_function_system"), { url: "http://blog.hvidtfeldts.net/index.php/2011/08/distance-estimated-3d-fractals-iii-folding-space/", label: "Syntopia: Distance Estimated 3D Fractals III, folding space" }],
+  },
+  menger: {
+    term: "Menger sponge",
+    match: ["Menger"],
+    body: "The 3D cousin of the Cantor set: a cube with the middle third of each face drilled straight through, then the same done to each of the 20 remaining sub-cubes, forever. It has zero volume and infinite surface. The KIFS makes it with the coordinate fold at scale 3 and offset (1, 1, 1): each iteration maps the cube onto one of its 20 corner-and-edge sub-cubes, and the Menger correction reflects the far z layer back so the tunnels line up. The viewer's default KIFS is this sponge, with its faces at ±1.",
+    links: [WIKI("Menger_sponge")],
+  },
+  sierpinski: {
+    term: "Sierpinski tetrahedron",
+    match: ["Sierpinski"],
+    body: "The 3D version of the Sierpinski triangle: a tetrahedron made of four half-size copies of itself at its four corners, forever. The KIFS makes it with the diagonal fold (reflections across x = −y, x = −z, y = −z) at scale 2 and offset (1, 1, 1): the fold has the tetrahedron's symmetry, and halving is exactly the copies' size. Fractacular's version of this fold never fired, which this project fixed.",
+    links: [WIKI("Sierpi%C5%84ski_triangle"), WIKI("Tetrix")],
+  },
+  kleinian: {
+    term: "Pseudo-Kleinian limit set",
+    match: ["Kleinian", "pseudo-Kleinian", "limit set"],
+    body: "A Kleinian group is a collection of mirror-like transformations of space (here a box fold and a sphere inversion) applied in every combination; its limit set is the set of points those transformations keep returning to, an endless lattice of curved sheets and rings. 'Pseudo' because this is Knighty's shortcut (fragmentarium, 2011), a fold-and-invert iteration that produces the look without the group theory, and in 4D here. There is no inside and outside: the set fills space, which is why its rays need a view distance to stop at.",
+    links: [WIKI("Kleinian_group"), WIKI("Limit_set"), { url: "https://fractalforums.org/fractal-mathematics-and-new-theories/28/pseudo-kleinian-fractals/", label: "Fractal Forums: pseudo-Kleinian fractals" }],
+  },
+  attractor: {
+    term: "Attractor",
+    match: ["attractor"],
+    body: "The set a repeated map settles onto whatever point it starts from. For a KIFS, run the shrinking maps forward from any starting shape and after enough rounds you get the fractal: the fractal is the attractor. Because each map shrinks toward the offset, the attractor sits within |offset| of the origin, which is where the KIFS's march cube (bound_half) comes from.",
+    links: [WIKI("Attractor"), WIKI("Iterated_function_system")],
+  },
+  polyfold: {
+    term: "Polyfold (k-fold mirror symmetry)",
+    match: ["polyfold", "k-fold"],
+    body: "A fold on the angle rather than on a coordinate. Measure the point's angle in the xy plane, mirror it into one wedge of 2π/k (actually a half-wedge, so the fold is continuous: the angle becomes a triangle wave), and put the point back at the same radius. The result has k mirror lines through the z axis, like a kaleidoscope with k mirrors: a triangular cross-section at k = 3, a five-pointed star at 5. Fractacular rotated the angle into the wedge instead, which jumps at the wedge edges and misleads a ray march; here it mirrors.",
+    links: [WIKI("Dihedral_group"), WIKI("Kaleidoscope")],
+  },
+  orthant: {
+    term: "Orthant (the positive corner)",
+    match: ["orthant", "positive corner"],
+    body: "The 4D version of a quadrant: the region where every coordinate has a fixed sign. The positive orthant is where x, y, z, w are all ≥ 0. Taking |p| folds all sixteen orthants onto that one, which is the first half of the coordinate (Menger) fold; sorting x ≥ y ≥ z then folds that corner once more into a single wedge.",
+    links: [WIKI("Orthant")],
+  },
+  bailout: {
+    term: "Bailout (escape)",
+    match: ["bailout", "bails out", "bailed out", "escape-time"],
+    body: "An escape-time fractal iterates a point and watches whether it runs off to infinity. The bailout is the radius past which it is declared gone (here |p| > 1000, tested as |p|² > 1e6): once past it, the orbit can only grow, so the loop stops early. The number of iterations it took, n, is what the distance is scaled by (s⁻ⁿ for the KIFS). Points in the shape never bail out and run the full 32.",
+    links: [WIKI("Plotting_algorithms_for_the_Mandelbrot_set#Escape_time_algorithm")],
+  },
+  conformal: {
+    term: "Conformal (angle-preserving)",
+    match: ["conformal"],
+    body: "A map is conformal when, over any small enough region, it is just a uniform scale plus a rotation or mirror: shapes keep their angles, circles stay circles, only their size changes. Sphere inversion is conformal (it bends lines into circles but never squashes a small shape unevenly). That is why a Kleinian or a Mandelbox sphere fold can still count as 'magnifying a copy of itself' for self-similarity.",
+    links: [WIKI("Conformal_map"), WIKI("Inversive_geometry")],
+  },
+  "self-similar": {
+    term: "Self-similar",
+    match: ["self-similar", "self-similarity"],
+    body: "A shape is exactly self-similar when a magnified piece of it is the whole shape again (the Menger sponge's sub-cubes are Menger sponges). For an iterated fractal that holds when every iteration is the same fixed map that magnifies: then the structure around a point is the next iterate's structure, scaled up. The Shape tab's Self-similar line says whether the current knobs allow it (a KIFS twist or a Mandelbox scale drift makes each iteration a different map; a noise displacement is not carried along). It matters for deep zoom: a self-similar shape could be drawn from a magnified shallower region.",
+    links: [WIKI("Self-similarity")],
+  },
+  lipschitz: {
+    term: "Lipschitz bound",
+    match: ["Lipschitz"],
+    body: "A function is 1-Lipschitz when it never changes faster than its input: |D(a) − D(b)| ≤ |a − b|. A true distance field is, and sphere tracing is safe exactly when the estimate is (a step of D can never cross a surface). The project's estimates are not quite: the Mandelbox's exceeds 1 by a few percent and the escape-time ones jump far from the surface, harmlessly, so the march-safety test checks the real property instead: full steps never skip a surface that quarter steps find.",
+    links: [WIKI("Lipschitz_continuity")],
   },
   "sphere-fold": {
     term: "Sphere fold",
@@ -138,42 +204,50 @@ VIZ.glossary({
     links: [WIKI("Unit_in_the_last_place"), WIKI("Single-precision_floating-point_format")],
   },
 
-  // ---------------------------------------------------------------- deep zoom (perturbation)
+  // ---------------------------------------------------------------- deep zoom: perturbation
   perturbation: {
-    term: "Perturbation",
-    body: "Following a pixel's small difference from a nearby reference instead of the pixel itself. Here the reference is the camera's own orbit, worked out once per frame in 64-bit on the CPU; the GPU iterates only each pixel's offset from it, which 32-bit floats hold precisely because it is small. Deep Mandelbrot-set zoomers use the same trick.",
-    links: [{ url: "https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation", label: "Wikipedia: Perturbation theory and series approximation" },
+    term: "Perturbation (deep-zoom perturbation theory)",
+    match: ["perturbation theory", "perturbation", "perturbed"],
+    body: "Rather than computing a hard thing directly, compute one nearby thing exactly and then track only the small difference from it. Deep Mandelbrot-set zoomers work this way. One reference point's orbit is computed once in high precision on the CPU, and every pixel iterates only its tiny offset δ from that orbit in ordinary floats, because a small number keeps as many significant digits as a large one. Here the reference is the camera's eye, run in 64-bit once per frame. The GPU iterates each pixel's δ for the first k iterations, then hands off to the normal loop. The hard part is writing each fold's difference so that it never subtracts two nearly equal numbers.",
+    links: [WIKI("Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation"),
       { url: "https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html", label: "mathr: Deep zoom theory and practice" }],
   },
-  reference_orbit: {
+  "reference-orbit": {
     term: "Reference orbit",
-    match: ["reference orbit"],
-    body: "The camera eye's own 32 iterates, X_0 .. X_32, computed on the CPU in 64-bit (ReferenceOrbit). Every pixel's orbit is described as this one plus a small offset.",
-    links: [WIKI("Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation")],
+    match: ["reference orbit", "reference orbits"],
+    body: "The orbit of one chosen point (its iterates X_0, X_1, … X_32), computed in high precision, that every pixel's orbit is measured against. Here it is the eye's orbit: X_0 is the 64-bit eye, X_1 its first Mandelbox iterate, and so on, recomputed on the CPU whenever the camera moves (ReferenceOrbit.build). Alongside the points it records, per iteration, the gap from X to each fold's crease. With those gaps the GPU can tell which side of a crease each pixel falls on without ever holding X at full precision.",
+    links: [WIKI("Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation"),
+      { url: "https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html", label: "mathr: Deep zoom theory and practice" }],
   },
-  catastrophic_cancellation: {
+  cancellation: {
     term: "Catastrophic cancellation",
-    match: ["catastrophic cancellation", "cancellation"],
-    body: "Subtracting two nearly equal numbers: the leading digits cancel and only the noisy last ones remain. 1.0000001 − 1.0000000 in 32-bit floats gives 1.19e-7 against the true 1e-7: about one correct digit. The perturbed step is written so it never does this.",
-    links: [WIKI("Catastrophic_cancellation")],
+    match: ["catastrophic cancellation", "cancellation", /\bnearly equal\b/gi],
+    body: "What goes wrong when you subtract two nearly equal floating-point numbers: the leading digits cancel and only the rounded tail is left. A 32-bit float keeps about 7 significant digits whatever its size, so 1.0000001 − 1.0000000 gives 1.19e-7 against the true 1e-7: about one correct digit. That is why `eye + dir × t` fails at depth: the small offset is rounded away before the fractal maths starts, and P − X can't bring it back. Perturbation's formulas only ever subtract small numbers (gaps the CPU already computed in 64-bit), or use products, never the difference of two big ones.",
+    links: [WIKI("Catastrophic_cancellation"), { url: "https://floating-point-gui.de/", label: "The Floating-Point Guide" }],
   },
   magnification: {
-    term: "Magnification λ_i",
-    match: ["magnification", "magnifies"],
-    body: "How much the iteration has stretched a small neighbourhood after i steps, λ_i: the product of |scale| and the sphere fold's factors (the running derivative dz without its + 1s). A view 1e-7 wide is λ_k × 1e-7 wide after k iterations.",
-    links: [WIKI("Chain_rule")],
+    term: "Magnification λ",
+    match: ["magnification", /λ(?:_\w+)?/g],
+    body: "How much the first i iterations stretch a tiny neighbourhood of the reference point: λ_i. Each iteration multiplies it by |box_scale| (2.09 by default), and by the sphere fold's factor when that fires (up to fixed² / min², about 2.04). So it grows exponentially: about 2.5 million after 20 iterations on the default view's centre ray. It is the shader's running derivative dz without the + 1s. It matters twice. A pixel's offset δ grows by λ_i, so after k iterations it is big enough for float32. And λ_32 sets how fine 32 iterations can resolve the surface.",
+    links: [WIKI("Lyapunov_exponent"), SYNTOPIA_MANDELBOX],
   },
-  piecewise_linear: {
+  "piecewise-linear": {
     term: "Piecewise-linear map",
     match: ["piecewise-linear", "piecewise linear"],
-    body: "A map made of straight-line pieces joined at creases: a box fold is linear on each side of its mirror. The difference of a linear map is the same map applied to the difference, so only the creases need care.",
+    body: "A function made of straight-line pieces joined at creases, like |x| or clamp(x, −1, 1). On each side of a crease it is linear (a scale, a shift, a mirror), and the rule switches where you cross one. The box fold, the KIFS abs and sort folds and the Kleinian's box fold are all piecewise-linear. That makes the difference between two points' images exact and cheap: it is the same linear piece applied to δ, unless the two points sit on different pieces (the case table on the Crossing a fold tab). The Mandelbulb's power map is curved everywhere, which is why the design leaves it out.",
     links: [WIKI("Piecewise_linear_function")],
   },
-  double_float: {
-    term: "Double-float (two-float)",
-    match: ["double-float", "two-float", "double-double"],
-    body: "Carrying each number as the sum of two ordinary floats for about twice the precision. Exact, but about 7 times the cost per ray here, and a GPU compiler may reorder the steps that make it work.",
-    links: [WIKI("Quadruple-precision_floating-point_format#Double-double_arithmetic")],
+  "double-float": {
+    term: "Double-float (two-float) arithmetic",
+    match: ["two-float", "double-float", "double-double", "paired-float"],
+    body: "Storing one number as the unevaluated sum of two floats, a big part plus a small correction (hi + lo). A pair of 32-bit floats then carries about 48 significant bits instead of 24. Each add or multiply becomes a dozen or so float operations that capture the rounding error exactly (the error-free transformations TwoSum and TwoProduct). That only works if the compiler computes each step exactly as written. A GPU compiler that fuses a multiply and an add, or reorders them, silently breaks it. It was the research note's alternative to perturbation: exact, but about 7× the cost per ray.",
+    links: [WIKI("Quadruple-precision_floating-point_format#Double-double_arithmetic"), WIKI("2Sum")],
+  },
+  regime: {
+    term: "Regime (of a radial fold)",
+    match: ["regimes", "regime"],
+    body: "Which of its three rules a radial fold applies to a point, decided by the point's distance r from the centre. For the sphere fold: inside (r < min_radius) every point is scaled by the same constant fixed² / min². In the shell (min_radius ≤ r < fixed_radius) the point is inverted, scaled by fixed² / r². Outside (r ≥ fixed_radius) nothing happens. When the reference X and the pixel P are in different regimes, their factors m and m' come from different rules. The spec writes m' − m separately for each pair, so it stays a small, precise number.",
+    links: [SYNTOPIA_MANDELBOX, WIKI("Inversive_geometry")],
   },
 
   // ---------------------------------------------------------------- normals + fields

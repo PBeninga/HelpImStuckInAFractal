@@ -103,7 +103,13 @@ func duplicate() -> AttributeTable:
 func to_dict() -> Dictionary:
 	var d := {"defaults": {}, "bindings": {}}
 	for id in _defaults:
-		d["defaults"][String(id)] = _defaults[id]
+		var v: Variant = _defaults[id]
+		var s := spec(id)
+		if s != null and s.type == AttributeSpec.Type.COLOR and v is Color:
+			var c: Color = v
+			d["defaults"][String(id)] = [c.r, c.g, c.b]
+		else:
+			d["defaults"][String(id)] = v
 	for id in _bindings:
 		if _bindings[id].is_active():
 			d["bindings"][String(id)] = _bindings[id].to_dict()

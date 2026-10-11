@@ -1,12 +1,14 @@
 class_name ConsoleWindow
 extends Window
 ## The console ("Fractacular embedded") for the one Mandelbox shape being flown
-## through in the main window: three tabs stacked above the Movement pane in a
+## through in the main window: four tabs stacked above the Movement pane in a
 ## VSplit. The Shape tab is the inspector for the Box, Julia, Iteration rotation
 ## and Render groups, headed by a read-only line saying whether the shape is
-## self-similar (ShapeCatalogue.self_similarity, fed by Main); the Colour tab is Fractacular's Colour window (the cosine
-## palette's sliders, curves and strip) above the Colour, Lighting and Palette
-## rows, in one scrolling list; the View tab is Save / Load view, the camera
+## self-similar (ShapeCatalogue.self_similarity, fed by Main); the Light tab is
+## the lamp, its scattering and the picture's exposure and saturation; the
+## Material tab is Fractacular's Colour window (the cosine palette's sliders,
+## curves and strip) above the Colour, Surface, Texture and Palette rows, in one
+## scrolling list; the View tab is Save / Load view, the camera
 ## mode, the mouse sensitivity, the Noise editor button, the Renderer options
 ## and Back to Menu. Stacked, the tabs get the full width, so the sliders have
 ## room (side by side, the panes' minimum widths overflowed the
@@ -68,7 +70,8 @@ var remembered_rect := Rect2i()
 
 var _tabs: TabContainer
 var _inspector: AttributeInspector
-var _colour_inspector: AttributeInspector
+var _light_inspector: AttributeInspector
+var _material_inspector: AttributeInspector
 var _palette: Palette
 var _palette_window: PaletteWindow
 var _self_similar: Label
@@ -120,12 +123,20 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_palette_window = PaletteWindow.new()
 	_palette_window.setup(_palette)
 	_palette_window.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_colour_inspector = AttributeInspector.new()
-	_colour_inspector.name = "Colour"
-	_colour_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_colour_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_tabs.add_child(_colour_inspector)
-	_colour_inspector.setup(table, group_tooltips, ShapeCatalogue.COLOUR_GROUPS, _palette_window)
+
+	_light_inspector = AttributeInspector.new()
+	_light_inspector.name = "Light"
+	_light_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_light_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tabs.add_child(_light_inspector)
+	_light_inspector.setup(table, group_tooltips, ShapeCatalogue.LIGHT_GROUPS)
+
+	_material_inspector = AttributeInspector.new()
+	_material_inspector.name = "Material"
+	_material_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_material_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tabs.add_child(_material_inspector)
+	_material_inspector.setup(table, group_tooltips, ShapeCatalogue.MATERIAL_GROUPS, _palette_window)
 
 	_view = ViewPane.new()
 	_tabs.add_child(_view)
@@ -148,9 +159,14 @@ func inspector() -> AttributeInspector:
 	return _inspector
 
 
-## The Colour tab's inspector (Colour, Lighting, Palette), under the palette window.
-func colour_inspector() -> AttributeInspector:
-	return _colour_inspector
+## The Light tab's inspector (Light, Scattering, Picture).
+func light_inspector() -> AttributeInspector:
+	return _light_inspector
+
+
+## The Material tab's inspector (Colour, Surface, Texture, Palette), under the palette window.
+func material_inspector() -> AttributeInspector:
+	return _material_inspector
 
 
 func palette_window() -> PaletteWindow:
@@ -170,7 +186,7 @@ func view_pane() -> ViewPane:
 	return _view
 
 
-## Bring the Shape (0), Colour (1) or View (2) tab to the front.
+## Bring the Shape (0), Light (1), Material (2) or View (3) tab to the front.
 func show_tab(index: int) -> void:
 	_tabs.current_tab = clampi(index, 0, _tabs.get_tab_count() - 1)
 
@@ -203,18 +219,20 @@ func show_zoom_limit(on: bool) -> void:
 	_movement.show_zoom_limit(on)
 
 
-## The perturbed march's k, shown in the Movement pane while above 0.
+## The perturbed march's record count, shown in the Movement pane while above 0.
 func show_deep(n: int) -> void:
 	_movement.show_deep(n)
 
 
-## Feed one frame of resolved values to both tabs' readouts and the palette's
-## curves and strip.
+## Feed one frame of resolved values to the three inspectors' readouts and the
+## palette's curves and strip.
 func set_resolved(values: Dictionary) -> void:
 	if _inspector != null:
 		_inspector.set_resolved(values)
-	if _colour_inspector != null:
-		_colour_inspector.set_resolved(values)
+	if _light_inspector != null:
+		_light_inspector.set_resolved(values)
+	if _material_inspector != null:
+		_material_inspector.set_resolved(values)
 	if _palette_window != null:
 		_palette_window.set_resolved(values)
 
@@ -374,7 +392,8 @@ func _refresh_sources() -> void:
 	for axis in _keymap.axes().list():
 		axis_list.append({"id": axis.id, "label": axis.label})
 	_inspector.set_sources(axis_list)
-	_colour_inspector.set_sources(axis_list)
+	_light_inspector.set_sources(axis_list)
+	_material_inspector.set_sources(axis_list)
 
 
 func _apply_zoom() -> void:

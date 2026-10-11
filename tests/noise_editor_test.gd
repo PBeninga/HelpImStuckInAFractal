@@ -47,8 +47,7 @@ func run() -> void:
 	# toolbar
 	check(editor.extent_spin() != null and editor.extent_spin().value == 4.0, "the Extent spin defaults to 4")
 	check(editor.slice_spin() != null and editor.slice_spin().value == 0.0, "the Slice Z spin defaults to 0")
-	check(editor.save_button != null and editor.load_button != null and editor.new_button != null,
-		"the toolbar has New, Load and Save")
+	check(editor.new_button != null, "the toolbar has New")
 
 	# titles and positions
 	var pos_type := NoiseNodeRegistry.type_by_id(&"position")
@@ -68,9 +67,12 @@ func run() -> void:
 	check_eq(pos_widget.get_input_port_count(), 0, "…and no inputs")
 	check_eq(pos_widget.get_output_port_type(0), NoisePort.Type.VEC3, "…a Vec3")
 	var out_widget := editor.node_widget(&"output_0")
-	check_eq(out_widget.get_input_port_count(), 2, "Output shows Displace and Tint inputs")
+	check_eq(out_widget.get_input_port_count(), 4, "Output shows Displace, Tint, Texture and Bump inputs")
 	check_eq(out_widget.get_output_port_count(), 0, "…and no outputs")
 	check_eq(out_widget.get_input_port_type(0), NoisePort.Type.FLOAT, "Displace is a Float slot")
+	check_eq(out_widget.get_input_port_type(1), NoisePort.Type.FLOAT, "Tint is a Float slot")
+	check_eq(out_widget.get_input_port_type(2), NoisePort.Type.VEC3, "Texture is a Vec3 slot")
+	check_eq(out_widget.get_input_port_type(3), NoisePort.Type.FLOAT, "Bump is a Float slot")
 
 	# --------------------------------------------- a node with rows and preview
 	var vn := graph.add_node(&"value_noise", Vector2(260, 40))
