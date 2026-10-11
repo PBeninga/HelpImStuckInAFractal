@@ -31,6 +31,7 @@ var _last_mode := -1
 var _files: WorkspaceFiles
 var _pause: PauseMenu
 var _noise: NoiseWindow
+var _chat: ChatPanel
 var _loading := false
 ## True once a Ctrl tap or a file panel has freed the mouse; a click in the view
 ## clears it and recaptures. Capture no longer depends on the console's state.
@@ -83,6 +84,7 @@ func _ready() -> void:
 	_build_workspace_files()
 	_build_pause_menu()
 	_build_noise_window()
+	_build_chat()
 
 	# The sensitivity is the player's, not the view's: Settings owns it.
 	params.mouse_sensitivity = Settings.mouse_sensitivity
@@ -111,6 +113,10 @@ func noise_window() -> NoiseWindow:
 
 func console() -> ConsoleWindow:
 	return _console
+
+
+func chat() -> ChatPanel:
+	return _chat
 
 
 func table() -> AttributeTable:
@@ -163,6 +169,17 @@ func _build_noise_window() -> void:
 	_noise.close_requested.connect(_update_mouse)
 	_noise.unhandled_key.connect(_on_window_key)
 	_focus_viewports()
+
+
+## The pilot chat down the right of the view. Its log belongs to McpBridge, so
+## the conversation survives Back to Menu; without the bridge it is local.
+func _build_chat() -> void:
+	var bridge := get_node_or_null(^"/root/McpBridge")
+	var chat_log: ChatLog = bridge.chat if bridge != null else ChatLog.new()
+	_chat = ChatPanel.new()
+	_chat.name = "ChatPanel"
+	add_child(_chat)
+	_chat.setup(chat_log)
 
 
 func _toggle_noise() -> void:
