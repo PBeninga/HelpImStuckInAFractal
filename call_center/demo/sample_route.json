@@ -1,0 +1,123 @@
+{
+ "_comment": "Sample content for the call centre's demo: an escape route through the default Mandelbox (scale -2.09, fold 1, radii 0.7/1), found offline with the distance estimator. Every leg clears the fractal by >= 7 m (1 unit = 1 km) and the shortcuts to the exit are blocked. The game owns real world content; this file only drives call_center/demo.tscn and the tests.",
+ "start": {
+  "eye": [
+   1.5,
+   0.0,
+   0.0
+  ],
+  "look_at": [
+   0.8781,
+   0.0,
+   0.0
+  ]
+ },
+ "features": [
+  {
+   "id": "1113",
+   "name": "The Grand Inversion Sphere",
+   "kind": "landmark",
+   "pos": [
+    0.8781,
+    0.0,
+    0.0
+   ],
+   "blurb": "The sphere-fold boundary. Anything inside the minimum radius gets inflated by a factor of about two. Do not touch."
+  },
+  {
+   "id": "1729",
+   "name": "Ramanujan's Taxicab Rank",
+   "kind": "landmark",
+   "pos": [
+    1.5,
+    0.6043,
+    0.0
+   ],
+   "blurb": "A wall of folded lattice. There are no taxis. There have never been taxis."
+  },
+  {
+   "id": "3141",
+   "name": "The Transcendental Skylight",
+   "kind": "landmark",
+   "pos": [
+    1.5,
+    0.0,
+    0.6043
+   ],
+   "blurb": "An irrational ceiling. Never repeats, never ends, never lets the light in."
+  },
+  {
+   "id": "2312",
+   "name": "The Recursive Cul-de-sac",
+   "kind": "route",
+   "pos": [
+    1.025,
+    -0.775,
+    0.0
+   ],
+   "blurb": "A dead end that loops back into itself at every scale except this one, which is why it is the way out."
+  },
+  {
+   "id": "4096",
+   "name": "The Box-Fold Bypass",
+   "kind": "route",
+   "pos": [
+    1.05,
+    -1.025,
+    0.0
+   ],
+   "blurb": "Where the box fold reflects space back on itself. Tight squeeze; mind the clamp."
+  },
+  {
+   "id": "6174",
+   "name": "The Kaprekar Roundabout",
+   "kind": "landmark",
+   "pos": [
+    1.5601,
+    -1.175,
+    0.5504
+   ],
+   "blurb": "Every path eventually ends up here. This is not as helpful as it sounds."
+  },
+  {
+   "id": "7071",
+   "name": "The Lipschitz Narrows",
+   "kind": "route",
+   "pos": [
+    1.45,
+    -1.175,
+    0.0
+   ],
+   "blurb": "The narrowest stretch of the way out. The distance estimate here is honest but unforgiving."
+  },
+  {
+   "id": "8128",
+   "name": "The Outer Aperture",
+   "kind": "route",
+   "pos": [
+    1.95,
+    -1.425,
+    0.0
+   ],
+   "blurb": "An opening in the cube's +X face with ordinary space beyond. A perfect number, and a perfect place to leave."
+  },
+  {
+   "id": "9001",
+   "name": "The Egress Rift",
+   "kind": "exit",
+   "pos": [
+    2.45,
+    -1.425,
+    0.0
+   ],
+   "blurb": "A tear back into ordinary three-space. Fly into it to complete the jump."
+  }
+ ],
+ "route": [
+  "2312",
+  "4096",
+  "7071",
+  "8128"
+ ],
+ "exit": "9001"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "fractal-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that flies the Help I'm Stuck In A Fractal camera and draws on its screen",
+  "type": "module",
+  "main": "server.mjs",
+  "bin": { "fractal-mcp": "server.mjs" },
+  "scripts": {
+    "start": "node server.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.0.0"
+  }
+}
