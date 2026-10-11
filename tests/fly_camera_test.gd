@@ -126,7 +126,18 @@ func run() -> void:
 	fly.queue_free()
 	await frames(1)
 
+	# --- every fractal flies the same way: hold W straight at it, sprinting ---
+	for shot in [
+			["Mandelbox", {}, CameraState.DEFAULT_EYE],
+			["octahedral fold", {&"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL}, CameraState.DEFAULT_EYE],
+			["hybrid fold", {&"hybrid_mix": 0.5}, CameraState.DEFAULT_EYE],
+			["Menger", {&"shape": FractalParams.Shape.KIFS}, Vector3(3.2, 2.4, 1.9)],
+			["Sierpinski", {&"shape": FractalParams.Shape.KIFS, &"kifs_fold": KifsEstimator.FoldSet.DIAGONAL, &"kifs_scale": 2.0}, Vector3(3.5, -2.0, 2.2)],
+			["Kleinian", {&"shape": FractalParams.Shape.KLEINIAN}, Vector3(2.5, 1.6, 1.2)]]:
+		await _fly_at(shot[0], shot[1], shot[2])
+
 	await _zoom_floor_guard()
+
 
 
 ## A camera on the default view's line of sight, `back` short of the surface.
@@ -211,3 +222,67 @@ func _zoom_floor_guard() -> void:
 	check(not fly.at_zoom_limit, "a disabled camera never reports the limit")
 	fly.queue_free()
 	await frames(1)
+
+
+## Hold W (and Shift) for ten seconds at 60 fps toward the surface the centre
+## ray first meets, stepping as _physics_process does (a move below the zoom
+## floor is refused, and that ends the flight). No frame's step may
+## tunnel: a careful quarter-step march along it must find no surface (up close
+## the camera does fly on into finer gaps, as zooming in should, but never
+## through a wall). The eye never ends up inside, the camera closes in on the
+## first surface and slows as it goes, and it never stalls far out.
+func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
+	var params := FractalParams.new()
+	params.apply_resolved(knobs)
+	var cam := CameraState.new()
+	cam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+	var fly := FlyCamera.new()
+	root.add_child(fly)
+	fly.setup(params, cam)
+	fly.sprinting = true
+	var start: Array = CenterRay.march(cam.eye(), cam.forward(), params)
+	check(start[1], "%s: the centre ray meets the surface" % label)
+	var hit_t: float = start[0]
+	var first_speed := fly.current_speed()
+	var travelled := 0.0
+	var tunnels := 0
+	var inside := false
+	var slowest_far := INF
+	for frame in 600:
+		var step := fly.current_speed() / 60.0
+		if _surface_within(cam.eye(), cam.forward(), step, params):
+			tunnels += 1
+		if travelled < 0.5 * hit_t:
+			slowest_far = minf(slowest_far, step)
+		var t := cam.transform
+		t.origin += cam.forward() * step
+		if not fly.move_allowed(cam.eye(), t.origin):
+			break   # at the 32-bit zoom floor
+		travelled += step
+		cam.transform = t
+		var e := cam.eye()
+		if DistanceEstimator.estimate_at(e.x, e.y, e.z, params) < 0.0:
+			inside = true
+	check_eq(tunnels, 0, "%s: no frame's step jumps a surface" % label)
+	check(not inside, "%s: the eye never ends up inside" % label)
+	check(travelled > 0.9 * hit_t, "%s: closes 90%% of the way in ten seconds (%s of %s)" % [label, travelled, hit_t])
+	check(fly.current_speed() < first_speed * 0.5, "%s: slowing down on the way in" % label)
+	check(slowest_far > 1e-3 * hit_t, "%s: no stall on the far half of the way" % label)
+	fly.queue_free()
+	await frames(1)
+
+
+## Whether a quarter-step march from `origin` along `dir` meets the surface
+## (the hit threshold at that distance) before going `length`.
+func _surface_within(origin: Vector3, dir: Vector3, length: float, params: FractalParams) -> bool:
+	var near := maxf(DistanceEstimator.estimate(origin, params), FractalParams.NEAR_FLOOR)
+	var t := 0.0
+	for i in 400:
+		var p := origin + dir * t
+		var d := DistanceEstimator.estimate_at(p.x, p.y, p.z, params)
+		if d < params.hit_epsilon(maxf(t, near), near):
+			return t < length
+		t += 0.25 * d
+		if t >= length:
+			return false
+	return false

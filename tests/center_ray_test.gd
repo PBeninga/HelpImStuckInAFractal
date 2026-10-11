@@ -22,6 +22,19 @@ func run() -> void:
 	var away := CenterRay.march(cam.eye(), -cam.forward(), params)
 	check(not away[1] and is_inf(away[0]), "a ray that never meets the cube is a miss at INF")
 
+	# --- the other fractals: their own bound, and the Kleinian's view distance ---
+	var kifs := FractalParams.new(); kifs.shape = FractalParams.Shape.KIFS
+	var kcam := CameraState.new()
+	kcam.transform = Transform3D(Basis.IDENTITY, Vector3(3.2, 2.4, 1.9)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+	check(CenterRay.march(kcam.eye(), kcam.forward(), kifs)[1], "the centre ray hits the Menger sponge")
+	var kl := FractalParams.new(); kl.shape = FractalParams.Shape.KLEINIAN
+	var lcam := CameraState.new()
+	lcam.transform = Transform3D(Basis.IDENTITY, Vector3(2.5, 1.6, 1.2)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+	var kr := CenterRay.march(lcam.eye(), lcam.forward(), kl)
+	check(kr[1] and kr[0] < kl.view_distance(), "and the Kleinian, inside its view distance")
+	kl.kleinian_view_distance = 1e-3
+	check(not CenterRay.march(lcam.eye(), lcam.forward(), kl)[1], "nothing past the view distance is hit")
+
 	# --- the cached ray follows the camera and the shape ---
 	var ray := CenterRay.new(params, cam)
 	check_approx(ray.distance(), t, "the cached ray matches march()", 1e-9)

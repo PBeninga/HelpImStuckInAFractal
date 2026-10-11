@@ -12,13 +12,15 @@ extends RefCounted
 const ITERATIONS := 32
 
 
-static func estimate_at(px: float, py: float, pz: float, params: FractalParams) -> float:
+## `iters` is clamped to [0, ITERATIONS], as DistanceEstimator's.
+static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
+		iters: int = ITERATIONS) -> float:
 	var b := [params.kleinian_box_0, params.kleinian_box_1, params.kleinian_box_2, params.kleinian_box_3]
 	var shift := [params.kleinian_shift_0, params.kleinian_shift_1, params.kleinian_shift_2, params.kleinian_shift_3]
 	var k := params.kleinian_radius * params.kleinian_radius
 	var p := [px, py, pz, params.w]
 	var dr := 1.0
-	for _i in ITERATIONS:
+	for _i in clampi(iters, 0, ITERATIONS):
 		var before := [p[0], p[1], p[2], p[3]]
 		for c in 4:
 			p[c] = clampf(p[c], -b[c], b[c]) * 2.0 - p[c]

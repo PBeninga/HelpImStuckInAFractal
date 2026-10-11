@@ -63,11 +63,13 @@ func _update() -> void:
 
 
 ## Sphere-trace from `origin` along unit `dir`. Returns [distance, hit]:
-## [t, true] on a hit, [INF, false] when the ray leaves the cube, and
+## [t, true] on a hit, [INF, false] when the ray leaves the shape's cube (or
+## passes the Kleinian's view distance), and
 ## [t_reached, false] when the step budget runs out first.
 static func march(origin: Vector3, dir: Vector3, params: FractalParams) -> Array:
-	var half := 20.0 if params.julia_enabled() else 2.0
-	var tb := _box_intersect(origin, dir, half)
+	var tb := _box_intersect(origin, dir, params.bound_half())
+	if params.view_distance() > 0.0:
+		tb.y = minf(tb.y, params.view_distance())   # the shader stops there too
 	if tb.y < maxf(tb.x, 0.0):
 		return [INF, false]
 	var near := maxf(DistanceEstimator.estimate(origin, params), FractalParams.NEAR_FLOOR)
