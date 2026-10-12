@@ -518,7 +518,7 @@ func _push_params() -> void:
 func _push_params_impl() -> void:
 	if _material == null or _params == null:
 		return
-	_material.set_shader_parameter("exit_radius", _params.escape_radius())
+	_material.set_shader_parameter("exit_radius", _params.render_escape_radius)
 	_push_exit_eye()
 	_material.set_shader_parameter("exit_skybox", _params.gameplay.exit_skybox)
 	# Every scene id is a scalar uniform of the same name, pushed as it is; the
@@ -751,6 +751,6 @@ func _push_exit_eye() -> void:
 	if _material == null or _params == null or _camera == null:
 		return
 	# Subtract the origin in doubles before sending the float shader uniform.
-	var origin := _params.escape_origin()
+	var origin := _params.render_escape_origin()
 	_material.set_shader_parameter("exit_eye", Vector3(_camera.eye_x() - origin[0],
 		_camera.eye_y() - origin[1], _camera.eye_z() - origin[2]))

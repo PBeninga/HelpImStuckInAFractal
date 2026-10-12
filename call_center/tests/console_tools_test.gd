@@ -29,11 +29,11 @@ func run() -> void:
 	check(recovery.get("ok", false) and game.view.center_ray().hit(), "the support agent points the player at a real surface")
 	check_eq(game.camera.eye64(), eye, "the support agent recovery keeps position")
 	check(not cc.adapter.autopilot_state().active, "recovery cancels a turn that would overwrite its heading")
-	game.params.gameplay.exit_radius = 0.000001
+	game.shapes().set_stage(0, 0.000001, [])
 	game.shapes().table(0).set_default(&"pos_x", 100.0)
 	recovery = await tool("console_action", {"action": "find_nearest_surface"})
 	check(recovery.get("ok") == false, "the support agent receives failure when no surface is found")
-	game.params.gameplay.exit_radius = 20.0
+	game.shapes().set_stage(0, 20.0, [])
 	game.shapes().table(0).set_default(&"pos_x", 0.0)
 	for section in ["overview", "shape", "look", "view", "gameplay", "axes", "noise"]:
 		var info := await tool("get_console_controls", {"section": section})

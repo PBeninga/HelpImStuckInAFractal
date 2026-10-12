@@ -222,8 +222,8 @@ func travel_speed() -> float:
 
 func escape_state() -> Dictionary:
 	var c := _camera()
-	var radius := _params().escape_radius()
-	var origin := _params().escape_origin()
+	var radius := _params().next_level_threshold
+	var origin := _params().run_origin
 	var x: float = c.eye_x() - origin[0]
 	var y: float = c.eye_y() - origin[1]
 	var z: float = c.eye_z() - origin[2]

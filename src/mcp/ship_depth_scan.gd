@@ -33,7 +33,7 @@ func scan(game: Node, args: Dictionary = {}) -> Dictionary:
 	var raw_count: Variant = args.get("ray_count", DEFAULT_RAYS)
 	if not _number(raw_count) or float(raw_count) != floor(float(raw_count)) or raw_count < 24 or raw_count > MAX_RAYS:
 		return {"ok": false, "message": "ray_count must be an integer from 24 to 256."}
-	var raw_range: Variant = args.get("max_distance", game.params.escape_radius() * 2.0)
+	var raw_range: Variant = args.get("max_distance", game.params.render_escape_radius * 2.0)
 	if not _number(raw_range) or float(raw_range) <= 0:
 		return {"ok": false, "message": "max_distance must be a positive finite distance in world units."}
 	var direction := Vector3.ZERO
@@ -169,13 +169,13 @@ func _finish() -> void:
 ## Unlike FractalProbe.march's picking API, preserve the reason a ray ended.
 ## No normals are computed: this call only needs depth.
 static func _depth(eye: Array, dir: Vector3, params: FractalParams, near: float, max_distance: float, deadline_ms := 0) -> Dictionary:
-	var origin := params.escape_origin()
+	var origin := params.render_escape_origin()
 	var x: float = eye[0] - origin[0]
 	var y: float = eye[1] - origin[1]
 	var z: float = eye[2] - origin[2]
 	var b: float = x * dir.x + y * dir.y + z * dir.z
 	var radial_squared: float = x * x + y * y + z * z
-	var discriminant := b * b - radial_squared + params.escape_radius() * params.escape_radius()
+	var discriminant := b * b - radial_squared + params.render_escape_radius * params.render_escape_radius
 	if not is_finite(discriminant) or discriminant < 0:
 		return {"distance": null, "status": "unknown", "steps": 0}
 	var sphere_end := -b + sqrt(discriminant)

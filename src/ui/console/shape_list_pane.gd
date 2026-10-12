@@ -14,6 +14,8 @@ extends VBoxContainer
 
 ## The selected (active) shape changed.
 signal selected_changed(index: int)
+## The only expanded shape, or -1 when all panels are closed.
+signal expanded_changed(index: int)
 
 const SCROLLBAR_ALLOWANCE := 16.0
 const SELECTED_COLOR := Color(0.72, 0.82, 1.0)
@@ -51,6 +53,7 @@ func setup(shapes: ShapeList, group_tooltips: Dictionary, placement_source: Call
 	_build()
 	_shapes.changed.connect(_rebuild)
 	_shapes.relabelled.connect(_on_relabelled)
+	_shapes.stage_changed.connect(_refresh_stage_distances)
 	_rebuild()
 
 
@@ -128,6 +131,10 @@ func is_expanded(i: int) -> bool:
 	return i >= 0 and i < _expanded.size() and _expanded[i]
 
 
+func expanded_index() -> int:
+	return _expanded.find(true)
+
+
 # ------------------------------------------------------------------ actions
 
 ## Append a shape (through the placement source when one is set), select it
@@ -136,7 +143,7 @@ func add_shape() -> void:
 	var defaults: Dictionary = {}
 	if _placement_source.is_valid():
 		defaults = _placement_source.call()
-	var i := _shapes.add(defaults)
+	var i := _shapes.add(defaults, "", _shapes.look_table(_selected).defaults())
 	if i < 0:
 		return
 	# _rebuild ran on `changed`; now pick the new one
@@ -145,19 +152,15 @@ func add_shape() -> void:
 
 
 func remove_shape(i: int) -> void:
-	var was := _selected
-	if _shapes.remove(i):
-		# the entries above the removed one keep their shape; a selection past it
-		# moves down one, a selection on it stays at that index (clamped)
-		select(clampi(was - 1 if was > i else was, 0, _shapes.count() - 1), true)
+	_shapes.remove(i)
 
 
 func select(i: int, force := false) -> void:
 	i = clampi(i, 0, maxi(_entries.size() - 1, 0))
-	if i == _selected and not force:
+	if i == _selected and is_expanded(i) and not force:
 		return
 	_selected = i
-	_restyle()
+	_set_expanded(i, true)
 	selected_changed.emit(_selected)
 
 
@@ -184,20 +187,30 @@ func _rebuild() -> void:
 	if _rebuilding or _shapes == null:
 		return
 	_rebuilding = true
+	var open_index := expanded_index()
+	var open_table: AttributeTable = inspector(open_index).table() if inspector(open_index) != null else null
+	var selected_table: AttributeTable = active_inspector().table() if active_inspector() != null else null
 	for c in _list.get_children():
 		_list.remove_child(c)
 		c.queue_free()
 	_entries.clear()
 	var count := _shapes.count()
-	while _expanded.size() < count:
-		_expanded.append(_expanded.is_empty())   # the first shape opens expanded
-	while _expanded.size() > count:
-		_expanded.pop_back()
+	var tables := _shapes.tables()
+	_selected = tables.find(selected_table) if tables.has(selected_table) else clampi(_selected, 0, count - 1)
+	if open_table != null:
+		open_index = tables.find(open_table) if tables.has(open_table) else clampi(open_index, 0, count - 1)
+	elif _expanded.is_empty():
+		open_index = 0
+	_expanded.resize(count)
+	for i in count:
+		_expanded[i] = i == open_index
 	for i in count:
 		_entries.append(_make_entry(i))
 	_selected = clampi(_selected, 0, count - 1)
 	_restyle()
 	_rebuilding = false
+	selected_changed.emit(_selected)
+	expanded_changed.emit(expanded_index())
 
 
 func _make_entry(i: int) -> Dictionary:
@@ -246,7 +259,7 @@ func _make_entry(i: int) -> Dictionary:
 	status.text = "Active shape" if i == _gameplay_active else "Stage %d" % (i + 1)
 	header.add_child(status)
 	var stage_button := Button.new()
-	stage_button.text = "Escape settings"
+	stage_button.text = "Level settings"
 	stage_button.toggle_mode = true
 	stage_button.focus_mode = Control.FOCUS_NONE
 	header.add_child(stage_button)
@@ -258,16 +271,22 @@ func _make_entry(i: int) -> Dictionary:
 			_entries[i]["stage_open"] = on
 			_restyle())
 	var distance_label := Label.new()
-	distance_label.text = "Escape distance"
+	distance_label.text = "Next level distance"
 	distance_row.add_child(distance_label)
 	var distance := SpinBox.new()
 	distance.min_value = 0.0
 	distance.max_value = 1e6
 	distance.allow_greater = true
-	distance.step = 0.1
-	distance.value = _shapes.entry(i).escape_distance
-	distance.tooltip_text = "World units from run spawn. 0 inherits Gameplay exit radius × stage number."
+	distance.step = 0.0
+	distance.value = _shapes.entry(i).next_level_distance
+	distance.tooltip_text = "Additional world units for this stage, added to all previous stages. 0 contributes 20. Tested from the run origin (spawn), after required commands; does not affect rendering."
 	distance_row.add_child(distance)
+	var threshold := Label.new()
+	threshold.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	threshold.text = _threshold_text(i)
+	threshold.add_theme_font_size_override("font_size", 13)
+	threshold.add_theme_color_override("font_color", Color(0.7, 0.75, 0.82))
+	stage.add_child(threshold)
 	var commands := LineEdit.new()
 	commands.text = "; ".join(_shapes.entry(i).commands)
 	commands.placeholder_text = "Commands separated by ; — Enter to save (empty = none)"
@@ -286,7 +305,7 @@ func _make_entry(i: int) -> Dictionary:
 				steps.append(step.strip_edges())
 		var message := ShapeList.validate_commands(_shapes.table(i), steps)
 		error.text = message
-		if message == "" and (_shapes.entry(i).escape_distance != distance.value or Array(_shapes.entry(i).commands) != steps):
+		if message == "" and (_shapes.entry(i).next_level_distance != distance.value or Array(_shapes.entry(i).commands) != steps):
 			_shapes.set_stage(i, distance.value, steps)
 	distance.value_changed.connect(func(_value): save_stage.call())
 	commands.text_submitted.connect(func(_text): save_stage.call())
@@ -298,7 +317,7 @@ func _make_entry(i: int) -> Dictionary:
 	inspector.visible = _expanded[i]
 	_list.add_child(inspector)
 
-	return {"header": header, "arrow": arrow, "label": label, "remove": remove, "inspector": inspector, "stage": stage, "status": status, "stage_open": false}
+	return {"header": header, "arrow": arrow, "label": label, "remove": remove, "inspector": inspector, "stage": stage, "status": status, "stage_open": false, "distance": distance, "threshold": threshold}
 
 
 func _restyle() -> void:
@@ -315,15 +334,22 @@ func _restyle() -> void:
 func _set_expanded(i: int, on: bool) -> void:
 	if i < 0 or i >= _expanded.size():
 		return
-	_expanded[i] = on
+	if on:
+		for j in _expanded.size():
+			_expanded[j] = j == i
+		if _selected != i:
+			_selected = i
+			selected_changed.emit(i)
+	else:
+		_expanded[i] = false
 	_restyle()
+	expanded_changed.emit(expanded_index())
 
 
 # ------------------------------------------------------------------ handlers
 
 func _on_arrow_pressed(i: int) -> void:
 	_set_expanded(i, not _expanded[i])
-	select(i)
 
 
 func _on_remove_pressed(i: int) -> void:
@@ -357,3 +383,13 @@ func set_gameplay_active(index: int) -> void:
 	_gameplay_active = index
 	for i in _entries.size():
 		_entries[i].status.text = "Active shape" if i == index else "Stage %d" % (i + 1)
+
+
+func _threshold_text(i: int) -> String:
+	return "Advances beyond %s world units from run origin (including previous shapes)." % _shapes.next_level_threshold(i)
+
+
+func _refresh_stage_distances(_index: int) -> void:
+	for i in _entries.size():
+		(_entries[i]["distance"] as SpinBox).set_value_no_signal(_shapes.entry(i).next_level_distance)
+		(_entries[i]["threshold"] as Label).text = _threshold_text(i)

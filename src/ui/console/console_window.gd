@@ -73,6 +73,9 @@ var _tabs: TabContainer
 var _shape_pane: ShapeListPane
 var _light_inspector: AttributeInspector
 var _material_inspector: AttributeInspector
+var _light_shape_label: Label
+var _material_shape_label: Label
+var _rendered_shape := -1
 var _palette: Palette
 var _palette_window: PaletteWindow
 var _self_similar: Label
@@ -91,7 +94,7 @@ var _dock_rect := Rect2i()
 ## light and material knobs they share. `placement_source` returns the defaults
 ## (id -> value) for a shape the Add shape button creates; Main supplies one
 ## that places it in front of the camera.
-func setup(shapes: ShapeList, look: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable(), placement_source: Callable = Callable()) -> void:
+func setup(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable(), placement_source: Callable = Callable()) -> void:
 	_keymap = keymap
 	title = "Console"
 	visible = false   # force_native cannot change while a window is shown
@@ -126,6 +129,7 @@ func setup(shapes: ShapeList, look: AttributeTable, keymap: Keymap, clock: Clock
 	_tabs.add_child(_shape_pane)
 	_shape_pane.setup(shapes, group_tooltips, placement_source, _self_similar)
 
+	var look := shapes.look_table(0)
 	_palette = Palette.new(look)
 	_palette_window = PaletteWindow.new()
 	_palette_window.setup(_palette)
@@ -135,15 +139,17 @@ func setup(shapes: ShapeList, look: AttributeTable, keymap: Keymap, clock: Clock
 	_light_inspector.name = "Light"
 	_light_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_light_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_tabs.add_child(_light_inspector)
+	_light_shape_label = _add_look_tab("Light", _light_inspector)
 	_light_inspector.setup(look, group_tooltips, ShapeCatalogue.LIGHT_GROUPS)
 
 	_material_inspector = AttributeInspector.new()
 	_material_inspector.name = "Material"
 	_material_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_material_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_tabs.add_child(_material_inspector)
+	_material_shape_label = _add_look_tab("Material", _material_inspector)
 	_material_inspector.setup(look, group_tooltips, ShapeCatalogue.MATERIAL_GROUPS, _palette_window)
+	_shape_pane.expanded_changed.connect(_edit_shape_look)
+	_edit_shape_look(_shape_pane.expanded_index())
 
 	_view = ViewPane.new()
 	_tabs.add_child(_view)
@@ -183,6 +189,41 @@ func light_inspector() -> AttributeInspector:
 ## The Material tab's inspector (Colour, Surface, Texture, Palette), under the palette window.
 func material_inspector() -> AttributeInspector:
 	return _material_inspector
+
+
+func _add_look_tab(tab_name: String, inspector: AttributeInspector) -> Label:
+	var tab := VBoxContainer.new()
+	tab.name = tab_name
+	_tabs.add_child(tab)
+	var label := Label.new()
+	label.name = "EditingShape"
+	label.add_theme_font_size_override("font_size", 16)
+	tab.add_child(label)
+	tab.add_child(inspector)
+	return label
+
+
+func _edit_shape_look(index: int) -> void:
+	var table: AttributeTable = _shape_pane.shapes().look_table(index) if index >= 0 else null
+	_light_inspector.set_table(table)
+	_material_inspector.set_table(table)
+	_light_inspector.visible = index >= 0
+	_material_inspector.visible = index >= 0
+	if table != null:
+		_palette.set_table(table)
+		_refresh_sources()
+	_update_look_labels()
+
+
+func _update_look_labels() -> void:
+	var index := _shape_pane.expanded_index()
+	var text := "Expand a shape in the Shape tab to edit it."
+	if index >= 0:
+		text = "Editing shape %d" % (index + 1)
+		if _rendered_shape >= 0 and index != _rendered_shape:
+			text += " · Inactive — showing defaults"
+	_light_shape_label.text = text
+	_material_shape_label.text = text
 
 
 func palette_window() -> PaletteWindow:
@@ -245,13 +286,22 @@ func show_zoom_limit(on: bool) -> void:
 
 ## Feed one frame of resolved values — one Dictionary per shape, and the
 ## scene's look — to the panels' readouts and the palette's curves and strip.
-func set_resolved(shape_values: Array, look_values: Dictionary = {}) -> void:
+func set_resolved(shape_values: Array, look_values: Dictionary = {}, rendered_shape: int = -1) -> void:
 	if _shape_pane != null:
 		_shape_pane.set_resolved(shape_values)
+	if _rendered_shape != rendered_shape:
+		_rendered_shape = rendered_shape
+		_update_look_labels()
+	var index := _shape_pane.expanded_index()
+	if index < 0:
+		return
+	if rendered_shape >= 0 and index != rendered_shape:
+		look_values = _shape_pane.shapes().look_table(index).defaults()
 	if _light_inspector != null:
 		_light_inspector.set_resolved(look_values)
 	if _material_inspector != null:
 		_material_inspector.set_resolved(look_values)
+	_palette_window.set_resolved(look_values)
 
 
 func open() -> void:

@@ -49,8 +49,7 @@ func _activate(index: int) -> void:
 
 func _sync_boundary() -> void:
 	var i := clampi(_params.gameplay_active, 0, _shapes.count() - 1)
-	var distance := _shapes.entry(i).escape_distance
-	_params.run_radius = distance if distance > 0.0 else _params.gameplay.exit_radius * (i + 1)
+	_params.next_level_threshold = _shapes.next_level_threshold(i)
 	_params.run_escaped = escaped
 
 func refresh_boundary() -> void:
@@ -97,12 +96,11 @@ func apply_command(command: String, expected_run: String, expected_stage: int, e
 func check_position() -> void:
 	if escaped or transitioning() or _params.gameplay_active < 0:
 		return
-	_sync_boundary()
 	var i := _params.gameplay_active
 	if command_index < _shapes.entry(i).commands.size():
 		return
 	var origin := _params.run_origin
-	var radius := _params.run_radius
+	var radius := _params.next_level_threshold
 	var x: float = (_camera.eye_x() - origin[0]) / radius
 	var y: float = (_camera.eye_y() - origin[1]) / radius
 	var z: float = (_camera.eye_z() - origin[2]) / radius
@@ -144,14 +142,15 @@ func briefing() -> Dictionary:
 	for i in _shapes.count():
 		var e := _shapes.entry(i)
 		stages.append({"shape_index": i, "label": e.label,
-			"escape_distance": e.escape_distance if e.escape_distance > 0 else _params.gameplay.exit_radius * (i + 1),
+			"next_level_distance": _shapes.next_level_distance(i),
+			"next_level_threshold": _shapes.next_level_threshold(i),
 			"commands": Array(e.commands)})
 	var index := _params.gameplay_active
 	var commands := _shapes.entry(index).commands
 	return {"run_id": run_id(), "active_shape": index, "stages": stages,
 		"command_index": command_index, "human_turn": human_turn, "next_command": commands[command_index] if command_index < commands.size() else "",
 		"origin": _params.run_origin.duplicate(), "transitioning": transitioning(), "escaped": escaped,
-		"instructions": "These commands are required in order to escape each shape. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never change shapes on startup, timers, stage changes or movement completion. Commands affect only the active shape. After its commands, fly beyond its escape_distance from origin. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
+		"instructions": "These commands are required in order to escape each shape. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never change shapes on startup, timers, stage changes or movement completion. Commands affect only the active shape. After its commands, fly beyond its cumulative next_level_threshold from origin. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
 
 
 func apply_request(args: Dictionary) -> Dictionary:

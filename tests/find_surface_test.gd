@@ -78,7 +78,7 @@ func run() -> void:
 
 	# Both shapes outside the visible exit sphere: a failed search must not
 	# move the camera or reset the orbit pivot, and must explain the miss.
-	params.gameplay.exit_radius = 0.5
+	params.render_escape_radius = 0.5
 	var before := camera.transform
 	var pivot := orbit.center
 	button.pressed.emit()

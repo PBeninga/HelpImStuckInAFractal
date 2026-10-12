@@ -93,12 +93,12 @@ static func scene_bounds(ex: float, ey: float, ez: float, dir: Vector3, params: 
 			t_exit = maxf(t_exit, leave)
 	if t_exit < 0.0:
 		return null
-	var origin := params.escape_origin()
+	var origin := params.render_escape_origin()
 	ex -= origin[0]
 	ey -= origin[1]
 	ez -= origin[2]
 	var b := ex * dir.x + ey * dir.y + ez * dir.z
-	var radius := params.escape_radius()
+	var radius := params.render_escape_radius
 	var discriminant := b * b - (ex * ex + ey * ey + ez * ez) + radius * radius
 	if discriminant < 0.0:
 		return null

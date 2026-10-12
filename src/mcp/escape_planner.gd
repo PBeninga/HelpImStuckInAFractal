@@ -31,8 +31,8 @@ func plan(game: Node, candidate_directions: Array = []) -> Dictionary:
 	_sprint = game.fly.sprinting
 	var start := Array(game.camera.eye64())
 	var forward: Vector3 = game.camera.forward()
-	var radius := _params.escape_radius()
-	var origin := _params.escape_origin()
+	var radius := _params.next_level_threshold
+	var origin := _params.run_origin
 	if _params.is_escaped(game.camera):
 		return {"ok": true, "escaped": true, "points": [], "estimated_seconds": 0.0}
 	var observed: Array = []
@@ -146,7 +146,7 @@ static func _distance(a: Array, b: Array) -> float:
 
 
 func _matches_scene(params: FractalParams) -> bool:
-	if _params.gameplay_active != params.gameplay_active or _params.run_radius != params.run_radius or _params.run_origin != params.run_origin:
+	if _params.gameplay_active != params.gameplay_active or _params.next_level_threshold != params.next_level_threshold or _params.run_origin != params.run_origin:
 		return false
 	if _params.gameplay.to_dict() != params.gameplay.to_dict() or _params.shapes.size() != params.shapes.size():
 		return false

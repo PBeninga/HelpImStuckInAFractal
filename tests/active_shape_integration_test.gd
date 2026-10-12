@@ -37,7 +37,7 @@ func run() -> void:
 	main.shape_run.step(0.1)
 	main.shape_run.step(1.0)
 	check(not main.view._stage_fog.visible, "fog overlay disappears after reveal")
-	main.camera.set_eye(14.1, 0.0, 0.0)
+	main.camera.set_eye(16.1, 0.0, 0.0)
 	check(main.view.is_escaped(), "last boundary triggers escape animation")
 	main.return_to_spawn()
 	check(not main.view.is_escaped(), "return to spawn resets escape")
