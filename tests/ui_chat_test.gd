@@ -19,6 +19,12 @@ func run() -> void:
 	current_scene = main
 	await ui.frames(3)
 
+	# The console opens beside the main window at start; headless it is embedded
+	# over the panel and holds the keyboard. Close it, as a player flying would.
+	main.console().hide_console()
+	main.get_window().grab_focus()
+	await ui.frames(1)
+
 	var chat: ChatPanel = main.chat()
 	check(chat != null, "Main builds the pilot chat")
 	check(chat._log == bridge.chat, "on the bridge's log, so it survives a scene change")
@@ -118,6 +124,16 @@ func run() -> void:
 	await ui.frames(2)
 	check(watched[0] != null and watched[0]["messages"][0]["role"] == "agent", "chat_watch wakes on an agent reply")
 	check_eq(bridge.chat.agent_cursor, cursor, "and leaves the agent's cursor alone")
+
+	# Docked (fullscreen), the console takes a strip on the right: the chat
+	# moves to its left edge.
+	main.set_docked(true)
+	await ui.frames(2)
+	var dock_left: float = main._dock_rect().position.x
+	check_approx(ui.global_rect(chat).end.x, dock_left - ChatPanel.MARGIN, "docked, the chat keeps left of the console", 1.0)
+	main.set_docked(false)
+	await ui.frames(2)
+	check_approx(ui.global_rect(chat).end.x, 1280.0 - ChatPanel.MARGIN, "and returns to the edge when undocked", 1.0)
 
 	r = await bridge.handle("chat_clear", {})
 	await ui.frames(2)

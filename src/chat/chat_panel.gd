@@ -106,6 +106,12 @@ func _build() -> void:
 	col.add_child(input)
 
 
+## Keep `inset` points clear on the right (the docked console's strip).
+func set_right_inset(inset: float) -> void:
+	offset_left = -inset - WIDTH - MARGIN
+	offset_right = -inset - MARGIN
+
+
 ## Focus the input (Enter), from wherever the keyboard was.
 func focus_input() -> void:
 	input.grab_focus()

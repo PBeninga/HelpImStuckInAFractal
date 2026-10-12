@@ -397,7 +397,8 @@ func _dock_rect() -> Rect2i:
 
 
 ## Docked with the console showing, the view (and the Julia marker over it)
-## stops at the console's left edge; otherwise it fills the window.
+## stops at the console's left edge; otherwise it fills the window. The pilot
+## chat keeps to the right of what is left.
 func _layout_view() -> void:
 	var right := 0.0
 	if _docked and _console.visible:
@@ -405,6 +406,8 @@ func _layout_view() -> void:
 	for c in [view, _marker]:
 		if c != null:
 			c.offset_right = right
+	if _chat != null:
+		_chat.set_right_inset(-right)
 
 
 func _reopen_console() -> void:

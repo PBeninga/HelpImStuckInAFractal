@@ -105,7 +105,8 @@ func trace_clear(a: Vector3, b: Vector3, margin: float) -> bool:
 
 
 func world_info() -> Dictionary:
-	var p := _params()
+	# The active shape's knobs (the scene can hold several shapes).
+	var p: Variant = _params().active_shape() if _params().has_method("active_shape") else _params()
 	return {"type": "Mandelbox", "scale": p.box_scale, "fold_limit": p.fold_limit,
 		"min_radius": p.min_radius, "fixed_radius": p.fixed_radius,
 		"iterations": DistanceEstimator.ITERATIONS, "surface_hausdorff_dimension_estimate": 2.8}
@@ -119,7 +120,9 @@ func set_palette(name: String) -> Dictionary:
 	var i := FractalParams.COLOR_MODE_NAMES.find(name)
 	if i < 0:
 		return {"ok": false, "message": "Unknown palette '%s'." % name}
-	game.table().set_default(&"color_mode", FractalParams.COLOR_MODE_IDS[i])
+	# The colour mode is the scene's look (light and material), not a shape's.
+	var table: AttributeTable = game.look_table() if game.has_method("look_table") else game.table()
+	table.set_default(&"color_mode", FractalParams.COLOR_MODE_IDS[i])
 	return {"ok": true}
 
 

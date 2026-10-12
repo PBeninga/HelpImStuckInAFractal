@@ -115,7 +115,9 @@ func run() -> void:
 	r = await bridge.handle("set_shape", {"values": {"box_scale": -1.5, "bogus": 1}})
 	check_approx(r["applied"]["box_scale"], -1.5, "set_shape applies a value")
 	check_eq(r.get("unknown"), ["bogus"], "and reports unknown ids")
-	check_approx(main.params.box_scale, -1.5, "straight into params")
+	r = await bridge.handle("set_shape", {"values": {"color_mode": 3}})
+	check_eq(int(r["applied"]["color_mode"]), 3, "set_shape reaches the look table (colour mode)")
+	check_approx(main.params.active_shape().box_scale, -1.5, "straight into params")
 
 	# world drawing + trail
 	r = await bridge.handle("draw", {"type": "point", "space": "world", "position": [0, 0, 0], "text": "origin"})

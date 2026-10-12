@@ -1,62 +1,53 @@
 class_name FractalProbe
 extends RefCounted
-## CPU queries against the distance estimator for the MCP bridge: march a ray
-## to the surface, estimate a surface normal. Same hit threshold and bounding
-## box as OrbitCamera._march, with a larger step budget, since an agent asks
-## once rather than every frame.
+## CPU queries against the scene for the MCP bridge: march a ray to the nearest
+## surface of any shape, estimate a surface normal. Built on the scene
+## functions in DistanceEstimator (the union of every shape, each in its own
+## frame) with the same hit threshold as DistanceEstimator.march, and a larger
+## step budget, since an agent asks once rather than every frame. The eye is
+## taken in 64-bit components, as CameraState keeps it.
 
 const MAX_STEPS := 600
 
 
-## March from `ro` along `rd` (normalised). Returns {point, distance, steps,
-## normal} on a hit, or null when the ray leaves the bounding box or runs out
-## of steps.
-static func march(ro: Vector3, rd: Vector3, params: FractalParams) -> Variant:
+## March from the 64-bit point (ex, ey, ez) along `rd`. Returns {point (a
+## Vector3), point64 ([x, y, z] floats), distance, steps, normal, shape (the hit
+## shape's index)} on a hit, or null when the ray leaves every shape's cube or
+## runs out of steps.
+static func march(ex: float, ey: float, ez: float, rd: Vector3, params: FractalParams) -> Variant:
 	rd = rd.normalized()
-	var box_half := 20.0 if params.julia_enabled() else 2.0
-	var tb := _box(ro, rd, box_half)
-	if tb.y < maxf(tb.x, 0.0):
+	var bounds: Variant = DistanceEstimator.scene_bounds(ex, ey, ez, rd, params)
+	if bounds == null:
 		return null
-	var total := maxf(tb.x, 0.0)
-	var near := DistanceEstimator.estimate(ro, params)
+	var total: float = bounds[0]
+	var t_exit: float = bounds[1]
+	var near := DistanceEstimator.scene_estimate_at(ex, ey, ez, params)
 	for i in MAX_STEPS:
-		var pos := ro + rd * total
-		var d := DistanceEstimator.estimate(pos, params)
-		var eps := params.hit_epsilon(total, near)
+		var px := ex + rd.x * total
+		var py := ey + rd.y * total
+		var pz := ez + rd.z * total
+		var n := DistanceEstimator.nearest_at(px, py, pz, params)
+		var d: float = n["distance"]
+		var eps := params.hit_epsilon(total, near, params.shapes[n["index"]].precision)
 		if d < eps:
 			return {
-				"point": pos,
+				"point": Vector3(px, py, pz),
+				"point64": [px, py, pz],
 				"distance": total,
 				"steps": i,
-				"normal": normal(pos, params, maxf(eps, 1e-7)),
+				"normal": normal(px, py, pz, params, maxf(eps, 1e-12)),
+				"shape": n["index"],
 			}
 		total += d
-		if total > tb.y:
+		if total > t_exit:
 			return null
 	return null
 
 
-## Central-difference gradient of the distance estimate at `p`.
-static func normal(p: Vector3, params: FractalParams, h: float) -> Vector3:
-	var dx := DistanceEstimator.estimate_at(p.x + h, p.y, p.z, params) - DistanceEstimator.estimate_at(p.x - h, p.y, p.z, params)
-	var dy := DistanceEstimator.estimate_at(p.x, p.y + h, p.z, params) - DistanceEstimator.estimate_at(p.x, p.y - h, p.z, params)
-	var dz := DistanceEstimator.estimate_at(p.x, p.y, p.z + h, params) - DistanceEstimator.estimate_at(p.x, p.y, p.z - h, params)
+## Central-difference gradient of the scene distance at a 64-bit point.
+static func normal(px: float, py: float, pz: float, params: FractalParams, h: float) -> Vector3:
+	var dx := DistanceEstimator.scene_estimate_at(px + h, py, pz, params) - DistanceEstimator.scene_estimate_at(px - h, py, pz, params)
+	var dy := DistanceEstimator.scene_estimate_at(px, py + h, pz, params) - DistanceEstimator.scene_estimate_at(px, py - h, pz, params)
+	var dz := DistanceEstimator.scene_estimate_at(px, py, pz + h, params) - DistanceEstimator.scene_estimate_at(px, py, pz - h, params)
 	var n := Vector3(dx, dy, dz)
 	return n.normalized() if n.length_squared() > 0.0 else Vector3.ZERO
-
-
-## Ray/AABB slab test against the cube of half-size `half_size`: (t_enter, t_exit).
-static func _box(ro: Vector3, rd: Vector3, half_size: float) -> Vector2:
-	var t0 := -INF
-	var t1 := INF
-	for a in 3:
-		var d := rd[a]
-		if absf(d) < 1e-12:
-			if absf(ro[a]) > half_size:
-				return Vector2(1.0, 0.0)
-			continue
-		var ta := (-half_size - ro[a]) / d
-		var tb := (half_size - ro[a]) / d
-		t0 = maxf(t0, minf(ta, tb))
-		t1 = minf(t1, maxf(ta, tb))
-	return Vector2(t0, t1)
