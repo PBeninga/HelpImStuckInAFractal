@@ -6,6 +6,8 @@ func run() -> void:
 	var main: Node = load("res://src/main.tscn").instantiate()
 	root.add_child(main)
 	await frames(2)
+	# This suite isolates the final animation; objective gating is tested separately.
+	main.shapes().set_stage(0, 0.0, [])
 	main.camera.set_eye(0.0, 0.0, 0.0)
 	main.params.gameplay.distance_scaling = false
 	main.table().set_default(&"shape", FractalParams.Shape.MANDELBOX)

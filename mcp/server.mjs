@@ -118,6 +118,8 @@ const look = z
 
 const INSTRUCTIONS = `Pilots a camera through a live 3D Mandelbox fractal (the Godot game "Help I'm Stuck In A Fractal") and draws on its screen.
 
+On launch read shape_run from status: the ordered stages, required commands, active_shape and spawn-centered escape distances. Only the gameplay-active shape is visible. Apply scripted edits with apply_shape_command, never set_shape. Only act in response to a NEW human utterance, one command per utterance. Never change shapes on startup, timers or system events. Refresh status after the person speaks and pass run_id, active_shape as shape_index, command_index, human_turn and next_command. A stage advances only after its commands and escape distance; wait for its fog transition. Only the final stage completes escape.
+
 The person talks to you through the pilot chat on the right of the game window (typed now, voice later). To pilot for them: launch_game if needed, then loop: wait_for_message -> act on the request with the camera/shape/draw tools (look at the result with screenshot or look: true) -> say a short reply -> wait_for_message again. Keep replies brief: they appear in a narrow in-game panel and may be spoken aloud later. Prefer animated moves (duration 0.5-2 s) so the person can follow the flight.`;
 
 const server = new McpServer({ name: "fractal", version: "0.2.0" }, { instructions: INSTRUCTIONS });
@@ -338,6 +340,14 @@ relay(
 );
 
 // ---------------------------------------------------------------- shape / views
+
+relay(
+  "apply_shape_command", "apply_shape_command",
+  "Apply only the active stage's next scripted command in response to a new human utterance, never unprompted. Read shape_run from fresh status and copy its run_id, active_shape as shape_index, command_index, human_turn and next_command. One command per utterance; rejects stale or duplicate requests.",
+  { command: z.string(), run_id: z.string(), shape_index: z.number().int().min(0),
+    command_index: z.number().int().min(0), human_turn: z.number().int().min(1) },
+);
+
 
 relay(
   "get_shape",

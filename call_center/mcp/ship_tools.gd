@@ -16,7 +16,12 @@ func definitions() -> Array:
 	var point := {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
 		"description": "World coordinates [x,y,z], in world units (1000 metres per world unit)."}
 	var out := [
-		_tool("get_ship_status", "Compact telemetry: position, player facing, Gameplay speed, autopilot and real exit-sphere boundary. No depth grid or scripted landmarks."),
+		_tool("get_ship_status", "Compact telemetry: position, player facing, Gameplay speed, autopilot and real exit-sphere boundary. Includes shape_run: required commands, active stage, run_id and escape distances. Read it on startup."),
+		_tool("apply_shape_command", "Apply the next required scripted command ONLY to the gameplay-active shape, ONLY in response to a new human utterance (one command per utterance). Never invoke on startup, timers, stage events or movement completion. Read shape_run in get_ship_status; refresh it after the human speaks and pass run_id, active_shape, command_index, human_turn and next_command. Rejects stale stages, duplicates and unsolicited edits. Inversion is a delta to the existing radius; other commands set a numeric attribute.", {
+			"command": {"type": "string"}, "run_id": {"type": "string"},
+			"shape_index": {"type": "integer", "minimum": 0},
+			"command_index": {"type": "integer", "minimum": 0}, "human_turn": {"type": "integer", "minimum": 1}},
+			["command", "run_id", "shape_index", "command_index", "human_turn"]),
 		_tool("scan_surroundings", "Request a low-fidelity multidirectional raycast around the player. Fidelity is tunable in Gameplay. Includes world directions and measured distances; misses are unknown, not proof of open space."),
 		_tool("scan_ship_depth", "EXPENSIVE, optional fallback when the current screen has no promising direction. Computes fresh CPU ray depths around the entire ship, including behind/above/below: 96 rays by default, at most 256. Returns captured pose, per-ray world direction/depth/status and broad distant-region recommendations. Runs only on request, yields between batches, stops after an 8-second budget (partial coverage is explicit), with a 5-second cooldown. Do not poll. CPU geometry excludes shader-only displacement; unknown/step-limited depths are not open space. Use recommended look_at with face_point, then inspect the new screen.", {
 			"ray_count": {"type": "integer", "minimum": 24, "maximum": 256, "default": 96},
@@ -63,6 +68,7 @@ func call_tool(tool_name: String, args: Variant) -> Dictionary:
 	var a: Dictionary = args if args is Dictionary else {}
 	match tool_name:
 		"get_ship_status": return status()
+		"apply_shape_command": return cc.adapter.apply_shape_command(a) if cc.adapter != null else _no_flight()
 		"scan_surroundings": return scan()
 		"scan_ship_depth":
 			if cc.adapter == null:
@@ -135,7 +141,7 @@ func status() -> Dictionary:
 	out.merge(adapter.navigation_pose())
 	out.merge({"paused": adapter.is_paused(), "autopilot": adapter.autopilot_state(),
 		"speed_world_per_second": adapter.travel_speed(), "escape": adapter.escape_state(),
-		"world": adapter.world_info(), "message": "Use plan_escape for estimated travel times; request scans only when needed."})
+		"world": adapter.world_info(), "shape_run": adapter.shape_briefing(), "message": "Use plan_escape for estimated travel times; request scans only when needed."})
 	return out
 
 func scan() -> Dictionary:

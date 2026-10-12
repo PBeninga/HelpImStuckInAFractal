@@ -15,6 +15,8 @@ func run() -> void:
 		await frames(1)
 		return
 	var params: FractalParams = main.params
+	# Standalone union fixture; active-only recovery has its own integration test.
+	params.gameplay_active = -1
 	params.shape().shape = FractalParams.Shape.MANDELBOX
 	# Recovery fixtures use a bounded Mandelbox, unlike the startup Kleinian.
 	params.shape().shape = FractalParams.Shape.MANDELBOX

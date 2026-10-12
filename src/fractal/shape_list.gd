@@ -13,6 +13,7 @@ extends RefCounted
 ## `entry_changed(index, id)` relays a table edit with the entry it came from.
 
 signal changed
+signal stage_changed(index: int)
 signal relabelled(index: int)
 signal entry_changed(index: int, id: StringName)
 
@@ -20,6 +21,9 @@ signal entry_changed(index: int, id: StringName)
 class Entry:
 	var label: String
 	var table: AttributeTable
+	## Zero inherits (index + 1) × Gameplay exit radius.
+	var escape_distance := 0.0
+	var commands: Array[String] = []
 
 	func _init(p_label: String, p_table: AttributeTable) -> void:
 		label = p_label
@@ -81,6 +85,7 @@ func add(defaults: Dictionary = {}, p_label: String = "") -> int:
 	var name := p_label if p_label != "" else "Shape %d" % _next_number
 	_next_number += 1
 	var e := Entry.new(name, t)
+	e.commands = default_commands(t)
 	_entries.append(e)
 	t.changed.connect(_on_table_changed.bind(e))
 	changed.emit()
@@ -121,6 +126,8 @@ func to_dict() -> Array:
 	for e in _entries:
 		var d := e.table.to_dict()
 		d["label"] = e.label
+		d["escape_distance"] = e.escape_distance
+		d["commands"] = Array(e.commands)
 		out.append(d)
 	return out
 
@@ -149,7 +156,20 @@ func apply_dict(saved: Variant) -> Array[String]:
 		if name == "":
 			name = "Shape %d" % number
 		number += 1
-		fresh.append(Entry.new(name, t))
+		var e := Entry.new(name, t)
+		var distance: Variant = raw.get("escape_distance", 0.0)
+		if (distance is float or distance is int) and is_finite(float(distance)) and float(distance) >= 0.0:
+			e.escape_distance = float(distance)
+		else:
+			warnings.append("Invalid escape distance for %s; inherited Gameplay radius" % name)
+		var commands: Variant = raw.get("commands", default_commands(t))
+		var error := validate_commands(t, commands)
+		if error == "":
+			e.commands.assign(commands)
+		else:
+			warnings.append("Invalid commands for %s: %s (stage blocked until corrected)" % [name, error])
+			e.commands.assign(commands if commands is Array and commands.all(func(c): return c is String) else ["invalid_command"])
+		fresh.append(e)
 	if fresh.is_empty():
 		warnings.append("No shapes in the file: kept one default shape")
 		fresh.append(Entry.new("Shape 1", AttributeTable.new(ShapeCatalogue.shape_specs())))
@@ -167,3 +187,44 @@ func _on_table_changed(id: StringName, e: Entry) -> void:
 	var i := _entries.find(e)
 	if i >= 0:
 		entry_changed.emit(i, id)
+
+
+## Atomically edit saved stage objectives. Empty scripts support older levels.
+func set_stage(i: int, distance: float, commands: Array) -> bool:
+	if i < 0 or i >= count() or not is_finite(distance) or distance < 0.0:
+		return false
+	if validate_commands(table(i), commands) != "":
+		return false
+	_entries[i].escape_distance = distance
+	_entries[i].commands.assign(commands)
+	stage_changed.emit(i)
+	return true
+
+
+static func validate_commands(t: AttributeTable, commands: Variant) -> String:
+	if not commands is Array:
+		return "Commands must be an array of strings."
+	var values := t.defaults()
+	for command in commands:
+		if not command is String:
+			return "Every command must be a string."
+		var result := ShapeCommand.parse(command, t, values)
+		if not result.ok:
+			return result.message
+		values[result.id] = result.value
+	return ""
+
+
+static func default_commands(t: AttributeTable) -> Array[String]:
+	match int(t.get_default(&"shape")):
+		FractalParams.Shape.MANDELBOX, FractalParams.Shape.KLEINIAN:
+			var id := &"kleinian_radius" if int(t.get_default(&"shape")) == FractalParams.Shape.KLEINIAN else &"fixed_radius"
+			var radius: float = t.get_default(id)
+			var target := maxf(radius * 0.5, t.spec(id).hard_min)
+			if target != radius:
+				return ["inversion %s" % (target - radius)]
+		FractalParams.Shape.KIFS:
+			return ["kifs_scale %s" % (2.5 if float(t.get_default(&"kifs_scale")) != 2.5 else 3.0)]
+		FractalParams.Shape.MANDELBULB:
+			return ["mandelbulb_power %s" % (6.0 if float(t.get_default(&"mandelbulb_power")) != 6.0 else 8.0)]
+	return ["w %s" % (-0.5 if float(t.get_default(&"w")) != -0.5 else 0.0)]

@@ -28,6 +28,7 @@ uniform bool depth_scan = false;
 uniform vec3 eye;             // world; probe dot and the exit sphere
 // The finite sphere bounds geometry; the escape sky surrounds the camera.
 uniform float exit_radius = 20.0;
+uniform vec3 exit_eye = vec3(0.0);
 uniform bool exit_has_skybox = false;
 uniform float exit_sky_alpha = 0.0;
 uniform float escape_fog_clear = 0.0;
@@ -645,8 +646,8 @@ void fragment() {
 	}
 
 	vec3 bg = (color_mode == 5 || color_mode == 6) ? vec3(1.0) : vec3(0.0);
-	float sphere_b = dot(eye, dir);
-	float sphere_discriminant = sphere_b * sphere_b - dot(eye, eye) + exit_radius * exit_radius;
+	float sphere_b = dot(exit_eye, dir);
+	float sphere_discriminant = sphere_b * sphere_b - dot(exit_eye, exit_eye) + exit_radius * exit_radius;
 	float sphere_start = 0.0;
 	float sphere_end = -1.0;
 	if (sphere_discriminant >= 0.0) {

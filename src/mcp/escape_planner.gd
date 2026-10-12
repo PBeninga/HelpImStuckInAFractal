@@ -13,6 +13,7 @@ func plan(game: Node) -> Dictionary:
 	# Shapes and gameplay are runtime fields, not exported Resource properties.
 	# Resource.duplicate alone would silently plan against the default scene.
 	_params.gameplay.apply_dict(game.params.gameplay.to_dict())
+	_params.copy_run_from(game.params)
 	_params.set_shape_count(game.params.shapes.size())
 	for i in game.params.shapes.size():
 		_params.shapes[i].copy_from(game.params.shapes[i])
@@ -21,10 +22,11 @@ func plan(game: Node) -> Dictionary:
 	_sprint = game.fly.sprinting
 	var start := Array(game.camera.eye64())
 	var forward: Vector3 = game.camera.forward()
-	var radius := _params.gameplay.exit_radius
-	if _params.gameplay.is_outside(game.camera):
+	var radius := _params.escape_radius()
+	var origin := _params.escape_origin()
+	if _params.is_escaped(game.camera):
 		return {"ok": true, "escaped": true, "points": [], "estimated_seconds": 0.0}
-	var radial := Vector3(start[0], start[1], start[2]).normalized()
+	var radial := Vector3(start[0] - origin[0], start[1] - origin[1], start[2] - origin[2]).normalized()
 	if radial == Vector3.ZERO:
 		radial = forward
 	var directions: Array = [radial, forward]
@@ -42,16 +44,16 @@ func plan(game: Node) -> Dictionary:
 	var near := DistanceEstimator.scene_estimate_at(start[0], start[1], start[2], _params)
 	for direction in directions:
 		var dir: Vector3 = direction
-		var end := _exit_point(start, dir, radius)
+		var end := _exit_point(start, dir, radius, origin)
 		candidates.append(_route(start, forward, [end]))
 		# A short first leg can leave a slow pocket before turning outward.
 		var distance := _distance(start, end)
 		var step := minf(distance * 0.35, maxf(near * 4.0, radius * 0.001))
 		var via := _along(start, dir, step)
-		var outward := Vector3(via[0], via[1], via[2]).normalized()
+		var outward := Vector3(via[0] - origin[0], via[1] - origin[1], via[2] - origin[2]).normalized()
 		if outward == Vector3.ZERO:
 			outward = dir
-		candidates.append(_route(start, forward, [via, _exit_point(via, outward, radius)]))
+		candidates.append(_route(start, forward, [via, _exit_point(via, outward, radius, origin)]))
 		# Let rendering/input continue between candidates; never flood the agent.
 		await game.get_tree().process_frame
 		if not is_instance_valid(game) or not game.is_inside_tree():
@@ -97,9 +99,10 @@ func _route(start: Array, forward: Vector3, points: Array) -> Dictionary:
 		facing = dir
 	return {"points": points, "estimated_seconds": seconds, "distance": distance}
 
-static func _exit_point(eye: Array, dir: Vector3, radius: float) -> Array:
-	var b: float = eye[0] * dir.x + eye[1] * dir.y + eye[2] * dir.z
-	var c: float = eye[0] * eye[0] + eye[1] * eye[1] + eye[2] * eye[2] - radius * radius
+static func _exit_point(eye: Array, dir: Vector3, radius: float, origin: Array = [0.0, 0.0, 0.0]) -> Array:
+	var relative := [eye[0] - origin[0], eye[1] - origin[1], eye[2] - origin[2]]
+	var b: float = relative[0] * dir.x + relative[1] * dir.y + relative[2] * dir.z
+	var c: float = relative[0] * relative[0] + relative[1] * relative[1] + relative[2] * relative[2] - radius * radius
 	var distance := maxf(-b + sqrt(maxf(b * b - c, 0.0)), 0.0) + radius * 0.0001
 	return _along(eye, dir, distance)
 
@@ -114,6 +117,8 @@ static func _distance(a: Array, b: Array) -> float:
 
 
 func _matches_scene(params: FractalParams) -> bool:
+	if _params.gameplay_active != params.gameplay_active or _params.run_radius != params.run_radius or _params.run_origin != params.run_origin:
+		return false
 	if _params.gameplay.to_dict() != params.gameplay.to_dict() or _params.shapes.size() != params.shapes.size():
 		return false
 	for i in _params.shapes.size():

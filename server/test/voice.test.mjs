@@ -106,6 +106,9 @@ test("a phone call with the OpenAI voice agent, through the link to the call cen
   assert.deepEqual(update.session.tools.map((t) => t.name), SHIP_TOOLS.filter((t) => t.name !== "resolve_issue").map((t) => t.name));
   assert.equal(update.session.tools[1].parameters.required[0], "feature_id");
   assert.match(update.session.instructions, /Sub-Dimensional Support/);
+  assert.match(update.session.instructions, /NEVER change a shape unprompted/);
+  assert.match(update.session.instructions, /"run_id":"test-run"/);
+  assert.match(update.session.instructions, /inversion -0.5/);
   await until(() => openai.of("response.create").length === 1, 3000, "greeting");
   await until(() => bridge.state.callCenter.call_state === "connected", 3000, "connected");
   assert.equal(bridge.state.callCenter.agent_name, "Gary");
@@ -122,8 +125,8 @@ test("a phone call with the OpenAI voice agent, through the link to the call cen
 
   // a tool call runs on the game's call centre, its output goes back after response.done
   openai.send({ type: "response.function_call_arguments.done", call_id: "call_1", name: "fly_to_feature", arguments: '{"feature_id":"#2312"}' });
-  await until(() => bridge.requests("ship_tool").length === 1, 3000, "ship_tool");
-  assert.deepEqual(bridge.requests("ship_tool")[0].args, { name: "fly_to_feature", arguments: { feature_id: "#2312" } });
+  await until(() => bridge.requests("ship_tool").filter(r => r.args.name === "fly_to_feature").length === 1, 3000, "ship_tool");
+  assert.deepEqual(bridge.requests("ship_tool").find(r => r.args.name === "fly_to_feature").args, { name: "fly_to_feature", arguments: { feature_id: "#2312" } });
   openai.send({ type: "response.done", response: { id: "r1", status: "completed", output: [{ type: "function_call", call_id: "call_1", name: "fly_to_feature", arguments: '{"feature_id":"#2312"}' }] } });
   const out = await until(() => openai.of("conversation.item.create").find((e) => e.item.type === "function_call_output"), 3000, "output");
   assert.equal(JSON.parse(out.item.output).message, "did fly_to_feature");

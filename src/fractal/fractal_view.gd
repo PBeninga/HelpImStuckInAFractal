@@ -82,6 +82,8 @@ var _center_ray: CenterRay
 var _depth_scan: Node
 var _escaped := false
 var _escape_elapsed := 0.0
+var _stage_fog: ColorRect
+var _stage_fog_alpha := 0.0
 
 
 func _ready() -> void:
@@ -111,6 +113,11 @@ func _ready() -> void:
 	_phosphor = PhosphorScan.new()
 	add_child(_phosphor)
 	_phosphor.setup(self)
+	_stage_fog = ColorRect.new()
+	_stage_fog.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage_fog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_stage_fog.visible = false
+	add_child(_stage_fog)
 	_apply_size()
 	# setup() may have run before _ready wired the material (e.g. a test or the
 	# screenshot pass that adds the view and calls setup() in the same frame).
@@ -509,7 +516,8 @@ func _push_params() -> void:
 func _push_params_impl() -> void:
 	if _material == null or _params == null:
 		return
-	_material.set_shader_parameter("exit_radius", _params.gameplay.exit_radius)
+	_material.set_shader_parameter("exit_radius", _params.escape_radius())
+	_push_exit_eye()
 	_material.set_shader_parameter("exit_skybox", _params.gameplay.exit_skybox)
 	# Every scene id is a scalar uniform of the same name, pushed as it is; the
 	# COLOR keys go as a vec3 (the shader's colour uniforms).
@@ -540,8 +548,9 @@ func _push_params_impl() -> void:
 	sizes.resize(n)
 	var halves := PackedFloat32Array()
 	halves.resize(n)
-	for i in _params.shapes.size():
-		var sh := _params.shapes[i]
+	var visible := _params.visible_shape_indices()
+	for i in visible.size():
+		var sh := _params.shapes[visible[i]]
 		for id in floats:
 			floats[id][i] = sh.get(id)
 		for id in ints:
@@ -554,7 +563,7 @@ func _push_params_impl() -> void:
 		_material.set_shader_parameter(id, ints[id])
 	_material.set_shader_parameter("shape_size", sizes)
 	_material.set_shader_parameter("box_half", halves)
-	_material.set_shader_parameter("shape_count", _params.shapes.size())
+	_material.set_shader_parameter("shape_count", visible.size())
 	_material.set_shader_parameter("view_limit", _params.scene_view_distance())
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
 	_material.set_shader_parameter("detail_range", _params.detail_range)
@@ -574,8 +583,9 @@ func _push_shed() -> void:
 		return
 	var precisions := PackedFloat32Array()
 	precisions.resize(FractalParams.MAX_SHAPES)
-	for i in _params.shapes.size():
-		precisions[i] = _params.shapes[i].precision / (_params.detail * _detail)
+	var visible := _params.visible_shape_indices()
+	for i in visible.size():
+		precisions[i] = _params.shapes[visible[i]].precision / (_params.detail * _detail)
 	_material.set_shader_parameter("precision", precisions)
 	var iterations := mini(_params.fractal_iterations, int(_shed["iterations"]))
 	_material.set_shader_parameter("fractal_iterations", iterations)
@@ -595,7 +605,7 @@ func _push_shed() -> void:
 func _sync_escape() -> void:
 	if _params == null or _camera == null:
 		return
-	var outside := _params.gameplay.is_outside(_camera)
+	var outside := _params.is_escaped(_camera)
 	if outside != _escaped:
 		_escaped = outside
 		_escape_elapsed = 0.0
@@ -624,7 +634,10 @@ func _push_escape() -> void:
 	_material.set_shader_parameter("escape_fog_clear", clear)
 	_material.set_shader_parameter("escape_ground_alpha", _escape_progress(_params.gameplay.escape_ground_duration))
 	_material.set_shader_parameter("escape_fractal_dissolve", _escape_progress(_params.gameplay.escape_fractal_duration))
-	_material.set_shader_parameter("fog_distance", _params.fog_distance if clear < 1.0 else 0.0)
+	var distance := _params.fog_distance if clear < 1.0 else 0.0
+	if _stage_fog_alpha > 0.0:
+		distance = lerpf(distance if distance > 0.0 else 1000.0, 0.00001, _stage_fog_alpha)
+	_material.set_shader_parameter("fog_distance", distance)
 	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 and clear < 1.0 else 0.0)
 	_material.set_shader_parameter("fog_clear", 1.0 - (1.0 - _fog_clear) * (1.0 - clear))
 
@@ -634,6 +647,7 @@ func _push_camera() -> void:
 		return
 	_sync_escape()
 	_material.set_shader_parameter("eye", _camera.eye())
+	_push_exit_eye()
 	_material.set_shader_parameter("cam_right", _camera.right())
 	_material.set_shader_parameter("cam_up", _camera.up())
 	_material.set_shader_parameter("cam_forward", _camera.forward())
@@ -672,15 +686,16 @@ func _push_near_impl() -> void:
 	var ey := _camera.eye_y()
 	var ez := _camera.eye_z()
 	var near := maxf(DistanceEstimator.scene_estimate_at(ex, ey, ez, _params), FractalParams.NEAR_FLOOR)
-	for i in _params.shapes.size():
-		var sh := _params.shapes[i]
+	var visible := _params.visible_shape_indices()
+	for i in visible.size():
+		var sh := _params.shapes[visible[i]]
 		var q := sh.to_local(ex, ey, ez)
 		eyes[i] = Vector3(q[0], q[1], q[2])
 		var ax := sh.axes()
 		fx[i] = ax[0]
 		fy[i] = ax[1]
 		fz[i] = ax[2]
-		iters[i] = _params.coarse_iters(near, i)
+		iters[i] = _params.coarse_iters(near, visible[i])
 	_material.set_shader_parameter("local_eye", eyes)
 	_material.set_shader_parameter("frame_x", fx)
 	_material.set_shader_parameter("frame_y", fy)
@@ -712,3 +727,28 @@ func depth_scan() -> Dictionary:
 
 func request_depth_scan(args: Dictionary = {}) -> Dictionary:
 	return _depth_scan.request(args) if _depth_scan != null else {"ok": true, "available": false}
+
+
+## Existing distance fog plus an opaque veil guarantee a covered geometry swap.
+## The veil is hidden at rest; no extra ray or DE is evaluated by the transition.
+func set_stage_fog(alpha: float) -> void:
+	_stage_fog_alpha = alpha
+	if _stage_fog != null and _params != null:
+		_stage_fog.color = Color(_params.fog_tint, alpha)
+		_stage_fog.visible = alpha > 0.0
+	_push_escape()
+	request_frame(false)
+
+func reset_shape_history() -> void:
+	if _phosphor != null:
+		_phosphor.reset_history()
+	request_frame()
+
+
+func _push_exit_eye() -> void:
+	if _material == null or _params == null or _camera == null:
+		return
+	# Subtract the origin in doubles before sending the float shader uniform.
+	var origin := _params.escape_origin()
+	_material.set_shader_parameter("exit_eye", Vector3(_camera.eye_x() - origin[0],
+		_camera.eye_y() - origin[1], _camera.eye_z() - origin[2]))

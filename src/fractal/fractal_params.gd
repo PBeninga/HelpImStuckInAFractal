@@ -52,6 +52,32 @@ const MAX_SHAPES := 8
 ## shape's distance is tried first per march step). Never empty.
 var shapes: Array[ShapeParams] = []
 
+## Gameplay selection, independent of the inspector's `active` selection.
+## -1 preserves the union for standalone editor/test resources without a run.
+var gameplay_active := -1
+var run_radius := 0.0
+var run_origin: Array = [0.0, 0.0, 0.0]
+var run_escaped := false
+
+func visible_shape_indices() -> Array:
+	return [clampi(gameplay_active, 0, shapes.size() - 1)] if gameplay_active >= 0 else range(shapes.size())
+
+func escape_radius() -> float:
+	return run_radius if gameplay_active >= 0 else gameplay.exit_radius
+
+func escape_origin() -> Array:
+	return run_origin if gameplay_active >= 0 else [0.0, 0.0, 0.0]
+
+func is_escaped(camera: CameraState) -> bool:
+	return run_escaped if gameplay_active >= 0 else gameplay.is_outside(camera)
+
+func copy_run_from(other: FractalParams) -> void:
+	gameplay_active = other.gameplay_active
+	run_radius = other.run_radius
+	run_origin = other.run_origin.duplicate()
+	run_escaped = other.run_escaped
+
+
 ## The shape the console has selected: the Julia marker follows it, a new
 ## shape is placed relative to it, and the per-shape conveniences below
 ## (bound_half, julia_point…) answer for it.
@@ -488,8 +514,8 @@ func view_distance() -> float:
 ## limit: the smallest View distance among the Kleinians in the scene.
 func scene_view_distance() -> float:
 	var out := 0.0
-	for s in shapes:
-		var v := s.view_distance()
+	for i in visible_shape_indices():
+		var v := shapes[i].view_distance()
 		if v > 0.0 and (out == 0.0 or v < out):
 			out = v
 	return out

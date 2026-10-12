@@ -1,0 +1,53 @@
+extends "res://tests/test_case.gd"
+
+func run() -> void:
+	var main: Node = load("res://src/main.tscn").instantiate()
+	root.add_child(main)
+	await frames(2)
+	check(main.get("shape_run") != null, "game owns an active-shape run")
+	if main.get("shape_run") == null:
+		main.queue_free()
+		await frames(1)
+		return
+	main.set_process(false)
+	main.shapes().add({&"shape": FractalParams.Shape.MANDELBOX, &"pos_x": 100.0})
+	main.shapes().set_stage(0, 2.0, [])
+	main.shapes().set_stage(1, 4.0, [])
+	main.params.gameplay.spawn_x = 10.0
+	main.return_to_spawn()
+	main._resolve_once()
+	var mat: ShaderMaterial = main.view._material
+	check_eq(mat.get_shader_parameter("shape_count"), 1, "renderer uploads only one visible shape")
+	check_eq(mat.get_shader_parameter("exit_eye"), Vector3.ZERO, "renderer uses spawn-centered boundary")
+	main.shapes().table(1).set_default(&"julia_all", true)
+	main._resolve_once()
+	main.params.active = 1
+	check(not main._marker.visible, "inactive shape cannot show a Julia marker")
+	check_eq(main.params.gameplay_active, 0, "editor selection cannot switch gameplay stage")
+	var n := DistanceEstimator.nearest_at(100.0, 0.0, 0.0, main.params)
+	check_eq(n.index, 0, "CPU geometry excludes inactive shape even when nearer")
+	main.camera.set_eye(12.1, 0.0, 0.0)
+	check(main.shape_run.transitioning(), "crossing stage boundary starts transition")
+	check(not main.view.is_escaped(), "intermediate stage does not start final animation")
+	main.shape_run.step(1.0)
+	check_eq(main.params.gameplay_active, 1, "fog midpoint swaps stage")
+	check_approx(main.view._stage_fog.color.a, 1.0, "opaque fog hides swap")
+	check_eq(mat.get_shader_parameter("shape")[0], FractalParams.Shape.MANDELBOX, "GPU slot zero contains active shape")
+	check_eq(DistanceEstimator.nearest_at(10.0, 0.0, 0.0, main.params).index, 1, "CPU queries switch with rendering")
+	main.shape_run.step(0.1)
+	main.shape_run.step(1.0)
+	check(not main.view._stage_fog.visible, "fog overlay disappears after reveal")
+	main.camera.set_eye(14.1, 0.0, 0.0)
+	check(main.view.is_escaped(), "last boundary triggers escape animation")
+	main.return_to_spawn()
+	check(not main.view.is_escaped(), "return to spawn resets escape")
+	check_eq(main.params.gameplay_active, 0, "return to spawn resets active shape")
+	main.params.gameplay.spawn_x = 1000000.0
+	main.return_to_spawn()
+	main.camera.set_eye(1000000.123456, 0.0, 0.0)
+	check_approx(mat.get_shader_parameter("exit_eye").x, 0.123456, "shader boundary keeps precision near a distant spawn", 1e-7)
+	var planner := load("res://src/mcp/escape_planner.gd")
+	var target: Array = planner._exit_point([10.0, 0.0, 0.0], Vector3.RIGHT, 2.0, [10.0, 0.0, 0.0])
+	check_approx(target[0], 12.0002, "planner exits the spawn-centered stage radius")
+	main.queue_free()
+	await frames(1)

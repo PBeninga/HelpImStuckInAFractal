@@ -117,7 +117,7 @@ func trace_clear(a: Vector3, b: Vector3, margin: float) -> bool:
 
 
 func world_info() -> Dictionary:
-	var p := _params().active_shape()
+	var p := _params().shape(_params().gameplay_active) if _params().gameplay_active >= 0 else _params().active_shape()
 	var shape_name: String = ["Mandelbox", "KIFS", "Kleinian", "Mandelbulb"][clampi(p.shape, 0, 3)]
 	return {"type": shape_name, "scale": p.box_scale, "fold_limit": p.fold_limit,
 		"min_radius": p.min_radius, "fixed_radius": p.fixed_radius,
@@ -207,9 +207,13 @@ func travel_speed() -> float:
 
 func escape_state() -> Dictionary:
 	var c := _camera()
-	var radius := _params().gameplay.exit_radius
-	var radial := sqrt(c.eye_x() * c.eye_x() + c.eye_y() * c.eye_y() + c.eye_z() * c.eye_z())
-	return {"escaped": _params().gameplay.is_outside(c), "center": [0, 0, 0],
+	var radius := _params().escape_radius()
+	var origin := _params().escape_origin()
+	var x: float = c.eye_x() - origin[0]
+	var y: float = c.eye_y() - origin[1]
+	var z: float = c.eye_z() - origin[2]
+	var radial := sqrt(x * x + y * y + z * z)
+	return {"escaped": _params().is_escaped(c), "center": origin,
 		"radius": radius, "distance_to_boundary": maxf(radius - radial, 0.0), "units": "world"}
 
 
@@ -254,6 +258,12 @@ func _physics_process(delta: float) -> void:
 
 
 func step(delta: float) -> void:
+	if game != null and is_instance_valid(game) and game.get("shape_run") != null:
+		if game.shape_run.transitioning():
+			return
+		if game.shape_run.escaped:
+			stop("escaped")
+			return
 	if _m.is_empty() or game == null or not is_instance_valid(game):
 		return
 	if game.fly.move_direction() != Vector3.ZERO:
@@ -379,3 +389,12 @@ func _clamped_forward(dir: Vector3) -> Vector3:
 
 func _basis_for(fwd: Vector3) -> Basis:
 	return Basis.looking_at(fwd, Vector3.UP if absf(fwd.dot(WORLD_UP)) > 0.999 else WORLD_UP)
+
+
+func shape_briefing() -> Dictionary:
+	return game.shape_run.briefing() if game.get("shape_run") != null else {}
+
+func apply_shape_command(args: Dictionary) -> Dictionary:
+	if game.get("shape_run") == null:
+		return unsupported("scripted shape changes")
+	return game.shape_run.apply_request(args)

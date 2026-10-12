@@ -141,3 +141,10 @@ func face_point(point: Array) -> Dictionary:
 
 func fly_to_point(point: Array, info: Dictionary = {}) -> Dictionary:
 	return fly_to(Vector3(point[0], point[1], point[2]), 0.0, info)
+
+
+func shape_briefing() -> Dictionary:
+	return {}
+
+func apply_shape_command(_args: Dictionary) -> Dictionary:
+	return unsupported("scripted shape changes")

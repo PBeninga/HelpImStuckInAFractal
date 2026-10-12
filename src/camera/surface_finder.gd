@@ -16,7 +16,8 @@ static func find(params: FractalParams, camera: CameraState) -> Dictionary:
 		Vector3.UP, Vector3.DOWN, Vector3.FORWARD, Vector3.BACK]
 	# Explicit shape-centre rays can find a tiny distant shape between the
 	# uniform samples. Subtract in 64-bit before constructing a Vector3.
-	for shape in params.shapes:
+	for index in params.visible_shape_indices():
+		var shape := params.shapes[index]
 		var delta := Vector3(shape.pos_x - camera.eye_x(), shape.pos_y - camera.eye_y(),
 			shape.pos_z - camera.eye_z())
 		if delta.length_squared() > 0.0:

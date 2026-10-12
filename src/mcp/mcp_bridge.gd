@@ -251,6 +251,7 @@ func handle(cmd: String, args: Dictionary) -> Dictionary:
 		"project": return _project(main, args)
 		"get_shape": return _get_shape(main)
 		"set_shape": return _set_shape(main, args)
+		"apply_shape_command": return main.shape_run.apply_request(args)
 		"list_views": return _list_views()
 		"load_view": return _load_view(main, args)
 		"save_view": return _save_view(main, args)
@@ -277,6 +278,7 @@ func _status() -> Dictionary:
 	}
 	if main != null:
 		out["camera"] = _camera_json(main, true)
+		out["shape_run"] = main.shape_run.briefing() if main.shape_run != null else {}
 		out["view_size"] = _v2(main.view.size)
 		out["camera_mode"] = "orbit" if main.params.camera_mode == FractalParams.CameraMode.ORBIT else "fly"
 	return out

@@ -19,9 +19,9 @@ const SCROLLBAR_ALLOWANCE := 16.0
 const SELECTED_COLOR := Color(0.72, 0.82, 1.0)
 const PLAIN_COLOR := Color(0.85, 0.85, 0.85)
 
-const ADD_TOOLTIP := "Add a shape: a copy of the selected shape's knobs at a tenth of its size, centred in front of the camera, with no bindings. Nest shapes by adding one and flying into it."
+const ADD_TOOLTIP := "Add a shape: a copy of the selected shape's knobs at a tenth of its size, centred in front of the camera, with no bindings. Shapes are played in list order; only the gameplay-active shape is visible."
 const ARROW_TOOLTIP := "Expand or collapse this shape's control panel."
-const LABEL_TOOLTIP := "The shape's name, saved with the level. Click a header to make the shape the active one: the Julia marker, Add shape and the self-similarity line work on it."
+const LABEL_TOOLTIP := "The shape's name, saved with the level. Click a header to select the shape for editing: the Julia marker, Add shape and the self-similarity line work on it."
 const REMOVE_TOOLTIP := "Remove this shape from the scene. The last shape cannot be removed."
 
 var _shapes: ShapeList
@@ -36,6 +36,7 @@ var _list: VBoxContainer
 var _entries: Array = []   # [{header, arrow, label, remove, inspector}]
 var _expanded: Array[bool] = []
 var _selected := 0
+var _gameplay_active := -1
 var _axis_list: Array = []
 var _rebuilding := false
 
@@ -237,6 +238,59 @@ func _make_entry(i: int) -> Dictionary:
 	remove.pressed.connect(_on_remove_pressed.bind(i))
 	header.add_child(remove)
 
+	var stage := VBoxContainer.new()
+	_list.add_child(stage)
+	var distance_row := HBoxContainer.new()
+	stage.add_child(distance_row)
+	var status := Label.new()
+	status.text = "Active shape" if i == _gameplay_active else "Stage %d" % (i + 1)
+	header.add_child(status)
+	var stage_button := Button.new()
+	stage_button.text = "Escape settings"
+	stage_button.toggle_mode = true
+	stage_button.focus_mode = Control.FOCUS_NONE
+	header.add_child(stage_button)
+	stage_button.toggled.connect(func(on):
+		select(i)
+		if on:
+			_set_expanded(i, true)
+		if i < _entries.size():
+			_entries[i]["stage_open"] = on
+			_restyle())
+	var distance_label := Label.new()
+	distance_label.text = "Escape distance"
+	distance_row.add_child(distance_label)
+	var distance := SpinBox.new()
+	distance.min_value = 0.0
+	distance.max_value = 1e6
+	distance.allow_greater = true
+	distance.step = 0.1
+	distance.value = _shapes.entry(i).escape_distance
+	distance.tooltip_text = "World units from run spawn. 0 inherits Gameplay exit radius × stage number."
+	distance_row.add_child(distance)
+	var commands := LineEdit.new()
+	commands.text = "; ".join(_shapes.entry(i).commands)
+	commands.placeholder_text = "Commands separated by ; — Enter to save (empty = none)"
+	commands.tooltip_text = "Example: inversion -0.5; kleinian_thickness 0.005. Inversion adjusts the radius; other commands set numeric attributes. Applied only by the agent after a human speaks."
+	stage.add_child(commands)
+	var error := Label.new()
+	error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	error.add_theme_color_override("font_color", Color(1, 0.5, 0.4))
+	stage.add_child(error)
+	var save_stage := func():
+		if i >= _shapes.count():
+			return
+		var steps: Array = []
+		for step in commands.text.split(";", false):
+			if not step.strip_edges().is_empty():
+				steps.append(step.strip_edges())
+		var message := ShapeList.validate_commands(_shapes.table(i), steps)
+		error.text = message
+		if message == "" and (_shapes.entry(i).escape_distance != distance.value or Array(_shapes.entry(i).commands) != steps):
+			_shapes.set_stage(i, distance.value, steps)
+	distance.value_changed.connect(func(_value): save_stage.call())
+	commands.text_submitted.connect(func(_text): save_stage.call())
+
 	var inspector := AttributeInspector.new()
 	inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	inspector.setup(_shapes.table(i), _group_tooltips, ShapeCatalogue.SHAPE_GROUPS, null, false)
@@ -244,7 +298,7 @@ func _make_entry(i: int) -> Dictionary:
 	inspector.visible = _expanded[i]
 	_list.add_child(inspector)
 
-	return {"header": header, "arrow": arrow, "label": label, "remove": remove, "inspector": inspector}
+	return {"header": header, "arrow": arrow, "label": label, "remove": remove, "inspector": inspector, "stage": stage, "status": status, "stage_open": false}
 
 
 func _restyle() -> void:
@@ -252,6 +306,7 @@ func _restyle() -> void:
 		var e: Dictionary = _entries[i]
 		(e["arrow"] as Button).text = "▾" if _expanded[i] else "▸"
 		(e["inspector"] as AttributeInspector).visible = _expanded[i]
+		(e["stage"] as Control).visible = _expanded[i] and e["stage_open"]
 		var color := SELECTED_COLOR if i == _selected else PLAIN_COLOR
 		(e["label"] as LineEdit).add_theme_color_override("font_color", color)
 		(e["arrow"] as Button).add_theme_color_override("font_color", color)
@@ -296,3 +351,9 @@ func _on_relabelled(i: int) -> void:
 		var edit := _entries[i]["label"] as LineEdit
 		if edit.text != _shapes.label(i):
 			edit.text = _shapes.label(i)
+
+
+func set_gameplay_active(index: int) -> void:
+	_gameplay_active = index
+	for i in _entries.size():
+		_entries[i].status.text = "Active shape" if i == index else "Stage %d" % (i + 1)

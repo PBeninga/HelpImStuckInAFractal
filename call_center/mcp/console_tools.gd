@@ -36,7 +36,7 @@ func inspect(args: Dictionary) -> Dictionary:
 			var shapes: Array = []
 			for i in main.shapes().count():
 				shapes.append({"index": i, "label": main.shapes().label(i)})
-			data = {"sections": SECTIONS, "actions": ACTIONS, "shapes": shapes, "active": main.params.active, "paused": main.get_tree().paused}
+			data = {"sections": SECTIONS, "actions": ACTIONS, "shapes": shapes, "selected_shape": main.params.active, "active": main.params.active, "shape_run": main.shape_run.briefing() if main.shape_run != null else {}, "paused": main.get_tree().paused}
 		"shape", "look":
 			if section == "shape" and (index < 0 or index >= main.shapes().count()):
 				return _fail("Shape index is out of range.")

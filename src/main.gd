@@ -28,6 +28,7 @@ const NEW_SHAPE_DISTANCE := 7.0
 
 var params: FractalParams
 var camera: CameraState
+var shape_run: ShapeRun
 ## Shared by direct MCP and phone tools; runs only on explicit request.
 var ship_depth_scanner := preload("res://src/mcp/ship_depth_scan.gd").new()
 
@@ -81,6 +82,7 @@ func _ready() -> void:
 
 	_shapes = ShapeList.new()
 	_shapes.table(0).set_default(&"shape", FractalParams.Shape.KLEINIAN)
+	_shapes.set_stage(0, 0.0, ["inversion -0.5"])
 	_shapes.changed.connect(_sync_shapes)
 	_look = AttributeTable.new(ShapeCatalogue.scene_specs())
 	_keymap = Keymap.new()
@@ -131,6 +133,17 @@ func _ready() -> void:
 		load_level_from(default_level)
 	_resolve_once()
 	_apply_mode()
+	shape_run = ShapeRun.new(_shapes, params, camera)
+	shape_run.changed.connect(_on_shape_run_changed)
+	shape_run.fog_changed.connect(view.set_stage_fog)
+	shape_run.stage_activated.connect(_on_stage_activated)
+	params.gameplay.changed.connect(_refresh_shape_boundary)
+	_shapes.stage_changed.connect(func(_i): _restart_shape_run())
+	camera.changed.connect(_check_shape_progress)
+	var bridge := get_node_or_null("/root/McpBridge")
+	if bridge != null:
+		bridge.chat.message_added.connect(_on_run_chat_message)
+	_restart_shape_run()
 	# After follow_size's handler, so a resize has refitted the scale first.
 	get_window().size_changed.connect(_on_window_resized)
 	# Keys now come to the main window, so a field left focused in the console
@@ -218,6 +231,8 @@ func _sync_shapes() -> void:
 	params.set_shape_count(_shapes.count())
 	params.active = clampi(params.active, 0, _shapes.count() - 1)
 	_resolve_once()
+	if shape_run != null and not _loading:
+		_restart_shape_run()
 
 
 func keymap() -> Keymap:
@@ -475,6 +490,9 @@ func _build_workspace_files() -> void:
 # ------------------------------------------------------------- per-frame
 
 func _process(_delta: float) -> void:
+	if shape_run != null:
+		shape_run.step(_delta)
+		shape_run.check_position()
 	_resolve_once()
 	if _escape_active:
 		governor.mark_changed()
@@ -496,6 +514,8 @@ func _resolve_once() -> void:
 	var axis_values := _keymap.axes().values()
 	var all := _shapes.resolve(axis_values, _clock.t)
 	for i in all.size():
+		if shape_run != null and not _loading:
+			all[i].merge(shape_run.overrides(i), true)
 		params.shapes[i].apply_resolved(all[i])
 	var look := BindingResolver.resolve(_look, axis_values, _clock.t)
 	params.apply_resolved(look)
@@ -535,6 +555,8 @@ func load_level_from(path: String) -> void:
 		_report("Load failed: %s" % warnings[0])
 		return
 	_files.note_loaded(path)
+	if shape_run != null:
+		_restart_shape_run()
 	_resolve_once()   # push the loaded table straight into params
 	var noise: Variant = result.get("noise", null)
 	if noise is Dictionary and _noise != null:
@@ -551,7 +573,10 @@ func load_level_from(path: String) -> void:
 
 ## Return to the level's configured spawn, preserving the look direction.
 func return_to_spawn() -> void:
-	params.gameplay.return_to_spawn(camera)
+	if shape_run != null:
+		_restart_shape_run(true)
+	else:
+		params.gameplay.return_to_spawn(camera)
 	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
 		_orbit.enter()
 	_report("Returned to spawn")
@@ -806,3 +831,41 @@ func _unhandled_input(event: InputEvent) -> void:
 	var cam_node := _active_camera()
 	if cam_node and cam_node.handle_event(event):
 		get_viewport().set_input_as_handled()
+
+
+func _restart_shape_run(move_to_spawn := false) -> void:
+	# Reset before moving so the old run cannot advance at the new spawn.
+	shape_run.reset()
+	if move_to_spawn:
+		params.gameplay.return_to_spawn(camera)
+	_send_run_briefing("run_started")
+
+func _on_shape_run_changed() -> void:
+	_resolve_once()
+	params.emit_changed()
+	fly.movement_locked = shape_run.escaped or shape_run.transitioning()
+	if _console != null:
+		_console.shape_pane().set_gameplay_active(params.gameplay_active)
+
+func _on_stage_activated(_index: int) -> void:
+	view.reset_shape_history()
+	_send_run_briefing("active_shape_changed")
+
+func _send_run_briefing(kind: String) -> void:
+	var cc := get_node_or_null("/root/CallCenter")
+	if cc != null:
+		cc.notify_agent(kind, "Active shape briefing: " + JSON.stringify(shape_run.briefing()), {}, true)
+
+func _on_run_chat_message(message: Dictionary) -> void:
+	if message.get("role", "") == "human":
+		shape_run.note_human_message(str(message.get("text", "")))
+
+
+func _check_shape_progress() -> void:
+	if not _loading:
+		shape_run.check_position()
+
+
+func _refresh_shape_boundary() -> void:
+	if not _loading and shape_run != null:
+		shape_run.refresh_boundary()

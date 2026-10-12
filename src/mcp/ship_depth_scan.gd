@@ -13,7 +13,7 @@ func scan(game: Node, args: Dictionary = {}) -> Dictionary:
 	var raw_count: Variant = args.get("ray_count", DEFAULT_RAYS)
 	if not _number(raw_count) or float(raw_count) != floor(float(raw_count)) or raw_count < 24 or raw_count > MAX_RAYS:
 		return {"ok": false, "message": "ray_count must be an integer from 24 to 256."}
-	var raw_range: Variant = args.get("max_distance", game.params.gameplay.exit_radius * 2.0)
+	var raw_range: Variant = args.get("max_distance", game.params.escape_radius() * 2.0)
 	if not _number(raw_range) or float(raw_range) <= 0:
 		return {"ok": false, "message": "max_distance must be a positive finite distance in world units."}
 	if _busy:
@@ -27,6 +27,7 @@ func scan(game: Node, args: Dictionary = {}) -> Dictionary:
 	# Runtime shape/gameplay fields must be copied explicitly as well as exports.
 	var params := game.params.duplicate(true) as FractalParams
 	params.gameplay.apply_dict(game.params.gameplay.to_dict())
+	params.copy_run_from(game.params)
 	params.set_shape_count(game.params.shapes.size())
 	for i in game.params.shapes.size():
 		params.shapes[i].copy_from(game.params.shapes[i])
@@ -85,9 +86,13 @@ func _finish() -> void:
 ## Unlike FractalProbe.march's picking API, preserve the reason a ray ended.
 ## No normals are computed: this call only needs depth.
 static func _depth(eye: Array, dir: Vector3, params: FractalParams, near: float, max_distance: float) -> Dictionary:
-	var b: float = eye[0] * dir.x + eye[1] * dir.y + eye[2] * dir.z
-	var radial_squared: float = eye[0] * eye[0] + eye[1] * eye[1] + eye[2] * eye[2]
-	var discriminant := b * b - radial_squared + params.gameplay.exit_radius * params.gameplay.exit_radius
+	var origin := params.escape_origin()
+	var x: float = eye[0] - origin[0]
+	var y: float = eye[1] - origin[1]
+	var z: float = eye[2] - origin[2]
+	var b: float = x * dir.x + y * dir.y + z * dir.z
+	var radial_squared: float = x * x + y * y + z * z
+	var discriminant := b * b - radial_squared + params.escape_radius() * params.escape_radius()
 	if not is_finite(discriminant) or discriminant < 0:
 		return {"distance": null, "status": "unknown", "steps": 0}
 	var sphere_end := -b + sqrt(discriminant)

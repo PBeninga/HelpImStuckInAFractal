@@ -104,7 +104,7 @@ export async function fakeCallCenterBridge() {
         return reply({ tools: state.tools });
       case "ship_tool":
         if (!state.tools.some((t) => t.name === a.name)) return fail(`unknown ship tool '${a.name}'`);
-        return reply({ ok: true, message: `did ${a.name}`, arguments: a.arguments });
+        return reply({ ok: true, message: `did ${a.name}`, arguments: a.arguments, ...(a.name === "get_ship_status" ? { shape_run: { run_id: "test-run", active_shape: 0, next_command: "inversion -0.5", stages: [{ shape_index: 0, escape_distance: 20, commands: ["inversion -0.5"] }] } } : {}) });
       case "ship_events": {
         const last = () => (events.length ? events[events.length - 1].id : 0);
         if (a.after === undefined) return reply({ events: [], last_id: last() });

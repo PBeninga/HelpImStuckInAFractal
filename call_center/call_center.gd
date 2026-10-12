@@ -187,6 +187,9 @@ func unlock_exit() -> void:
 ## Put something into the call: the voice agent hears `summary` as a SHIP
 ## EVENT and reacts. notify = false only informs the phone server.
 func notify_agent(kind: String, summary: String, data: Dictionary = {}, notify := true) -> void:
+	# Events may wake an agent, but must not authorize scripted shape edits.
+	if kind in ["instruction_completed", "instruction_cancelled", "escaped", "active_shape_changed"] 			and adapter != null and adapter.get("game") != null and adapter.game.get("shape_run") != null:
+		adapter.game.shape_run.invalidate_human_message()
 	var ev := data.duplicate()
 	ev["id"] = _next_event_id
 	ev["kind"] = kind
@@ -321,6 +324,9 @@ func _attach(scene: Node) -> void:
 	_at_exit = false
 	hud.set_adapter(adapter)
 	game_attached.emit(scene)
+	var briefing: Dictionary = adapter.shape_briefing()
+	if not briefing.is_empty():
+		notify_agent("run_started", "Active shape briefing: " + JSON.stringify(briefing))
 	if auto_begin and not _begun:
 		_begin_wait = begin_delay
 

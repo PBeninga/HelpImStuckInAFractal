@@ -109,9 +109,16 @@ export class VoiceCall extends EventEmitter {
 
   async start() {
     const tools = await this.shipTools();
+    let shapeRun = null;
+    if (tools.length > 0) {
+      try {
+        const status = await this.game.call("ship_tool", { name: "get_ship_status", arguments: {} }, 5000);
+        shapeRun = status.shape_run ?? null;
+      } catch { /* Reconnect/status tools can recover a missing briefing. */ }
+    }
     const opts = {
       config: this.config.openai,
-      instructions: buildInstructions({ agentName: this.config.agentName, mode: this.mode === "audio" ? "voice" : "text" }),
+      instructions: buildInstructions({ agentName: this.config.agentName, mode: this.mode === "audio" ? "voice" : "text", shapeRun }),
       tools,
       mode: this.mode,
       onToolCall: (name, args) => this.runTool(name, args),

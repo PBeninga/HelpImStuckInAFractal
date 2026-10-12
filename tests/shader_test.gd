@@ -12,7 +12,7 @@ extends "res://tests/test_case.gd"
 ## reads them from the source.
 
 const RENDERER_UNIFORMS := ["depth_scan", "eye", "cam_right", "cam_up", "cam_forward",
-	"exit_radius", "exit_has_skybox", "exit_skybox", "exit_sky_alpha", "escape_fog_clear", "escape_ground_alpha", "escape_fractal_dissolve", "scan_y_offset", "scan_y_scale",
+	"exit_radius", "exit_eye", "exit_has_skybox", "exit_skybox", "exit_sky_alpha", "escape_fog_clear", "escape_ground_alpha", "escape_fractal_dissolve", "scan_y_offset", "scan_y_scale",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
 	"fractal_iterations", "surface_detail", "coarse_steps", "coarse_iters", "nf_weight", "fine_steps", "fog_dist", "fog_color",
 	"kifs_bailout_radius_squared", "mandelbulb_bailout_margin",
