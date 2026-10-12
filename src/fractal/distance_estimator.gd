@@ -33,20 +33,21 @@ const PLANES := [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
 # ------------------------------------------------------------------ the scene
 
 ## The scene distance at a world point: the smallest shape distance.
-static func estimate(p: Vector3, params: FractalParams, iters: int = ITERATIONS) -> float:
+static func estimate(p: Vector3, params: FractalParams, iters: int = -1) -> float:
 	return scene_estimate_at(p.x, p.y, p.z, params, iters)
 
 
 ## The scene distance at a world point given in 64-bit components.
 static func scene_estimate_at(px: float, py: float, pz: float, params: FractalParams,
-		iters: int = ITERATIONS) -> float:
+		iters: int = -1) -> float:
 	return nearest_at(px, py, pz, params, iters)["distance"]
 
 
 ## The nearest shape and its (world) distance at a world point:
 ## {"distance": float, "index": int}.
 static func nearest_at(px: float, py: float, pz: float, params: FractalParams,
-		iters: int = ITERATIONS) -> Dictionary:
+		iters: int = -1) -> Dictionary:
+	iters = params.fractal_iterations if iters < 0 else mini(iters, params.fractal_iterations)
 	var best := INF
 	var which := 0
 	for i in params.shapes.size():

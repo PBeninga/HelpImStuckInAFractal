@@ -286,7 +286,7 @@ float de_pert(int s, vec3 off, int iters) {
 vec3 calc_normal_pert(int s, vec3 off, float delta) {
 	vec2 e = vec2(delta, 0.0);
 	return normalize(vec3(
-		de_pert(s, off + e.xyy, 32) - de_pert(s, off - e.xyy, 32),
-		de_pert(s, off + e.yxy, 32) - de_pert(s, off - e.yxy, 32),
-		de_pert(s, off + e.yyx, 32) - de_pert(s, off - e.yyx, 32)));
+		de_pert(s, off + e.xyy, fractal_iterations) - de_pert(s, off - e.xyy, fractal_iterations),
+		de_pert(s, off + e.yxy, fractal_iterations) - de_pert(s, off - e.yxy, fractal_iterations),
+		de_pert(s, off + e.yyx, fractal_iterations) - de_pert(s, off - e.yyx, fractal_iterations)));
 }

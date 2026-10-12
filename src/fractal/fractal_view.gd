@@ -458,6 +458,7 @@ func _push_params() -> void:
 	_material.set_shader_parameter("shape_count", _params.shapes.size())
 	_material.set_shader_parameter("view_limit", _params.scene_view_distance())
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
+	_material.set_shader_parameter("fractal_iterations", _params.fractal_iterations)
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
 	_push_shed()

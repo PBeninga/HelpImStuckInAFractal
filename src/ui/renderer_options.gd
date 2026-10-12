@@ -14,6 +14,9 @@ var detail_slider: HSlider
 var range_slider: HSlider
 var falloff_slider: HSlider
 var steps_slider: HSlider
+var perturbation_check: CheckBox
+var perturbation_slider: HSlider
+var iterations_slider: HSlider
 var fast_check: CheckBox
 var min_scale_slider: HSlider
 var reset_button: Button
@@ -42,6 +45,15 @@ func _init() -> void:
 		"How quickly detail coarsens past the full-detail range. 0 keeps the plain pixel cone: detail matched to the pixel at every distance.")
 	steps_slider = _slider(grid, "Max march steps", FractalParams.MAX_STEPS_MIN, FractalParams.MAX_STEPS_MAX, 16, false,
 		"The step budget per ray (three quarters coarse, a quarter fine). Rays that run out render as the darkest shade.")
+	iterations_slider = _slider(grid, "Fractal iterations", FractalParams.FRACTAL_ITERATIONS_MIN, FractalParams.FRACTAL_ITERATIONS_MAX, 1, false,
+		"Work per distance estimate across all shapes, including nested shapes. Lower is faster and resolves less deep structure; 32 restores full detail.")
+	perturbation_slider = _slider(grid, "Perturbation iterations", 1, 20, 1, false,
+		"Maximum iterations using precise offsets for deep zoom. Higher supports deeper zoom and costs more work; limited by Fractal iterations.")
+	perturbation_check = CheckBox.new()
+	perturbation_check.text = "Perturbation"
+	perturbation_check.tooltip_text = "Use precise offsets past the 32-bit zoom limit. Disable to skip CPU reference-orbit work and use the direct march; deep zoom is then limited by 32-bit precision."
+	perturbation_check.focus_mode = Control.FOCUS_NONE
+	add_child(perturbation_check)
 	min_scale_slider = _slider(grid, "Min resolution", FractalParams.RENDER_SCALE_FLOOR, 1.0, 0.05, false,
 		"With Fast Controls on, the lowest render scale used while moving to hold 30 fps.")
 
@@ -69,6 +81,9 @@ func _init() -> void:
 	falloff_slider.value_changed.connect(func(v): _write(func(): _params.detail_falloff = v))
 	steps_slider.value_changed.connect(func(v): _write(func(): _params.max_steps = int(v)))
 	min_scale_slider.value_changed.connect(func(v): _write(func(): _params.min_render_scale = v))
+	perturbation_check.toggled.connect(func(on): _write(func(): _params.perturbation_enabled = on))
+	perturbation_slider.value_changed.connect(func(v): _write(func(): _params.perturbation_iterations = int(v)))
+	iterations_slider.value_changed.connect(func(v): _write(func(): _params.fractal_iterations = int(v)))
 	fast_check.toggled.connect(func(on): _write(func(): _params.fast_controls = on))
 	reset_button.pressed.connect(reset_defaults)
 	reset_camera_button.pressed.connect(reset_camera_requested.emit)
@@ -87,6 +102,9 @@ func reset_defaults() -> void:
 	if _params == null:
 		return
 	var d := FractalParams.new()
+	_params.perturbation_enabled = d.perturbation_enabled
+	_params.perturbation_iterations = d.perturbation_iterations
+	_params.fractal_iterations = d.fractal_iterations
 	_params.detail = d.detail
 	_params.detail_range = d.detail_range
 	_params.detail_falloff = d.detail_falloff
@@ -105,6 +123,12 @@ func _refresh() -> void:
 	if _params == null:
 		return
 	_syncing = true
+	perturbation_check.set_pressed_no_signal(_params.perturbation_enabled)
+	perturbation_slider.set_value_no_signal(_params.perturbation_iterations)
+	iterations_slider.set_value_no_signal(_params.fractal_iterations)
+	perturbation_slider.editable = _params.perturbation_enabled
+	_values[perturbation_slider].text = str(_params.perturbation_iterations)
+	_values[iterations_slider].text = str(_params.fractal_iterations)
 	detail_slider.set_value_no_signal(_params.detail)
 	range_slider.set_value_no_signal(_params.detail_range)
 	falloff_slider.set_value_no_signal(_params.detail_falloff)

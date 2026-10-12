@@ -279,6 +279,17 @@ const MAX_STEPS_MAX := 512
 ## ladder halves it at level 1 and drops it to 0 from level 2.
 const SHADOW_STEPS := 48
 
+## Work budgets shared by the CPU distance estimates, camera and shader.
+const FRACTAL_ITERATIONS_MIN := 8
+const FRACTAL_ITERATIONS_MAX := 32
+@export var perturbation_enabled: bool = true:
+	set(v): perturbation_enabled = v; emit_changed()
+@export var perturbation_iterations: int = 20:
+	set(v): perturbation_iterations = clampi(v, 1, 20); emit_changed()
+@export var fractal_iterations: int = 32:
+	set(v): fractal_iterations = clampi(v, FRACTAL_ITERATIONS_MIN, FRACTAL_ITERATIONS_MAX); emit_changed()
+
+
 @export var detail: float = 1.0:
 	set(v): detail = clampf(v, DETAIL_MIN, DETAIL_MAX); emit_changed()
 @export var detail_range: float = 10.0:
@@ -311,7 +322,7 @@ func hit_epsilon(t: float, near: float, precision: float = -1.0) -> float:
 ## detail.
 func coarse_iters(near: float, i: int = -1) -> int:
 	var s := active_shape() if i < 0 else shapes[clampi(i, 0, shapes.size() - 1)]
-	return s.coarse_iters(near / s.size, detail)
+	return mini(fractal_iterations, s.coarse_iters(near / s.size, detail))
 
 
 ## The shading crossfade's band, in the camera's distance to the nearest
@@ -386,9 +397,9 @@ func orbit_shape(orbit: ReferenceOrbit) -> ShapeParams:
 ## its offset (PERT_HANDOFF). Only the orbit's shape, the one the camera is
 ## nearest, is perturbed.
 func pert_iters(orbit: ReferenceOrbit, near: float) -> int:
-	if not orbit.perturbable or near >= PERT_ON * floor32(orbit.world_eye):
+	if not perturbation_enabled or not orbit.perturbable or near >= PERT_ON * floor32(orbit.world_eye):
 		return 0
-	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
+	return mini(perturbation_iterations, orbit.n)
 
 
 ## The perturbed march's own floor, in world units: the 32-bit floor applied at
@@ -396,7 +407,7 @@ func pert_iters(orbit: ReferenceOrbit, near: float) -> int:
 ## times bigger, in the orbit's shape's frame and scaled back by its size.
 func floor_pert(orbit: ReferenceOrbit) -> float:
 	var s := orbit_shape(orbit)
-	var k := mini(ReferenceOrbit.PERT_MAX, orbit.n)
+	var k := mini(perturbation_iterations, orbit.n)
 	var x: Vector4 = orbit.points[k]
 	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
 	return ulp32(m) * s.size / (ShapeParams.ZOOM_FLOOR_DIVISOR * maxf(s.precision / detail, 1e-30) * maxf(orbit.mag[k], 1e-300))
@@ -408,7 +419,7 @@ func floor_pert(orbit: ReferenceOrbit) -> float:
 ## orders of magnitude from point to point (tests/perturbation_test.gd prints it),
 ## and past it rays run out of steps and the picture darkens; a follow-up.
 func zoom_floor_for(orbit: ReferenceOrbit) -> float:
-	if not orbit.perturbable:
+	if not perturbation_enabled or not orbit.perturbable:
 		return floor32(orbit.world_eye)
 	return floor_pert(orbit)
 

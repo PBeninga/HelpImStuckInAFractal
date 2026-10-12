@@ -43,6 +43,7 @@ const VERSION := 4
 const FRACTAL_KEYS: Array[String] = [
 	"fast_controls", "camera_mode", "mouse_sensitivity",
 	"detail", "detail_range", "detail_falloff", "max_steps", "min_render_scale",
+	"perturbation_enabled", "perturbation_iterations", "fractal_iterations",
 ]
 const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
 
@@ -326,7 +327,7 @@ static func _migrate_v1(data: Dictionary) -> Dictionary:
 ## The typed value for one "fractal" key, or null when malformed.
 static func _parse_fractal(key: String, raw: Variant) -> Variant:
 	match key:
-		"fast_controls":
+		"fast_controls", "perturbation_enabled":
 			return raw if raw is bool else null
 		"camera_mode":
 			var index := CAMERA_MODE_NAMES.find(String(raw)) if raw is String else -1
@@ -335,7 +336,7 @@ static func _parse_fractal(key: String, raw: Variant) -> Variant:
 			return float(raw) if (raw is float or raw is int) and float(raw) > 0.0 else null
 		"detail_falloff":
 			return float(raw) if (raw is float or raw is int) and float(raw) >= 0.0 else null
-		"max_steps":
+		"max_steps", "perturbation_iterations", "fractal_iterations":
 			return int(raw) if (raw is float or raw is int) and float(raw) >= 1.0 else null
 		_:
 			return float(raw) if (raw is float or raw is int) else null

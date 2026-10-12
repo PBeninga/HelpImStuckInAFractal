@@ -13,7 +13,7 @@ extends "res://tests/test_case.gd"
 
 const RENDERER_UNIFORMS := ["eye", "cam_right", "cam_up", "cam_forward",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
-	"coarse_steps", "coarse_iters", "nf_weight", "fine_steps", "fog_dist", "fog_color",
+	"fractal_iterations", "coarse_steps", "coarse_iters", "nf_weight", "fine_steps", "fog_dist", "fog_color",
 	"fog_clear", "probe_on", "probe_point", "probe_radius", "shadow_steps", "view_limit",
 	"shape_count", "local_eye", "frame_x", "frame_y", "frame_z", "shape_size",
 	"pert_iters", "pert_shape", "pert_a", "pert_b", "pert_c", "pert_d", "pert_x"]

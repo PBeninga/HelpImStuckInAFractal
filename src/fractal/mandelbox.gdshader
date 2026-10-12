@@ -78,6 +78,7 @@ uniform float box_half[MAX_SHAPES];    // the cube the march is bounded to (Shap
 // nears the surface, so the smoother surface it marches toward stays within
 // its hit threshold of the real one (ShapeParams.coarse_iters). 16 at the
 // default view.
+uniform int fractal_iterations = 32;
 uniform int coarse_iters[MAX_SHAPES];
 
 // --- per-shape uniforms (names == catalogue ids, one entry per shape) ---
@@ -432,7 +433,7 @@ float de_scene(vec3 off, bool coarse, out int which) {
 		vec3 q = local_offset_point(i, off);
 		float bound = cube_dist(q, box_half[i]) * shape_size[i];
 		if (bound >= best) { continue; }
-		int iters = coarse ? clamp(coarse_iters[i], 16, 32) : 32;
+		int iters = coarse ? clamp(coarse_iters[i], 1, fractal_iterations) : fractal_iterations;
 		float d = (pert_on(i) ? de_pert(i, pert_offset(i, off), iters) : de(i, q, iters)) * shape_size[i];
 		if (d < best) { best = d; which = i; }
 	}
@@ -458,9 +459,9 @@ float field(int s, vec3 q) {
 vec3 calc_normal(int s, vec3 v, float delta) {
 	vec2 e = vec2(delta, 0.0);
 	return normalize(vec3(
-		de(s, v + e.xyy, 32) - de(s, v - e.xyy, 32),
-		de(s, v + e.yxy, 32) - de(s, v - e.yxy, 32),
-		de(s, v + e.yyx, 32) - de(s, v - e.yyx, 32)));
+		de(s, v + e.xyy, fractal_iterations) - de(s, v - e.xyy, fractal_iterations),
+		de(s, v + e.yxy, fractal_iterations) - de(s, v - e.yxy, fractal_iterations),
+		de(s, v + e.yyx, fractal_iterations) - de(s, v - e.yyx, fractal_iterations)));
 }
 
 // The true surface normal of shape s at local point v, a world offset `off`

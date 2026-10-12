@@ -42,6 +42,8 @@ var eye := PackedFloat64Array([0.0, 0.0, 0.0])
 var distance := 0.0
 ## distance in the shape's own units (distance / its size).
 var local_distance := 0.0
+var _iterations := ITERATIONS
+var _record_limit := PERT_MAX
 var n := ITERATIONS
 var perturbable := false
 var mag := PackedFloat64Array()
@@ -56,10 +58,17 @@ var rec64 := PackedFloat64Array()
 
 ## The orbit at the world eye (ex, ey, ez), for the shape the eye is nearest.
 static func build(params: FractalParams, ex: float, ey: float, ez: float) -> ReferenceOrbit:
-	var i: int = DistanceEstimator.nearest_at(ex, ey, ez, params)["index"]
+	var nearest := DistanceEstimator.nearest_at(ex, ey, ez, params)
+	var i: int = nearest["index"]
+	if not params.perturbation_enabled:
+		var direct := ReferenceOrbit.new()
+		direct.index = i
+		direct.world_eye = PackedFloat64Array([ex, ey, ez])
+		direct.distance = nearest["distance"]
+		return direct
 	var shape := params.shapes[i]
 	var q := shape.to_local(ex, ey, ez)
-	var o := build_shape(shape, q[0], q[1], q[2])
+	var o := build_shape(shape, q[0], q[1], q[2], params.fractal_iterations, params.perturbation_iterations)
 	o.index = i
 	o.world_eye = PackedFloat64Array([ex, ey, ez])
 	o.distance = o.local_distance * shape.size
@@ -68,8 +77,10 @@ static func build(params: FractalParams, ex: float, ey: float, ez: float) -> Ref
 
 ## The orbit of one shape at a point in its own frame. world_eye and distance
 ## are the local ones until build() maps them out.
-static func build_shape(params: ShapeParams, ex: float, ey: float, ez: float) -> ReferenceOrbit:
+static func build_shape(params: ShapeParams, ex: float, ey: float, ez: float, iterations: int = ITERATIONS, record_limit: int = PERT_MAX) -> ReferenceOrbit:
 	var o := ReferenceOrbit.new()
+	o._iterations = clampi(iterations, 1, ITERATIONS)
+	o._record_limit = clampi(record_limit, 1, PERT_MAX)
 	o.eye = PackedFloat64Array([ex, ey, ez])
 	o.world_eye = o.eye
 	o.mag.resize(ITERATIONS + 1)
@@ -132,9 +143,9 @@ func _mandelbox(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	var dz := 1.0
 	var lam := 1.0
 	_set_point(0, z)
-	for i in ITERATIONS:
+	for i in _iterations:
 		var hybrid := mix > 0.0 and i % every == every - 1
-		var keep := i < PERT_MAX
+		var keep := i < _record_limit
 		if fold_order == 0:
 			if keep:
 				_fold_record(i, z, fold, fold_shape, hybrid, mix)
@@ -159,7 +170,7 @@ func _mandelbox(params: ShapeParams, px: float, py: float, pz: float) -> void:
 		lam *= absf(s)
 		mag[i + 1] = lam
 		_set_point(i + 1, z)
-	n = ITERATIONS
+	n = _iterations
 	var r2: float = z[0] * z[0] + z[1] * z[1] + z[2] * z[2] + z[3] * z[3]
 	distance = sqrt(r2) / absf(dz)
 
@@ -218,13 +229,13 @@ func _kifs(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	_set_point(0, p)
 	n = 0
 	var escaped := false
-	for i in ITERATIONS:
+	for i in _iterations:
 		# |s|^i whatever the bailout: mag says what i iterations magnify, not when this orbit escaped
 		mag[i + 1] = pow(absf(s), i + 1)
 		if escaped:
 			_set_point(i + 1, p)
 			continue
-		var keep := i < PERT_MAX
+		var keep := i < _record_limit
 		if not r1.is_empty():
 			KifsEstimator._rotate(p, r1)
 		if fold_set == KifsEstimator.FoldSet.COORDINATE:
@@ -303,14 +314,14 @@ func _kleinian(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	var p := [px, py, pz, params.w]
 	var dr := 1.0
 	_set_point(0, p)
-	n = ITERATIONS
+	n = _iterations
 	var settled := false
-	for i in ITERATIONS:
+	for i in _iterations:
 		if settled:
 			mag[i + 1] = dr
 			_set_point(i + 1, p)
 			continue
-		var keep := i < PERT_MAX
+		var keep := i < _record_limit
 		var before := [p[0], p[1], p[2], p[3]]
 		if keep:
 			_rec(i, 0, -bx[0] - p[0], -bx[1] - p[1], -bx[2] - p[2], -bx[3] - p[3])
@@ -337,8 +348,8 @@ func _kleinian(params: ShapeParams, px: float, py: float, pz: float) -> void:
 
 func _mandelbulb(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	perturbable = false
-	n = ITERATIONS
-	distance = MandelbulbEstimator.estimate_at(px, py, pz, params)
+	n = _iterations
+	distance = MandelbulbEstimator.estimate_at(px, py, pz, params, _iterations)
 	for i in ITERATIONS + 1:
 		_set_point(i, [px, py, pz, 0.0])
 
