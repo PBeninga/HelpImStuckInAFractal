@@ -12,6 +12,11 @@
 //   1. the game, with its call centre:   call_center/run.sh --demo
 //   2. this:                             cd server && npm run demo [-- --fast]
 //
+// With --in-game-link the game dials this server itself (ServerLink) instead
+// of the node link: start the game with the URL and token this prints, e.g.
+//   GAME_LINK_TOKEN=demo npm run demo -- --in-game-link
+//   FRACTAL_SERVER_URL=http://127.0.0.1:3077 GAME_LINK_TOKEN=demo call_center/run.sh --demo
+//
 // Rehearsal, screenshots, an end-to-end check, and a fallback when the venue
 // Wi-Fi gives up.
 
@@ -25,10 +30,12 @@ import { startLink } from "../link/link.mjs";
 import { BridgeClient } from "../link/bridge_client.mjs";
 
 const FAST = process.argv.includes("--fast");
+const IN_GAME_LINK = process.argv.includes("--in-game-link");
 const BRIDGE_PORT = Number(process.env.FRACTAL_MCP_PORT || 9077);
 const CALLER = "+15550001234";
 const AUTH = crypto.randomBytes(16).toString("hex");
-const LINK = crypto.randomBytes(16).toString("hex");
+const LINK = IN_GAME_LINK ? process.env.GAME_LINK_TOKEN || "demo" : crypto.randomBytes(16).toString("hex");
+const DEMO_PORT = IN_GAME_LINK ? Number(process.env.DEMO_PORT || 3077) : 0;
 const pace = (s) => new Promise((r) => setTimeout(r, s * 1000 * (FAST ? 0.35 : 1)));
 const quiet = { info: process.env.DEMO_DEBUG ? (m) => console.log(`  [server] ${m}`) : () => {}, warn: (m) => console.warn(`  [server] ${m}`), error: (m) => console.error(`  [server] ${m}`) };
 const SILENCE_20MS = Buffer.alloc(160, 0xff).toString("base64");
@@ -235,27 +242,44 @@ const config = loadConfig({
   PUBLIC_BASE_URL: "",
 });
 const { server, game } = createApp(config, { log: quiet });
-server.listen(0, "127.0.0.1");
+server.listen(DEMO_PORT, "127.0.0.1");
 await once(server, "listening");
 const base = `http://127.0.0.1:${server.address().port}`;
 config.publicBaseUrl = base;
 
 // Wait for the game and its call centre, and for the crash report to finish.
-console.log(`Waiting for the game's bridge on 127.0.0.1:${BRIDGE_PORT} (call_center/run.sh --demo)...`);
-const probe = new BridgeClient({ port: BRIDGE_PORT });
-for (;;) {
-  try {
-    const r = await probe.call("ship_events", { after: 0, timeout: 1 }, 5000);
-    if (r.events.some((e) => e.stage === "awaiting_call")) break;
-  } catch {
-    // not up yet, or no call centre yet
+let link = null;
+if (IN_GAME_LINK) {
+  console.log(`Waiting for the game to dial in: start it with FRACTAL_SERVER_URL=${base} GAME_LINK_TOKEN=${LINK}`);
+  for (;;) {
+    try {
+      if (game.connected) {
+        const r = await game.call("ship_events", { after: 0, timeout: 1 }, 5000);
+        if (r.events.some((e) => e.stage === "awaiting_call")) break;
+      }
+    } catch {
+      // no call centre yet
+    }
+    await new Promise((r) => setTimeout(r, 1000));
   }
-  await new Promise((r) => setTimeout(r, 1000));
+  console.log(`The game linked itself (${game.info?.server_link?.url ?? "in-game link"}). Ringing...`);
+} else {
+  console.log(`Waiting for the game's bridge on 127.0.0.1:${BRIDGE_PORT} (call_center/run.sh --demo)...`);
+  const probe = new BridgeClient({ port: BRIDGE_PORT });
+  for (;;) {
+    try {
+      const r = await probe.call("ship_events", { after: 0, timeout: 1 }, 5000);
+      if (r.events.some((e) => e.stage === "awaiting_call")) break;
+    } catch {
+      // not up yet, or no call centre yet
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  probe.close();
+  link = startLink({ serverUrl: base, token: LINK, bridgePort: BRIDGE_PORT, log: { info() {}, warn: console.warn } });
+  while (!game.connected) await new Promise((r) => setTimeout(r, 100));
+  console.log("Game linked. Ringing...");
 }
-probe.close();
-const link = startLink({ serverUrl: base, token: LINK, bridgePort: BRIDGE_PORT, log: { info() {}, warn: console.warn } });
-while (!game.connected) await new Promise((r) => setTimeout(r, 100));
-console.log("Game linked. Ringing...");
 await pace(3);
 
 // The call: Twilio's webhook, then its media stream.
@@ -294,7 +318,7 @@ clearInterval(mic);
 twilioWs.send(JSON.stringify({ event: "stop", streamSid: "MZdemo", stop: { callSid: "CAdemo" } }));
 await pace(2);
 console.log(`Call finished: ${heard} audio chunks reached the caller, ${sent} reached the agent.`);
-link.stop();
+link?.stop();
 server.close();
 server.closeAllConnections?.();
 fakeOpenAI.close();

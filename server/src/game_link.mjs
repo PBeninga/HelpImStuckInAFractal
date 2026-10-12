@@ -1,5 +1,6 @@
 // The one game linked to this server. The game runs on someone's machine
-// behind NAT, so it dials out to us (link/link.mjs) over a WebSocket; this end
+// behind NAT, so it dials out to us over a WebSocket (the game's own
+// ServerLink, src/mcp/server_link.gd, or link/link.mjs beside it); this end
 // keeps that socket and talks JSON over it:
 //
 //   server -> link   {type: "event", event: {...}}           call activity, fire and forget

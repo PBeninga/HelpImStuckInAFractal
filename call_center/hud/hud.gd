@@ -412,7 +412,7 @@ func _refresh_call() -> void:
 				(": " + _support_number) if _support_number != "" else "")
 		_:
 			if not _link_up:
-				call_status.text = "Support line not linked. Start the phone link (server/: npm run link)."
+				call_status.text = "Support line not linked. Set FRACTAL_SERVER_URL and GAME_LINK_TOKEN (server/.env) and restart."
 			elif _support_number != "":
 				call_status.text = "CALL %s FOR ASSISTANCE" % _support_number
 			else:

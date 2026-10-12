@@ -22,9 +22,13 @@ Who answers is `VOICE_AGENT`:
                                                                               link/                  + call_center/
 ```
 
-The game is behind NAT, so it never takes connections from the internet: the
-**link** (`link/link.mjs`, run on your machine next to the game) dials out to
-the server and holds the socket open.
+The game is behind NAT, so it never takes connections from the internet: it
+dials out to the server itself when it starts (**ServerLink**,
+`src/mcp/server_link.gd`, inside McpBridge) and holds the socket open,
+reconnecting if it drops. It finds the server in `FRACTAL_SERVER_URL` and
+`GAME_LINK_TOKEN`, from the environment or `server/.env`; `-- --no-link` (or
+`FRACTAL_LINK=0`) keeps it offline. `link/link.mjs` (`npm run link`) does the
+same job as a separate process next to the game; if both run, it takes over.
 
 - What the caller says lands in the game's **pilot chat** as a voice message
   (`chat_post`); an unfinished transcript shows in the chat's input box
@@ -89,17 +93,20 @@ in* webhook to `POST https://<your domain>/twilio/voice`. For
 `VOICE_AGENT=relay`, also accept the *Predictive and Generative AI/ML Features
 Addendum* (Voice → Settings), which ConversationRelay needs.
 
-**3. Link the game.** On the machine running the game:
+**3. Link the game.** The game dials the server itself. On the machine
+running it, give it the server's URL and the same token:
 
 ```bash
-cd server && npm install
-cp .env.example .env      # FRACTAL_SERVER_URL + the same GAME_LINK_TOKEN
-npm run link
+cp server/.env.example server/.env   # FRACTAL_SERVER_URL + the same GAME_LINK_TOKEN
 ```
 
-Start the game **with its call centre**: `call_center/run.sh` from the repo
-root, or `tools/launch.sh -- --play --call-center`, or the MCP `launch_game
-{call_center: "on"}`. Then call the number. With `VOICE_AGENT=relay`, also
+(or export both). Start the game **with its call centre**:
+`call_center/run.sh` from the repo root, or `tools/launch.sh -- --play
+--call-center`, or the MCP `launch_game {call_center: "on"}`. It prints
+`ServerLink: linked to wss://…/game/link`, and the support panel shows the
+number to call. Then call it. (With the OpenAI voice agent, a game started
+without its call centre starts it when it links: its tools are how the agent
+flies the ship.) With `VOICE_AGENT=relay`, also
 start an agent on the `pilot` loop.
 
 ## Develop
@@ -124,7 +131,10 @@ events → tool calls → the link → McpBridge → the call centre → the shi
 the agent's choices are scripted. It reads the ship's status, follows
 whatever route the game exposes, answers the diagnostics questions as the
 caller, and flies out of the exit. Use `-- --fast` for shorter pauses and
-`DEMO_DEBUG=1` to see every event. It works for rehearsal, as an end-to-end
+`DEMO_DEBUG=1` to see every event. With `-- --in-game-link` the game dials the
+demo server itself, as it dials Railway: run `GAME_LINK_TOKEN=demo npm run
+demo -- --in-game-link`, then start the game with
+`FRACTAL_SERVER_URL=http://127.0.0.1:3077 GAME_LINK_TOKEN=demo`. It works for rehearsal, as an end-to-end
 check, and as a fallback when the venue Wi-Fi gives up.
 
 To take real calls against a local server, expose it with a tunnel (e.g.

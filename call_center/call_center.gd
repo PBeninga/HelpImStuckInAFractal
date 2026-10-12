@@ -419,7 +419,7 @@ func _on_crash_report_done() -> void:
 	if link_up:
 		issues.add("Support line open. Awaiting pilot's call.", "system")
 	else:
-		issues.add("Support line not linked yet: start the phone link (server/: npm run link).", "system")
+		issues.add("Support line not linked yet: set FRACTAL_SERVER_URL and GAME_LINK_TOKEN (server/.env).", "system")
 	hud.flash("call_panel")
 
 

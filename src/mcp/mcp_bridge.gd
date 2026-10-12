@@ -23,6 +23,10 @@ extends Node
 ## Other layers add commands with register_command() (the call centre's ship
 ## tools, for one). `-- --call-center` (or FRACTAL_CALL_CENTER=1) starts the
 ## call centre (call_center/), `-- --call-center-demo` with its sample route.
+##
+## With a phone server configured (FRACTAL_SERVER_URL and GAME_LINK_TOKEN, in
+## the environment or server/.env), it also dials out to that server
+## (ServerLink), which runs its commands and hears the pilot chat.
 
 const DEFAULT_PORT := 9077
 const CALL_CENTER_SCRIPT := "res://call_center/call_center.gd"
@@ -45,6 +49,9 @@ var _trail_on := false
 var _trail: Array = []   # Vector3 eye positions
 ## Commands added by other layers: name -> Callable(args: Dictionary) -> Dictionary.
 var _extensions := {}
+## The line to the phone server, when one is configured.
+var link: ServerLink
+var _call_center: Node   # the call centre this bridge started (until it is freed)
 
 
 func _ready() -> void:
@@ -77,6 +84,23 @@ func _ready() -> void:
 		_start_game.call_deferred()
 
 	_start_call_center()
+	_start_server_link(headless)
+
+
+## Dial out to the phone server when one is configured (see ServerLink).
+func _start_server_link(headless: bool) -> void:
+	if OS.has_feature("web") or "--no-link" in OS.get_cmdline_user_args() or OS.get_environment("FRACTAL_LINK") == "0":
+		return
+	var cfg := ServerLink.find_config(headless)
+	if cfg.is_empty():
+		return
+	link = ServerLink.new()
+	link.name = "ServerLink"
+	link.bridge = self
+	link.url = cfg["url"]
+	link.token = cfg["token"]
+	add_child(link)
+	print("McpBridge: linking to the phone server (%s, from %s)" % [cfg["url"], cfg["from"]])
 
 
 ## The call centre (call_center/) beside the game, when asked for. It adds its
@@ -84,14 +108,22 @@ func _ready() -> void:
 func _start_call_center() -> void:
 	var user_args := OS.get_cmdline_user_args()
 	var demo := "--call-center-demo" in user_args
-	if not (demo or "--call-center" in user_args or OS.get_environment("FRACTAL_CALL_CENTER") == "1"):
-		return
-	if not ResourceLoader.exists(CALL_CENTER_SCRIPT) or get_node_or_null(^"/root/CallCenter") != null:
-		return
-	var cc: Node = load(CALL_CENTER_SCRIPT).new()
-	cc.name = "CallCenter"
-	cc.set("demo", demo)
-	get_tree().root.add_child.call_deferred(cc)
+	if demo or "--call-center" in user_args or OS.get_environment("FRACTAL_CALL_CENTER") == "1":
+		start_call_center(demo)
+
+
+## Start the call centre now (ServerLink does when a phone server with a voice
+## agent answers). False when it is already up or not in this build. It is in
+## the tree, with its commands, from the next frame.
+func start_call_center(demo := false) -> bool:
+	if not ResourceLoader.exists(CALL_CENTER_SCRIPT) or get_node_or_null(^"/root/CallCenter") != null \
+			or is_instance_valid(_call_center):
+		return false
+	_call_center = load(CALL_CENTER_SCRIPT).new()
+	_call_center.name = "CallCenter"
+	_call_center.set("demo", demo)
+	get_tree().root.add_child.call_deferred(_call_center)
+	return true
 
 
 ## Add a command. `handler` takes the args Dictionary and returns a result
@@ -238,6 +270,7 @@ func _status() -> Dictionary:
 		"drawings": _shapes.size(),
 		"trail": {"on": _trail_on, "points": _trail.size()},
 		"extensions": _extensions.keys(),
+		"server_link": link.describe() if link != null else {"state": "off"},
 	}
 	if main != null:
 		out["camera"] = _camera_json(main)

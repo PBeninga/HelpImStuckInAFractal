@@ -1,5 +1,8 @@
-// The phone link: runs on the machine with the game and joins it to the phone
-// server on Railway. The game sits behind NAT, so the link dials out:
+// The phone link as a separate process. The game now links itself
+// (ServerLink, src/mcp/server_link.gd, same protocol); this stays for a game
+// started without its link, and for the tests. It runs on the machine with
+// the game and joins it to the phone server on Railway. The game sits behind
+// NAT, so the link dials out:
 //
 //   phone server  <--wss /game/link-->  this link  <--tcp 127.0.0.1:9077-->  game (McpBridge)
 //
