@@ -18,7 +18,7 @@ static func default_surface(params: FractalParams) -> Array:
 	var y: float = e.y + f.y * t
 	var z: float = e.z + f.z * t
 	for _i in 400:
-		var d := DistanceEstimator.estimate_at(x, y, z, params)
+		var d := DistanceEstimator.scene_estimate_at(x, y, z, params)
 		if d < 1e-10:
 			break
 		x += f.x * d
@@ -39,7 +39,7 @@ static func surface_from(params: FractalParams, eye: Vector3) -> Array:
 	var best := [x, y, z]
 	var best_d := INF
 	for _i in 3000:
-		var d := DistanceEstimator.estimate_at(x, y, z, params)
+		var d := DistanceEstimator.scene_estimate_at(x, y, z, params)
 		if d < best_d:
 			best_d = d
 			best = [x, y, z]
@@ -61,7 +61,7 @@ static func along(params: FractalParams, from: PackedFloat64Array, dir: Vector3,
 	var best := [x, y, z]
 	var best_d := INF
 	for _i in 4000:
-		var d := DistanceEstimator.estimate_at(x, y, z, params)
+		var d := DistanceEstimator.scene_estimate_at(x, y, z, params)
 		if d < best_d:
 			best_d = d
 			best = [x, y, z]
@@ -87,6 +87,7 @@ static func save_params(path: String) -> FractalParams:
 	var values := {}
 	for key in defaults:
 		values[StringName(key)] = defaults[key]
+	p.shape().apply_resolved(values)
 	p.apply_resolved(values)
 	return p
 
@@ -101,7 +102,7 @@ static func back_for_distance(params: FractalParams, s: Array, target: float) ->
 	for _i in 80:
 		mid = 0.5 * (lo + hi)
 		var e := backed(s, pow(10.0, mid))
-		var d := DistanceEstimator.estimate_at(e[0], e[1], e[2], params)
+		var d := DistanceEstimator.scene_estimate_at(e[0], e[1], e[2], params)
 		if absf(d / target - 1.0) < 0.05:
 			break
 		if d < target:
@@ -115,10 +116,10 @@ static func back_for_distance(params: FractalParams, s: Array, target: float) ->
 ## iterations, a hit once the estimate is under eps × t, eps = precision /
 ## detail), `steps` steps. Returns [t, hit].
 static func march64(o: PackedFloat64Array, dir: Array, params: FractalParams, steps: int) -> Array:
-	var eps := params.precision / params.detail
+	var eps := params.shape().precision / params.detail
 	var t := 0.0
 	for _i in steps:
-		var d := DistanceEstimator.estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
+		var d := DistanceEstimator.scene_estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
 		if d < eps * t:
 			return [t, true]
 		t += d
@@ -157,5 +158,5 @@ static func variants() -> Array:
 
 static func _with(values: Dictionary) -> FractalParams:
 	var p := FractalParams.new()
-	p.apply_resolved(values)
+	p.shape().apply_resolved(values)
 	return p

@@ -9,8 +9,10 @@ kin) and a pseudo-Kleinian limit set, ported from Fractacular, and the
 Mandelbulb — and
 cylinder, octahedral and abs-fold hybrid folds for the Mandelbox, a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
-while you move, and a **console** window — a Shape inspector of every
-fractal knob with Fractacular's binding model, Light and Material tabs with
+while you move, a **scene of shapes** (up to eight fractals, each with its own
+knobs, position, rotation and size, so they can be nested inside one another;
+see **Shapes and nesting**), and a **console** window — a collapsible Shape
+panel per shape with every fractal knob and Fractacular's binding model, Light and Material tabs with
 Fractacular's cosine-palette window, a tunable light with scattering and
 shadows, and noise-driven texture and bump, and a Movement pane of
 virtual axes driven by key pairs. It is built on the **GL Compatibility** renderer
@@ -33,8 +35,9 @@ binary.
 
 ## Controls
 
-Tap **Ctrl** to open the **console**, a separate OS window: the **Shape**,
-**Light** and **Material** tabs, with a row for every Mandelbox, light and
+Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** tab
+(one collapsible panel per shape, with a row for every fractal and placement
+knob), the **Light** and **Material** tabs, with a row for every light and
 material knob, and the **View** tab (Save / Load level, the Camera mode, the
 mouse sensitivity, the
 Noise editor button, the Window buttons, the Renderer options and Back to Menu), stacked above the
@@ -123,7 +126,7 @@ off, so the picture there is exactly the site's.
   surface normal, the one the Julia and metal modes already use.
 - **A 64-bit eye.** The camera's position is three 64-bit numbers; the 32-bit
   transform the renderer reads is their rounding. The fly step, the centre ray,
-  the fly speed and saves use the 64-bit ones (a saved view keeps the eye to
+  the fly speed and saves use the 64-bit ones (a saved level keeps the eye to
   within one 64-bit rounding step), and the camera's distance to the surface is
   measured from them, down to `1e-14`.
 - **Perturbation.** Near the surface the shader's 32-bit numbers cannot tell
@@ -143,8 +146,11 @@ off, so the picture there is exactly the site's.
   offset back to `X_i` in 32 bits and finishes with the ordinary loop. A ray
   that starts `0.1` or more from the eye hands off at once, so distant parts of
   the picture are drawn exactly as before. It switches on within `10 ×` the
-  32-bit floor, where both marches agree, so there is no pop. The Movement pane
-  shows `deep 20` (the iterations recorded) while it is on. The design is in
+  32-bit floor, where both marches agree, so there is no pop. In a scene of
+  several shapes only the one you are nearest is perturbed, its orbit worked
+  out in that shape's own frame (see **Shapes and nesting**); the others march
+  as usual. The Movement pane shows `deep 20` (the iterations recorded) while
+  it is on. The design is in
   [the spec](docs/superpowers/specs/2026-10-09-perturbation-deep-zoom-design.md);
   the technique is the one Mandelbrot zoomers use, see Wikipedia's
   [perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation)
@@ -266,18 +272,33 @@ natural height (drag the bar between them to share the height differently).
 controls, a step at a time from 50% to 200%, and **⌘0** resets; the window keeps
 its size and the panes reflow. The zoom is remembered between runs.
 
-**Shape tab.** A read-only **Self-similar: yes / no (reason)** line heads the
-tab: whether the current shape is exactly self-similar, following the shape and
+**Shape tab.** An **Add shape** button and a read-only **Self-similar: yes /
+no (reason)** line head the tab, over a list with one entry per shape in the
+scene. Each entry is a header line — a **▾ / ▸** arrow that expands or
+collapses its panel, the shape's editable name, and a **✕** that removes it
+(the last shape cannot be removed) — above that shape's full control panel.
+Clicking a header makes the shape the **active** one (its name turns blue):
+the self-similarity line and the Julia marker follow it, and **Add shape**
+makes a copy of its knobs (bindings aside) at a tenth of its size, centred in
+front of the camera, and selects it. The self-similarity line says whether the
+active shape is exactly self-similar, following the shape and
 the noise graph live. On the Mandelbox that is Julia mode with the constant
 fixed in x, y and z, an iteration that magnifies, no scale drift and no noise
 displacement; the KIFS qualifies without a twist, the Kleinian always (both
 without noise), the Mandelbulb never (its power map stretches some directions
 more than others, so its deep copies are distorted). It is information only;
 [docs/reference/self-similar-substitution.md](docs/reference/self-similar-substitution.md)
-explains what it means for deep zoom. Below it, one row per knob of the fractal
-being drawn, grouped **Fractal**, that fractal's own groups, then **Render**.
-Rows and headings of the fractals not chosen are hidden.
+explains what it means for deep zoom. A panel has one row per knob of the
+fractal that shape draws, grouped **Placement**, **Fractal**, that fractal's
+own groups, then **Render**. Rows and headings of the fractals not chosen are
+hidden.
 
+- **Placement** — **Position x/y/z** (the shape's centre, in world
+  coordinates; the sliders cover ±10 and the box takes any typed value, to six
+  decimals), **Rotation x/y/z** (degrees about the world axes, applied x, then
+  y, then z) and **Size** (world units per local unit, a log slider from 1e-4
+  to 10). These are knobs like any other: bind a position to Time to set a
+  shape drifting, a rotation to an axis to tumble it.
 - **Fractal** — which fractal: **Mandelbox**, **KIFS**, **Kleinian** or
   **Mandelbulb**, and **W**, the fourth coordinate of the 4D sample point (0 is
   the 3D shape; hidden on the Mandelbulb, which is 3D). The camera stays where
@@ -396,17 +417,61 @@ Until a level is loaded the keymap is the shipped default — one **Axis A** on
 name (layout-independent), `""` meaning unbound, and each axis registers two
 input actions, `axis_<id>_pos` and `axis_<id>_neg`.
 
+## Shapes and nesting
+
+The scene is a list of up to eight shapes, each a full fractal (Mandelbox,
+KIFS, Kleinian or Mandelbulb) with its own knobs plus a **placement**: a world
+point `p` is evaluated in a shape as `q = Rᵀ (p − position) / size` and the
+shape's distance comes back as `d_local × size`. The picture is the union: at
+every march step each shape's distance is taken in its own frame and the
+smallest wins (a shape whose bounding cube is further away than the best so
+far is skipped, so far-off shapes cost nothing). The hit shape's own
+**Precision** stops the ray and its frame shades the pixel; the light, colour
+mode, material and palette are the scene's, shared by every shape (the Light
+and Material tabs). Flight speed is the distance to the nearest surface of
+*any* shape, so inside a small shape you crawl at its scale and speed up as
+you escape; the zoom floor, the deep-zoom coarse pass and the level of detail
+are likewise the nearest shape's, at its scale.
+
+**Nesting.** A shape an order of magnitude smaller than its parent fits in one
+of the parent's cavities. Fly into a cavity, **Add shape** (a tenth-size copy
+appears in front of you), tune its Position and Size, repeat. To start a run
+inside the innermost shape, save with the camera there: a loaded level puts
+the player back exactly. `saves/nestedEscape.json` is a ready-made three-level
+nest (sizes 1, 0.04, 0.0016, each turned so no straight line leads out) with
+the camera in the innermost pocket.
+
+**Why it stays sharp at any size.** Everything the fold sees is O(1): the
+shader never forms `eye + dir·t` in world space and subtracts a position (a
+float32 cancellation that would lose a shape a thousandth the size), because
+the CPU hands it each shape's frame already applied to the eye — `local_eye`,
+computed in 64-bit, and the frame's axes — so a ray samples
+`local_eye + Rᵀdir · t / size`. The camera's eye is itself kept in 64-bit
+(`CameraState.set_eye` / `move_by`; `transform.origin` is its float32 mirror)
+so a frame's travel inside a tiny shape is not rounded away, and a save writes
+the eye at full precision. Deep inside a shape's own detail, past its 32-bit
+zoom floor, the perturbed march (see **Deep zoom**) takes over for that shape,
+in the same frame. Two limits remain: the ray parameter `t`
+is float32, so a surface further than about 1e7 × its own detail from the eye
+is below resolution (never the case for a shape you can see), and the orbit
+camera moves the eye through 32-bit transforms, so switch to Orbit only at
+ordinary scales.
+
 ## The level save
 
 There is one save file — the **level** — a small JSON file tagged
-`"kind": "level"`, **version 3**. (`"kind": "sequence"` is reserved for the
+`"kind": "level"`, **version 4**. (`"kind": "sequence"` is reserved for the
 level-sequence editor to come; a sequence file handed to the level loader is
 refused by name, and so is an old stand-alone keymap file.)
 
-- **`shape`** — `AttributeTable.to_dict()`: a `defaults` map (every catalogue id
-  to its value, the fractal among them) and a `bindings` map (only active
-  bindings, each a source / gain / waveform / period). A file from before the
-  fractal could be chosen has no `shape` id and loads as a Mandelbox.
+- **`shapes`** — one entry per shape, in list order: its `label`, a
+  `defaults` map (every per-shape catalogue id to its value, the fractal and
+  the Placement ids among them) and a `bindings` map (only active bindings,
+  each a source / gain / waveform / period). A file from before the fractal
+  could be chosen has no `shape` id and loads as a Mandelbox.
+- **`active`** — the index of the console's selected shape.
+- **`look`** — the scene's light, colour, material and palette knobs, the same
+  `defaults` / `bindings` shape as one shape entry.
 - **`axes`** — the keymap: a list of `{id, label, speed, positive, negative,
   value}` entries. Loading a level replaces the keymap in hand with these,
   rebinding the input actions.
@@ -414,8 +479,9 @@ refused by name, and so is an old stand-alone keymap file.)
   (`"fly"`/`"orbit"`), `mouse_sensitivity` and the renderer options.
 - **`camera`** — the eye, forward and up vectors and the speed factor. The
   eye is written at full precision (all the digits of the 64-bit numbers; the
-  other numbers in a save are tidied), so a deep view comes back where it was,
-  to within one 64-bit rounding step (the parser can land one step off). **Reset
+  other numbers in a save are tidied), so a camera deep in a view or inside a
+  nested shape comes back where it was, to within one 64-bit rounding step
+  (the parser can land one step off). **Reset
   camera** (in the console's Movement pane and the View tab's Renderer options)
   puts the camera and speed factor back to these, as the current file was last
   loaded or saved; with no file current it goes to the starting view.
@@ -423,12 +489,15 @@ refused by name, and so is an old stand-alone keymap file.)
 
 Loading skips anything it does not recognise or cannot read, with a warning, and
 leaves values a file does not mention as they are. Older levels still load: a
-**version-2** file (whose `axes` is a dict of values by id) applies those values
-onto the axes in hand and leaves the keys alone; a **version-1** file (the old
-flat `fractal` section) has its keys mapped (`scale`→`box_scale`,
-`inner_radius`→`min_radius`, `outer_radius`→`fixed_radius`,
-`julia_enabled`→`julia_all`, `julia_point`→the three Constants) without a
-warning. Saving always writes version 3. An exported build cannot write into the
+**version-3** file (one `shape` table over the whole catalogue) loads as a
+one-shape scene at the identity placement, its light and material rows going
+to the look table; a **version-2** file (whose `axes` is a dict of values by
+id) applies those values onto the axes in hand and leaves the keys alone; a
+**version-1** file (the old flat `fractal` section) has its keys mapped
+(`scale`→`box_scale`, `inner_radius`→`min_radius`,
+`outer_radius`→`fixed_radius`, `julia_enabled`→`julia_all`,
+`julia_point`→the three Constants); all without a warning. Saving always
+writes version 4. An exported build cannot write into the
 project, so it saves to `user://saves/` instead.
 
 | file | what it is |
@@ -437,6 +506,7 @@ project, so it saves to `user://saves/` instead.
 | `saves/juliaIceField.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −2.29, Min 0, Fold 0.72, Fixed 0.29, Ice Fractal, precision 0.00002 |
 | `saves/juliaIceTerraces.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −1.88, Min 0.49, Fold 0.81, Fixed 0.53, Ice Fractal, precision 0.0001 |
 | `saves/noiseRidges.json` | the default Ice Fractal level with a noise field wired: value-noise ridges displacing the surface and tinting it blue (see **Noise fields**) |
+| `saves/nestedEscape.json` | three default Mandelboxes nested through the same cavity (Outer 1 ⊃ Middle 0.04 ⊃ Inner 0.0016), the camera inside the innermost: escape all three (see **Shapes and nesting**) |
 
 ## Noise fields
 
@@ -519,8 +589,9 @@ the headless renderer produces no pixels, the actual render is verified by
 `tests/screenshots.sh`, which launches Godot windowed **without stealing focus**
 (via `open -g`), renders the default view, each colour mode, a
 `console_bound_axis` frame (Axis A bound to the scale, required to differ from
-the default) and a `lighting_raked` frame (the light swung and broadened, also
-required to differ), and writes the results plus a `PASS`/`FAIL` log to
+the default), a `lighting_raked` frame (the light swung and broadened, also
+required to differ) and the `nested_escape` level (required to differ from its
+outer shape alone), and writes the results plus a `PASS`/`FAIL` log to
 `tests/out/screenshots.txt`.
 
 The UI suites drive the real widgets the way a player does, still headless.
@@ -560,10 +631,13 @@ match.
 `docs/viz/` is an in-browser, pannable, zoomable explainer of how the viewer
 works: the architecture, one input to one frame, the distance estimator fold
 by fold, every dial, the two-phase ray march, the colour modes, the two
-normals, the cameras and the resolution governor. Its live figures run
+normals, the cameras and the resolution governor, and the scene of shapes
+with the tough calls behind nesting (`./viz.sh shape-nesting`, its second tab
+the calls). Its live figures run
 JavaScript ports of the shader and the GDScript (checked at load against the
 24 distance-estimator fixtures), and every tooltip links the `file:line` it
-describes at a pinned commit.
+describes at a pinned commit (the panes written before the scene of shapes
+are pinned at the single-shape commit, where their lines are right).
 
 ```bash
 ./viz.sh                  # open it in your default browser

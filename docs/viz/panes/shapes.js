@@ -1244,6 +1244,72 @@ const cards = {
   ],
 };
 
+// ================================================================== plain-words companions
+// One cards block under each shape tab: the same mechanism retold without the maths, as the
+// mandelbox pane does. No file:line here; the figure or table above carries them.
+const PLAIN = { tag: "in plain words", hue: 1 };
+const plain = (title, cards) => ({ type: "cards", title, columns: 3, cardWidth: 500,
+  // Numbered because the masonry places each card in the shortest column, not in reading order.
+  cards: cards.map(([t, body], i) => Object.assign({ title: `${i + 1} · ${t}`, body: body.replace(/\n/g, "\n\n") }, PLAIN)) });
+
+const W_CARD = ["The fourth number, W",
+  "Unlike the Mandelbox, this shape is really four-dimensional: every spot has a fourth number, w, next to x, y and z. We can only fly through 3D, so the viewer shows one 3D slice of it, the one where w equals the W dial (0 by default).\nThink of a loaf of bread as a 3D thing you can only see one slice of at a time: moving W is choosing a different slice. Small moves can change the shape a lot, because a whole different cross-section comes into view."];
+
+const kifsPlain = plain("In plain words: how the KIFS tests a point", [
+  ["Start here: the big idea",
+    "The KIFS (kaleidoscopic fractal) builds shapes like the Menger sponge: take a cube, split it into 27 smaller cubes, throw away the middle one and the six in the middle of each face, then do the same to each of the 20 that are left, forever.\nThe program never builds those cubes. To test one spot, it repeats two moves up to 32 times: fold space like a kaleidoscope, so every symmetric piece lands on top of one corner piece, then blow that corner piece back up to full size. Spots that keep landing on the solid parts are in the shape; spots that fall into a hole get flung away."],
+  ["What you are looking at",
+    "The big square is a flat slice through space (the Plane buttons choose which way it faces, and \"plane height h\" slides it). Blue means close to the surface; paler means further away.\nClick it to choose a starting spot. Each press of Step applies one move and draws a coloured line to where the spot went: orange for the fold, blue for the blow-up, violet and pink for the optional rotations and twist. The orange dashed square is the basic cube; the blue ring marks the offset, the one spot the blow-up leaves in place."],
+  ["The fold: a kaleidoscope",
+    "A kaleidoscope uses mirrors to turn one small picture into a symmetric pattern. The fold runs that backwards: it uses mirrors to send every spot into one small wedge of space, so all the symmetric copies of the shape pile up in the same place.\nCoordinate (the default) mirrors a spot into the all-positive corner and then sorts its numbers biggest first: that gives a cube's symmetry and the Menger sponge. Diagonal mirrors across slanted planes instead: a pyramid's symmetry, the Sierpinski tetrahedron. Polyfold first folds around the vertical axis into k pie slices, like a star, then does the Coordinate fold."],
+  ["The blow-up: scale away from the offset",
+    "Next, every spot is pushed away from one fixed point (the offset, a corner of the cube by default) until all distances from it are Scale times bigger (3 for the sponge).\nThat turns one small corner piece of the shape back into a full-size copy, ready for the next fold. Repeat, and each round reaches one level deeper into the holes-within-holes. If the spot gets more than 1000 from the centre, it has clearly fallen into a hole and the rounds stop early."],
+  ["Optional spins: R1, R2 and Twist",
+    "R1 turns space a little before each fold, so each fold sees a rotated view and the copies twist against each other into asymmetric towers. R2 turns things after the fold, so the copies themselves turn, and the detail spins at every size at once. Twist turns the slice a bit more every round, which spirals the fine detail while the big shape barely moves.\nAll of them are 0 by default, which gives the classic shapes."],
+  ["The verdict: one distance number",
+    "At the end, the program measures how far the spot is from the basic cube (or from the centre, for the Diagonal and Polyfold sets). But every round blew things up Scale times, so that measurement is far too big, like measuring on a map you've zoomed in on. Dividing it by Scale once per round undoes the zoom. The answer is a safe guess at how far the starting spot is from the surface, which is what the renderer needs to march toward it."],
+  W_CARD,
+]);
+
+const klPlain = plain("In plain words: how the Kleinian tests a point", [
+  ["Start here: the big idea",
+    "The Kleinian is a hall of mirrors. There are two kinds: flat mirrors that make a box, and one round mirror, a ball at the centre. Bounce a picture back and forth between them forever and it repeats into an endless lattice of curved sheets and rings, packed smaller and smaller toward certain spots.\nTo test a spot, the program bounces it between the mirrors up to 32 times and then asks how close it ended up to one simple starting picture. That closeness, scaled back down, says how close the original spot is to the lattice."],
+  ["What you are looking at",
+    "The big square is a flat slice through space; the x-z slice (the default) shows the rings best. Blue means close to the surface; paler means further away.\nClick it to choose a starting spot. Each press of Step applies one move: orange lines for the box mirror, pink for the round mirror and the shift. The orange dashed rectangle is the mirror box, the pink circle is the round mirror, and a pink arrow shows the shift when there is one."],
+  ["Move 1: the mirror box",
+    "Exactly like the Mandelbox's box fold: if the spot is outside the box in any direction, it is reflected back inside, as a ball bounces off a wall. Here each direction has its own wall distance (about 0.92 by default), which is what lines the copies up into a lattice."],
+  ["Move 2: the round mirror",
+    "If the spot is inside the ball, it is flipped out through the ball's surface: a spot near the centre lands far outside, and a spot just inside lands just outside. A spot already outside the ball is left alone. Then the Shift (0 by default) is added, which slides each generation of rings off the last.\nUnlike the Mandelbox and the KIFS, there is no blow-up step, so spots don't fly away. Instead, once a round leaves a spot exactly where it was, it has settled and the rounds stop early."],
+  ["The verdict: one distance number",
+    "The simple starting picture is a thin flat sheet across the middle plus a thin thread up the vertical axis (Thickness sets how thin). The mirrors copy that picture everywhere, and those copies are the lattice you see.\nThe program measures how far the bounced spot is from that starting picture. The round mirror magnified things each time it flipped a spot, and that magnification is kept as a running total (dr), so dividing by it scales the measurement back to the original spot's size. The result is how far the original spot is from the lattice."],
+  ["It never ends, so rays need a horizon",
+    "The Mandelbox and the KIFS fit inside a box, so the renderer only searches that box. The Kleinian's lattice fills all of space, so a ray could march forever. Instead each ray stops at the View distance, and anything in the last third of that distance fades into the background, like fog. The Bounds and horizon tab shows this."],
+  W_CARD,
+]);
+
+const knobPlain = plain("In plain words: the knobs", [
+  ["How to read the table",
+    "Each row is one dial in the Shape inspector. \"id\" is the dial's name in the code and in save files, \"default\" is where it starts, and \"range\" is how far the slider goes (\"hard\" is the furthest you can go by typing a number into the box beside it). Hover a row for a plain description of what moving it does."],
+  W_CARD,
+  ["The KIFS dials, briefly",
+    "Fold set chooses the symmetry: cube (Menger sponge), pyramid (Sierpinski) or star (Polyfold, whose number of points is Polyfold k).\nScale is how much each round blows the shape back up: lower overlaps the copies into a blobby solid, higher thins them to dust.\nOffset is the spot the blow-up leaves in place; moving it moves where the copies sit.\nR1, R2 and Twist spin the copies against each other; 0 gives the classic shapes."],
+  ["The Kleinian dials, briefly",
+    "Box x, y, z, w are the walls of the mirror box: raising one stretches the lattice along it, lowering packs it tighter.\nInversion radius is the size of the round mirror: bigger fattens the rings and closes the gaps.\nShift slides each generation of rings off the last, so the lattice tilts and spirals.\nThickness is how thick the sheets are, from lace (0) to chunky walls.\nView distance is how far you can see before the fog."],
+]);
+
+const horizonPlain = plain("In plain words: where a ray starts and stops", [
+  ["Start here: the big idea",
+    "Each pixel's line of sight (its ray) is searched step by step for the surface, and searching empty space wastes time. So each shape tells the renderer where it could possibly be: a box it never leaves. A ray starts searching where it enters that box and gives up (draws background) where it leaves."],
+  ["What you are looking at",
+    "A view from straight above, with the eye (green dot) looking toward the centre. The blue square is the Mandelbox's box and the orange square is the KIFS's. The thick line is the part of the ray that actually gets searched, from where it enters (ring) to where it stops (dot); the dotted line is the part that's skipped.\nThe graph on the right shows how much the Kleinian's fog has faded a hit, from 0 (not at all) to 1 (fully background), along the ray."],
+  ["The boxes",
+    "The Mandelbox always fits in a box 2 units from the centre each way (20 in Julia mode). The KIFS's shape sits around its offset, so its box grows with the offset: at least 2, or one and a half times the offset's distance from the centre, with room to spare for the rotations. Try the offset slider to see the orange box grow."],
+  ["The Kleinian's horizon",
+    "The Kleinian fills all of space, so no box can hold it (its box is a token 10,000 units). Instead, every ray stops at the View distance from the eye. Things in the last third of that distance are blended into the background more and more, so the lattice fades out like a horizon in fog instead of ending at a hard wall.\nA shorter View distance is the cheapest way to speed up a slow Kleinian view."],
+  ["The cameras use the same limits",
+    "The fly camera's speed and the orbit camera's click-to-recentre both look along a ray from the computer's side, not the graphics card's. They stop at the same box and the same View distance, so they agree with what you see on screen."],
+]);
+
 // The checker verifies every { file, line } it finds in a pane's data; a figure's tooltips are built
 // inside draw(), so each figure also carries `refs`: every R / RL / KS / KL / SH call with literal
 // arguments in its draw source.
@@ -1276,7 +1342,14 @@ VIZ.pane({
     call: { style: "solid", label: "calls · appends" },
     data: { style: "dot", label: "reads a value · a uniform" },
   },
-  tabs: [arch, kifsFig, klFig, knobTable, horizonFig, cards],
+  tabs: [
+    arch,
+    { label: "KIFS fold by fold", rows: [[kifsFig], [kifsPlain]] },
+    { label: "Kleinian fold by fold", rows: [[klFig], [klPlain]] },
+    { label: "Every knob", rows: [[knobTable], [knobPlain]] },
+    { label: "Bounds and horizon", rows: [[horizonFig], [horizonPlain]] },
+    cards,
+  ],
   // The ports, exposed for checking from the console (VIZ.panes[2].ports.kifsDe(...)).
   ports: { kifsParams, kifsDe, kifsStages, mengerFold, diagonalFold, polyFold, boxDistance, klParams, klDe, klStages, thingy, boundHalf, viewFade, boxIntersect, coarseIters, FIX_K, FIX_L },
 });

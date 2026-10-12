@@ -23,18 +23,18 @@ func run() -> void:
 	check(not away[1] and is_inf(away[0]), "a ray that never meets the cube is a miss at INF")
 
 	# --- the other fractals: their own bound, and the Kleinian's view distance ---
-	var kifs := FractalParams.new(); kifs.shape = FractalParams.Shape.KIFS
+	var kifs := FractalParams.new(); kifs.shape().shape = FractalParams.Shape.KIFS
 	var kcam := CameraState.new()
 	kcam.transform = Transform3D(Basis.IDENTITY, Vector3(3.2, 2.4, 1.9)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
 	check(CenterRay.march(kcam.eye(), kcam.forward(), kifs)[1], "the centre ray hits the Menger sponge")
-	var kl := FractalParams.new(); kl.shape = FractalParams.Shape.KLEINIAN
+	var kl := FractalParams.new(); kl.shape().shape = FractalParams.Shape.KLEINIAN
 	var lcam := CameraState.new()
 	lcam.transform = Transform3D(Basis.IDENTITY, Vector3(2.5, 1.6, 1.2)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
 	var kr := CenterRay.march(lcam.eye(), lcam.forward(), kl)
 	check(kr[1] and kr[0] < kl.view_distance(), "and the Kleinian, inside its view distance")
-	kl.kleinian_view_distance = 1e-3
+	kl.shape().kleinian_view_distance = 1e-3
 	check(not CenterRay.march(lcam.eye(), lcam.forward(), kl)[1], "nothing past the view distance is hit")
-	var bulb := FractalParams.new(); bulb.shape = FractalParams.Shape.MANDELBULB
+	var bulb := FractalParams.new(); bulb.shape().shape = FractalParams.Shape.MANDELBULB
 	var bcam := CameraState.new()
 	bcam.transform = Transform3D(Basis.IDENTITY, Vector3(2.2, 1.6, 1.2)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
 	var br := CenterRay.march(bcam.eye(), bcam.forward(), bulb)
@@ -50,10 +50,24 @@ func run() -> void:
 	check(not ray.hit() and is_inf(ray.distance()), "turning away re-marches: now a miss")
 	cam.transform = CameraState.make_default().transform
 	check_approx(ray.distance(), t, "turning back hits again", 1e-9)
-	params.box_scale = -1.5
+	params.shape().box_scale = -1.5
 	var reshaped := CenterRay.march(cam.eye(), cam.forward(), params)
 	check_approx(ray.distance(), reshaped[0], "a shape change re-marches", 1e-9)
-	params.box_scale = FractalParams.new().box_scale
+	params.shape().box_scale = ShapeParams.new().box_scale
+
+	# --- a second, small shape well away from the first: the ray from the
+	# default view shrunk into it hits it at a hundredth of the distance, in
+	# its own frame ---
+	var nested := FractalParams.new()
+	var small := nested.add_shape()
+	small.pos_x = 10.0; small.pos_y = 10.0; small.pos_z = 10.0
+	small.size = 0.01
+	var inner_cam := CameraState.new()
+	var inner_eye := small.to_world_v(CameraState.DEFAULT_EYE)   # the default view, shrunk into the small shape
+	inner_cam.set_basis(cam.transform.basis)
+	inner_cam.set_eye(inner_eye.x, inner_eye.y, inner_eye.z)
+	var nr := CenterRay.march(inner_cam.eye(), inner_cam.forward(), nested)
+	check(nr[1] and absf(nr[0] - t * 0.01) < 1e-3 * t, "inside the small shape the centre ray hits it at a hundredth of the default distance (%s vs %s)" % [nr[0], t * 0.01])
 
 	# --- the fly speed follows the ray, capped by NEAR_CAP x the nearest surface ---
 	var fly := FlyCamera.new()
@@ -111,7 +125,7 @@ func run() -> void:
 	check_eq(CenterRay.march_at(e.x, e.y, e.z, f0, params), CenterRay.march(e, f0, params),
 		"march() is march_at() on the same origin")
 	var klp := FractalParams.new()
-	klp.shape = FractalParams.Shape.KLEINIAN
+	klp.shape().shape = FractalParams.Shape.KLEINIAN
 	var sf := SurfaceFixture.surface_from(klp, Vector3(2.5, 1.6, 1.2))
 	var sdir := Vector3(sf[3], sf[4], sf[5])
 	var o := SurfaceFixture.backed(sf, 1e-8)

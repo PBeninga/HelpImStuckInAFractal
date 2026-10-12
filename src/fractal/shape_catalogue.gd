@@ -1,18 +1,26 @@
 class_name ShapeCatalogue
 extends RefCounted
-## Every knob in inspector order, for every shape: the Fractal group (which
-## shape, and the fourth coordinate w), the Mandelbox's Box, Julia and
+## Every knob in inspector order, for every shape: the Placement group (where
+## the shape sits in the scene: position, rotation, size), the Fractal group
+## (which shape, and the fourth coordinate w), the Mandelbox's Box, Julia and
 ## Iteration rotation groups (MandelboxShape), KIFS and KIFS rotation
-## (KifsShape), Kleinian (KleinianShape), Mandelbulb (MandelbulbShape), then
-## the rows every shape shares —
-## the precision, the colour mode and the Palette mode's controls, the lamp and
-## its scattering, the surface's colour/roughness/specular, the texture and bump
-## strengths, and the palette's twelve numbers. A shape's own rows show only
-## while that shape is drawn. The console shows SHAPE_GROUPS on its Shape tab,
-## LIGHT_GROUPS on its Light tab (Light, Scattering, Picture) and MATERIAL_GROUPS
-## on its Material tab (Colour, Surface, Texture, Palette).
+## (KifsShape), Kleinian (KleinianShape), Mandelbulb (MandelbulbShape), the
+## precision, then the rows the whole SCENE shares — the colour mode and the
+## Palette mode's controls, the lamp and its scattering, the surface's
+## colour/roughness/specular, the texture and bump strengths, and the
+## palette's twelve numbers. A shape's own rows show only while that shape is
+## drawn.
 ##
-## The ids are the shader uniform names and the FractalParams field names.
+## The scene is a list of shapes, each with its own table over shape_specs()
+## (Placement + SHAPE_GROUPS: the ShapeParams fields), and one look table over
+## scene_specs() (LIGHT_GROUPS + MATERIAL_GROUPS: the FractalParams fields).
+## The console shows one collapsible shape panel per shape on its Shape tab,
+## LIGHT_GROUPS on its Light tab (Light, Scattering, Picture) and
+## MATERIAL_GROUPS on its Material tab (Colour, Surface, Texture, Palette).
+##
+## The ids are the shader uniform names (the per-shape ones as arrays indexed
+## by shape; the Placement ids are consumed on the CPU into each shape's frame
+## and are not uniforms) and the ShapeParams / FractalParams field names.
 
 const F := AttributeSpec.Type.FLOAT
 const ENUM := AttributeSpec.Type.ENUM
@@ -36,11 +44,19 @@ const PALETTE_VECTOR_EFFECTS := [
 ]
 
 
-## Which groups the console's tabs show.
-const SHAPE_GROUPS: Array[String] = ["Fractal", "Box", "Julia", "Iteration rotation",
+## Which groups the console's tabs show. SHAPE_GROUPS are per shape; the rest
+## are the scene's.
+const SHAPE_GROUPS: Array[String] = ["Placement", "Fractal", "Box", "Julia", "Iteration rotation",
 	"KIFS", "KIFS rotation", "Kleinian", "Mandelbulb", "Render"]
 const LIGHT_GROUPS: Array[String] = ["Light", "Scattering", "Picture"]
 const MATERIAL_GROUPS: Array[String] = ["Colour", "Surface", "Texture", "Palette"]
+
+## The Placement group's ids: resolved on the CPU into the shape's frame, never
+## pushed as uniforms.
+const PLACEMENT_IDS: Array[StringName] = [
+	&"pos_x", &"pos_y", &"pos_z", &"rot_x", &"rot_y", &"rot_z", &"size",
+]
+const AXES := ["x", "y", "z"]
 
 
 ## A show_when for a row of `shape`'s: shown while that shape is drawn and
@@ -75,6 +91,42 @@ static func _only_on(list: Array[AttributeSpec], shape: int) -> Array[AttributeS
 
 static func specs() -> Array[AttributeSpec]:
 	var out: Array[AttributeSpec] = []
+	out.append_array(shape_specs())
+	out.append_array(scene_specs())
+	return out
+
+
+## The per-shape specs: Placement, then SHAPE_GROUPS. One AttributeTable per
+## shape in the scene runs over these.
+static func shape_specs() -> Array[AttributeSpec]:
+	var out: Array[AttributeSpec] = []
+
+	# --- Placement ---
+	for i in 3:
+		var axis: String = AXES[i]
+		out.append(AttributeSpec.make({
+			"id": "pos_%s" % axis, "label": "Position %s" % axis, "type": F,
+			"default": 0.0, "min": -10.0, "max": 10.0, "step": 1e-6,
+			"hard_min": -1e6, "hard_max": 1e6, "group": "Placement",
+			"tooltip": "The %s coordinate of the shape's centre in the world (fractal coordinates). The shape's own origin sits here." % axis,
+			"effects": "0 for every component puts the shape at the world origin, where the site's single box sits. Move a nested shape here, into a cavity of its parent; the sliders cover +/-10 and the box takes any typed value. Bind it to Time or an axis to send the shape drifting.",
+		}))
+	for i in 3:
+		var axis: String = AXES[i]
+		out.append(AttributeSpec.make({
+			"id": "rot_%s" % axis, "label": "Rotation %s" % axis, "type": F,
+			"default": 0.0, "min": -180.0, "max": 180.0, "step": 0.1, "wrap": true,
+			"group": "Placement",
+			"tooltip": "Degrees of rotation of the whole shape about the world %s axis. The three are applied x, then y, then z." % axis,
+			"effects": "0 keeps the shape's lattice aligned with the world axes. Turning a nested shape a few degrees makes it read as a separate object inside its parent rather than a copy of the same lattice. Bind one to Time for a slow tumble.",
+		}))
+	out.append(AttributeSpec.make({
+		"id": "size", "label": "Size", "type": F,
+		"default": 1.0, "min": 1e-4, "max": 10.0, "step": 1e-9, "log": true,
+		"hard_min": 1e-9, "hard_max": 1e3, "group": "Placement",
+		"tooltip": "The shape's scale in the world: one local unit (the Mandelbox is about two across) is this many world units.",
+		"effects": "1 is the site's box. A tenth is a shape that fits inside a cavity of the full-size one; a hundredth fits inside that. Each nested level should be an order of magnitude smaller than the one around it, and the march keeps full detail at any size because every shape is evaluated in its own frame. The slider is logarithmic.",
+	}))
 
 	# --- Fractal ---
 	out.append(AttributeSpec.make({
@@ -108,6 +160,13 @@ static func specs() -> Array[AttributeSpec]:
 		"tooltip": "The surface threshold: the ray stops when the distance estimate drops below precision times the distance travelled.",
 		"effects": "Smaller values resolve finer detail at the cost of more steps (and a slower frame); larger values are faster but rounder and noisier near the surface. The default (2.5e-5) is the site's. The slider is logarithmic.",
 	}))
+	return out
+
+
+## The scene's specs: LIGHT_GROUPS and MATERIAL_GROUPS, shared by every shape.
+## The one look table runs over these.
+static func scene_specs() -> Array[AttributeSpec]:
+	var out: Array[AttributeSpec] = []
 
 	# --- Colour ---
 	var mode_values: Array[int] = []
@@ -300,10 +359,11 @@ static func specs() -> Array[AttributeSpec]:
 	return out
 
 
-## Heading tooltips, one per group: each shape's own, plus Fractal, Render,
-## Colour, Light, Scattering, Picture, Surface, Texture and Palette.
+## Heading tooltips, one per group: each shape's own, plus Placement, Fractal,
+## Render, Colour, Light, Scattering, Picture, Surface, Texture and Palette.
 static func group_tooltips() -> Dictionary:
 	var out := {
+		"Placement": "Placement: where this shape sits in the scene. A world point is moved by -Position, rotated back by the three Rotations and divided by Size before the fractal is evaluated, so the shape itself is the same at any size. Nest shapes by placing a smaller one inside a cavity of a larger one.",
 		"Fractal": "Fractal: which shape is drawn, and the 3D slice of its 4D field the camera flies through (the Mandelbulb is 3D, so it has no slice). The rows below change with the shape.",
 		"Render": "Render: how finely the ray march resolves the surface. A look-and-cost knob, not a shape knob.",
 		"Colour": "Colour: which colouring mode paints the surface and, for the Palette mode, what runs it along the palette.",
@@ -337,9 +397,35 @@ static func self_similarity(values: Dictionary, displaced := false) -> Dictionar
 	return MandelboxShape.self_similarity(values, displaced)
 
 
-## Every catalogue id, in order. Equals the shader's shape-uniform set.
+## Every catalogue id, in order: shape_ids() then scene_ids().
 static func catalogue_ids() -> Array[StringName]:
 	var out: Array[StringName] = []
 	for s in specs():
 		out.append(s.id)
+	return out
+
+
+## The per-shape ids, in order: ShapeParams.RESOLVED_KEYS.
+static func shape_ids() -> Array[StringName]:
+	var out: Array[StringName] = []
+	for s in shape_specs():
+		out.append(s.id)
+	return out
+
+
+## The scene's ids, in order: FractalParams.RESOLVED_KEYS.
+static func scene_ids() -> Array[StringName]:
+	var out: Array[StringName] = []
+	for s in scene_specs():
+		out.append(s.id)
+	return out
+
+
+## The per-shape ids the shader declares as uniform arrays: shape_ids() without
+## the Placement group.
+static func shader_ids() -> Array[StringName]:
+	var out: Array[StringName] = []
+	for id in shape_ids():
+		if not PLACEMENT_IDS.has(id):
+			out.append(id)
 	return out

@@ -1,0 +1,298 @@
+class_name ShapeListPane
+extends VBoxContainer
+## The console's Shape tab for a scene of shapes: an Add shape button and the
+## selected shape's self-similarity line over one scrolling list with an entry
+## per shape. An entry is a header line (a ▾/▸ arrow that expands or collapses
+## it, its editable label, and a ✕ that removes it) above that shape's full
+## AttributeInspector over the per-shape groups (Placement, Fractal, Box, …).
+## Clicking anywhere on a header selects the shape: the selected one is the
+## console's "active" shape (the Julia marker follows it, a new shape is
+## placed relative to it, the self-similarity line is its). The pane rebuilds
+## its entries whenever the ShapeList's structure changes (a load, an add, a
+## remove), keeping each entry's expanded state by index; a relabel only
+## updates the one label.
+
+## The selected (active) shape changed.
+signal selected_changed(index: int)
+
+const SCROLLBAR_ALLOWANCE := 16.0
+const SELECTED_COLOR := Color(0.72, 0.82, 1.0)
+const PLAIN_COLOR := Color(0.85, 0.85, 0.85)
+
+const ADD_TOOLTIP := "Add a shape: a copy of the selected shape's knobs at a tenth of its size, centred in front of the camera, with no bindings. Nest shapes by adding one and flying into it."
+const ARROW_TOOLTIP := "Expand or collapse this shape's control panel."
+const LABEL_TOOLTIP := "The shape's name, saved with the level. Click a header to make the shape the active one: the Julia marker, Add shape and the self-similarity line work on it."
+const REMOVE_TOOLTIP := "Remove this shape from the scene. The last shape cannot be removed."
+
+var _shapes: ShapeList
+var _group_tooltips: Dictionary = {}
+## Returns the id -> value defaults for a new shape (Main computes a placement
+## in front of the camera). Unset: the catalogue defaults.
+var _placement_source: Callable = Callable()
+var _add_button: Button
+var _header_line: Control
+var _scroll: ScrollContainer
+var _list: VBoxContainer
+var _entries: Array = []   # [{header, arrow, label, remove, inspector}]
+var _expanded: Array[bool] = []
+var _selected := 0
+var _axis_list: Array = []
+var _rebuilding := false
+
+
+## `header_line` (the console's self-similarity label) sits beside the Add
+## button; `placement_source` gives the defaults for a new shape.
+func setup(shapes: ShapeList, group_tooltips: Dictionary, placement_source: Callable = Callable(), header_line: Control = null) -> void:
+	_shapes = shapes
+	_group_tooltips = group_tooltips
+	_placement_source = placement_source
+	_header_line = header_line
+	_build()
+	_shapes.changed.connect(_rebuild)
+	_shapes.relabelled.connect(_on_relabelled)
+	_rebuild()
+
+
+func _build() -> void:
+	add_theme_constant_override("separation", 4)
+	custom_minimum_size.x = AttributeRow.WIDE_ROW_MIN_WIDTH + SCROLLBAR_ALLOWANCE
+
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 10)
+	add_child(bar)
+	_add_button = Button.new()
+	_add_button.text = "Add shape"
+	_add_button.tooltip_text = ADD_TOOLTIP
+	_add_button.pressed.connect(add_shape)
+	bar.add_child(_add_button)
+	if _header_line != null:
+		_header_line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.add_child(_header_line)
+
+	_scroll = ScrollContainer.new()
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(_scroll)
+
+	_list = VBoxContainer.new()
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list.add_theme_constant_override("separation", 6)
+	_scroll.add_child(_list)
+
+
+# ------------------------------------------------------------------ queries
+
+func shapes() -> ShapeList:
+	return _shapes
+
+
+func scroll_container() -> ScrollContainer:
+	return _scroll
+
+
+func add_button() -> Button:
+	return _add_button
+
+
+func entry_count() -> int:
+	return _entries.size()
+
+
+func selected() -> int:
+	return _selected
+
+
+## The i-th shape's panel.
+func inspector(i: int) -> AttributeInspector:
+	if i < 0 or i >= _entries.size():
+		return null
+	return _entries[i]["inspector"]
+
+
+## The selected shape's panel.
+func active_inspector() -> AttributeInspector:
+	return inspector(_selected)
+
+
+## The i-th entry's header widgets: {header, arrow, label, remove}.
+func entry_widgets(i: int) -> Dictionary:
+	if i < 0 or i >= _entries.size():
+		return {}
+	var e: Dictionary = _entries[i]
+	return {"arrow": e["arrow"], "label": e["label"], "remove": e["remove"], "header": e["header"]}
+
+
+func is_expanded(i: int) -> bool:
+	return i >= 0 and i < _expanded.size() and _expanded[i]
+
+
+# ------------------------------------------------------------------ actions
+
+## Append a shape (through the placement source when one is set), select it
+## and expand it.
+func add_shape() -> void:
+	var defaults: Dictionary = {}
+	if _placement_source.is_valid():
+		defaults = _placement_source.call()
+	var i := _shapes.add(defaults)
+	if i < 0:
+		return
+	# _rebuild ran on `changed`; now pick the new one
+	_set_expanded(i, true)
+	select(i)
+
+
+func remove_shape(i: int) -> void:
+	var was := _selected
+	if _shapes.remove(i):
+		# the entries above the removed one keep their shape; a selection past it
+		# moves down one, a selection on it stays at that index (clamped)
+		select(clampi(was - 1 if was > i else was, 0, _shapes.count() - 1), true)
+
+
+func select(i: int, force := false) -> void:
+	i = clampi(i, 0, maxi(_entries.size() - 1, 0))
+	if i == _selected and not force:
+		return
+	_selected = i
+	_restyle()
+	selected_changed.emit(_selected)
+
+
+func set_expanded(i: int, on: bool) -> void:
+	_set_expanded(i, on)
+
+
+## The axes available as binding sources, for every panel: Array of {id, label}.
+func set_sources(axis_list: Array) -> void:
+	_axis_list = axis_list
+	for e in _entries:
+		(e["inspector"] as AttributeInspector).set_sources(axis_list)
+
+
+## Feed one frame of resolved values, one Dictionary per shape, to the panels.
+func set_resolved(values: Array) -> void:
+	for i in mini(values.size(), _entries.size()):
+		(_entries[i]["inspector"] as AttributeInspector).set_resolved(values[i])
+
+
+# ------------------------------------------------------------------ building
+
+func _rebuild() -> void:
+	if _rebuilding or _shapes == null:
+		return
+	_rebuilding = true
+	for c in _list.get_children():
+		_list.remove_child(c)
+		c.queue_free()
+	_entries.clear()
+	var count := _shapes.count()
+	while _expanded.size() < count:
+		_expanded.append(_expanded.is_empty())   # the first shape opens expanded
+	while _expanded.size() > count:
+		_expanded.pop_back()
+	for i in count:
+		_entries.append(_make_entry(i))
+	_selected = clampi(_selected, 0, count - 1)
+	_restyle()
+	_rebuilding = false
+
+
+func _make_entry(i: int) -> Dictionary:
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 6)
+	header.mouse_filter = Control.MOUSE_FILTER_STOP
+	header.gui_input.connect(_on_header_input.bind(i))
+	_list.add_child(header)
+
+	var arrow := Button.new()
+	arrow.flat = true
+	arrow.focus_mode = Control.FOCUS_NONE
+	arrow.tooltip_text = ARROW_TOOLTIP
+	arrow.custom_minimum_size = Vector2(28, 0)
+	arrow.pressed.connect(_on_arrow_pressed.bind(i))
+	header.add_child(arrow)
+
+	var label := LineEdit.new()
+	label.text = _shapes.label(i)
+	label.tooltip_text = LABEL_TOOLTIP
+	label.custom_minimum_size = Vector2(180, 0)
+	label.add_theme_font_size_override("font_size", 14)
+	label.text_submitted.connect(_on_label_submitted.bind(i))
+	label.focus_exited.connect(_on_label_focus_exited.bind(i))
+	label.gui_input.connect(_on_header_input.bind(i))
+	header.add_child(label)
+
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_PASS
+	header.add_child(spacer)
+
+	var remove := Button.new()
+	remove.text = "✕"
+	remove.tooltip_text = REMOVE_TOOLTIP
+	remove.focus_mode = Control.FOCUS_NONE
+	remove.disabled = _shapes.count() <= 1
+	remove.pressed.connect(_on_remove_pressed.bind(i))
+	header.add_child(remove)
+
+	var inspector := AttributeInspector.new()
+	inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inspector.setup(_shapes.table(i), _group_tooltips, ShapeCatalogue.SHAPE_GROUPS, null, false)
+	inspector.set_sources(_axis_list)
+	inspector.visible = _expanded[i]
+	_list.add_child(inspector)
+
+	return {"header": header, "arrow": arrow, "label": label, "remove": remove, "inspector": inspector}
+
+
+func _restyle() -> void:
+	for i in _entries.size():
+		var e: Dictionary = _entries[i]
+		(e["arrow"] as Button).text = "▾" if _expanded[i] else "▸"
+		(e["inspector"] as AttributeInspector).visible = _expanded[i]
+		var color := SELECTED_COLOR if i == _selected else PLAIN_COLOR
+		(e["label"] as LineEdit).add_theme_color_override("font_color", color)
+		(e["arrow"] as Button).add_theme_color_override("font_color", color)
+
+
+func _set_expanded(i: int, on: bool) -> void:
+	if i < 0 or i >= _expanded.size():
+		return
+	_expanded[i] = on
+	_restyle()
+
+
+# ------------------------------------------------------------------ handlers
+
+func _on_arrow_pressed(i: int) -> void:
+	_set_expanded(i, not _expanded[i])
+	select(i)
+
+
+func _on_remove_pressed(i: int) -> void:
+	remove_shape(i)
+
+
+func _on_header_input(event: InputEvent, i: int) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		select(i)
+
+
+func _on_label_submitted(text: String, i: int) -> void:
+	if i < _shapes.count():
+		_shapes.set_label(i, text)   # a change comes back through relabelled
+
+
+func _on_label_focus_exited(i: int) -> void:
+	# A label freed by a rebuild (the shape was removed) loses focus too.
+	if i < _entries.size() and i < _shapes.count() and is_instance_valid(_entries[i]["label"]):
+		_on_label_submitted((_entries[i]["label"] as LineEdit).text, i)
+
+
+func _on_relabelled(i: int) -> void:
+	if i < _entries.size():
+		var edit := _entries[i]["label"] as LineEdit
+		if edit.text != _shapes.label(i):
+			edit.text = _shapes.label(i)

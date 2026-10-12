@@ -25,7 +25,7 @@ const PLANES := DistanceEstimator.PLANES
 const PERT_HANDOFF := 0.1
 
 var f32 := true
-var params: FractalParams
+var params: ShapeParams
 ## The handoff radius de_pert uses: PERT_HANDOFF, or INF for the algebra check
 ## (the formulas are exact at any size, and large offsets exercise every crossing).
 var handoff := PERT_HANDOFF
@@ -42,8 +42,9 @@ var trace: Array = []
 var _buf := PackedFloat32Array([0.0])
 
 
+## `p` is the scene; the port runs its first shape, at the identity placement.
 func _init(p: FractalParams, eye64: PackedFloat64Array, use_f32: bool) -> void:
-	params = p
+	params = p.shape()
 	f32 = use_f32
 	eye = [r(eye64[0]), r(eye64[1]), r(eye64[2])]
 

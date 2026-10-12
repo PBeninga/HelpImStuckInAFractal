@@ -21,17 +21,21 @@ var _table: AttributeTable
 var _group_tooltips: Dictionary = {}
 var _groups: Array = []
 var _header: Control
+var _scrolling := true
 var _built := false
 
 
 ## Show the shape table, with the group heading tooltips: only the specs in
 ## `groups` when it is not empty, below `header` when one is given. Call before
-## adding it to the tree (or right after; it builds lazily).
-func setup(table: AttributeTable, group_tooltips: Dictionary, groups: Array = [], header: Control = null) -> void:
+## adding it to the tree (or right after; it builds lazily). With `scrolling`
+## false the rows are laid out directly (no ScrollContainer of their own), for
+## a pane that stacks several inspectors in one scrolling list.
+func setup(table: AttributeTable, group_tooltips: Dictionary, groups: Array = [], header: Control = null, scrolling: bool = true) -> void:
 	_table = table
 	_group_tooltips = group_tooltips
 	_groups = groups
 	_header = header
+	_scrolling = scrolling
 	_build()
 	_populate()
 
@@ -45,18 +49,20 @@ func _build() -> void:
 		return
 	_built = true
 	add_theme_constant_override("separation", 4)
-	custom_minimum_size.x = AttributeRow.WIDE_ROW_MIN_WIDTH + SCROLLBAR_ALLOWANCE
-
-	_scroll = ScrollContainer.new()
-	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(_scroll)
+	custom_minimum_size.x = AttributeRow.WIDE_ROW_MIN_WIDTH + (SCROLLBAR_ALLOWANCE if _scrolling else 0.0)
 
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 2)
-	_scroll.add_child(_list)
+	if _scrolling:
+		_scroll = ScrollContainer.new()
+		_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		add_child(_scroll)
+		_scroll.add_child(_list)
+	else:
+		add_child(_list)
 
 
 func _populate() -> void:
@@ -133,6 +139,15 @@ func row_count() -> int:
 
 func row(id: StringName) -> AttributeRow:
 	return _rows.get(id)
+
+
+func table() -> AttributeTable:
+	return _table
+
+
+## This inspector's ScrollContainer, or null when it was built without one.
+func scroll_container() -> ScrollContainer:
+	return _scroll
 
 
 ## Godot's default theme has no bold variant, so a heading is set apart by

@@ -4,19 +4,19 @@ extends "res://tests/test_case.gd"
 ## about z), w ignored (it is 3D), and the escape radius that bounds it.
 
 
-func _de(p: Vector3, params: FractalParams, expected: float, label: String) -> void:
+func _de(p: Vector3, params: ShapeParams, expected: float, label: String) -> void:
 	var got := MandelbulbEstimator.estimate_at(p.x, p.y, p.z, params)
 	var tol := maxf(1e-9, 1e-5 * absf(expected))
 	check(absf(got - expected) <= tol, "%s: expected %s got %s (tol %s)" % [label, expected, got, tol])
 
 
-func _bulb() -> FractalParams:
-	var p := FractalParams.new()
+func _bulb() -> ShapeParams:
+	var p := ShapeParams.new()
 	p.shape = FractalParams.Shape.MANDELBULB
 	return p
 
 
-func _d(p: Vector3, params: FractalParams) -> float:
+func _d(p: Vector3, params: ShapeParams) -> float:
 	return MandelbulbEstimator.estimate_at(p.x, p.y, p.z, params)
 
 
@@ -83,7 +83,7 @@ func run() -> void:
 	for q in [Vector3(1.11, 0.0, 0.0), Vector3(0.0, 0.0, -1.11), Vector3(0.7, 0.7, 0.5)]:
 		check(_d(q, b) > 0.0, "every point past the escape radius is outside: %s" % q)
 
-	# --- the rest of FractalParams ---
+	# --- the rest of ShapeParams ---
 	check_eq(b.coarse_iters(3.0), 16, "the coarse pass runs the usual 16 iterations at a normal distance")
 	check_approx(b.view_distance(), 0.0, "rays do not stop early")
 	check(not b.julia_enabled(), "no Julia marker off the Mandelbox")

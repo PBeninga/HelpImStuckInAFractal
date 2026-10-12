@@ -10,7 +10,7 @@ const RAYS := 40
 const HIT := 1e-4   # the hit threshold, x max(t, 1)
 
 
-func _march(p: FractalParams, ro: Vector3, rd: Vector3, frac: float, tmax: float) -> Array:
+func _march(p: ShapeParams, ro: Vector3, rd: Vector3, frac: float, tmax: float) -> Array:
 	var t := 0.0
 	var steps := []
 	for i in 3000:
@@ -25,7 +25,7 @@ func _march(p: FractalParams, ro: Vector3, rd: Vector3, frac: float, tmax: float
 	return [INF, steps]
 
 
-func _safe(label: String, p: FractalParams, radius: float) -> void:
+func _safe(label: String, p: ShapeParams, radius: float) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var hits := 0
@@ -48,35 +48,35 @@ func _safe(label: String, p: FractalParams, radius: float) -> void:
 
 
 func run() -> void:
-	_safe("Mandelbox", FractalParams.new(), 4.0)
-	var p := FractalParams.new(); p.fold_shape = MandelboxShape.FoldShape.CYLINDER
+	_safe("Mandelbox", ShapeParams.new(), 4.0)
+	var p := ShapeParams.new(); p.fold_shape = MandelboxShape.FoldShape.CYLINDER
 	_safe("cylinder fold", p, 4.0)
-	p = FractalParams.new(); p.fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
+	p = ShapeParams.new(); p.fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
 	_safe("octahedral fold", p, 4.0)
 	for c in [[1, 0.5], [2, 0.75], [3, 1.0]]:
-		p = FractalParams.new(); p.hybrid_every = c[0]; p.hybrid_mix = c[1]
+		p = ShapeParams.new(); p.hybrid_every = c[0]; p.hybrid_mix = c[1]
 		_safe("hybrid every %d mix %s" % c, p, 4.0)
-	p = FractalParams.new(); p.scale_drift = 0.03
+	p = ShapeParams.new(); p.scale_drift = 0.03
 	_safe("scale drift", p, 4.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.KIFS
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.KIFS
 	_safe("Menger", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.KIFS; p.kifs_fold = KifsEstimator.FoldSet.DIAGONAL; p.kifs_scale = 2.0
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.KIFS; p.kifs_fold = KifsEstimator.FoldSet.DIAGONAL; p.kifs_scale = 2.0
 	_safe("Sierpinski", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.KIFS; p.kifs_fold = KifsEstimator.FoldSet.POLYFOLD
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.KIFS; p.kifs_fold = KifsEstimator.FoldSet.POLYFOLD
 	_safe("polyfold", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.KIFS
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.KIFS
 	p.kifs_rot1_xy = 20.0; p.kifs_rot2_yz = 10.0; p.kifs_twist = 5.0
 	_safe("rotated Menger", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.KLEINIAN
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.KLEINIAN
 	_safe("Kleinian", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.MANDELBULB
 	_safe("Mandelbulb", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_power = 3.0
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_power = 3.0
 	_safe("Mandelbulb power 3", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_power = 16.0
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_power = 16.0
 	_safe("Mandelbulb power 16", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.MANDELBULB
 	p.mandelbulb_phase_theta = 40.0; p.mandelbulb_phase_phi = 30.0
 	_safe("phased Mandelbulb", p, 3.0)
-	p = FractalParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_julia = true
+	p = ShapeParams.new(); p.shape = FractalParams.Shape.MANDELBULB; p.mandelbulb_julia = true
 	_safe("Julia Mandelbulb", p, 3.0)

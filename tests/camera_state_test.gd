@@ -31,33 +31,32 @@ func run() -> void:
 	check_eq(fired[0], before, "re-assigning the same values emits nothing")
 	c.transform = c.transform.translated(Vector3(1e-7, 0, 0))
 	check_eq(fired[0], before + 1, "a deep-zoom move of 1e-7 still emits")
-	_eye64()
 
-
-## The 64-bit eye: the doubles are the truth, the transform's origin their rounded shadow.
-func _eye64() -> void:
+	# --- the 64-bit eye: sub-ulp moves accumulate, the mirror follows ---
 	var d := CameraState.make_default()
-	var e0 := d.eye64()
-	check_eq(e0.size(), 3, "eye64() has three entries")
-	check(Vector3(e0[0], e0[1], e0[2]) == d.eye(), "the default eye's doubles are its 32-bit origin")
-	check_eq(d.transform, Transform3D(Basis.IDENTITY, CameraState.DEFAULT_EYE).looking_at(Vector3.ZERO, Vector3(0, 0, 1)),
-		"make_default is unchanged")
-	var emits := [0]
-	d.changed.connect(func(): emits[0] += 1)
-	var x := 1.9600000012345678
-	d.set_eye64(x, 0.914, 0.787)
-	check_eq(emits[0], 1, "set_eye64 emits changed")
-	check_eq(d.eye64()[0], x, "and keeps the double exactly")
-	check(d.eye() == Vector3(x, 0.914, 0.787), "eye() is the rounded shadow")
-	d.set_eye64(x + 1e-12, 0.914, 0.787)
-	check_eq(d.eye64()[0], x + 1e-12, "a 1e-12 move round-trips")
-	check(d.eye() == Vector3(x, 0.914, 0.787), "under the same 32-bit shadow")
-	check_eq(emits[0], 2, "and still emits: the doubles moved")
-	d.set_eye64(x + 1e-12, 0.914, 0.787)
-	check_eq(emits[0], 2, "the same doubles emit nothing")
-	# re-basing at the shadow origin (FlyCamera._set_forward) keeps the doubles
+	check(absf(d.eye_x() - 8.175847) < 1e-6 and absf(d.eye_z() - 3.283393) < 1e-6, "the 64-bit eye starts at the default")
+	var moves := [0]
+	d.changed.connect(func(): moves[0] += 1)
+	var x0 := d.eye_x()
+	for i in 1000:
+		d.move_by(Vector3(1e-9, 0, 0))   # each step is below float32's resolution at 8
+	check(absf(d.eye_x() - (x0 + 1e-6)) < 1e-12, "1000 moves of 1e-9 accumulate to 1e-6 in 64-bit (%s)" % (d.eye_x() - x0))
+	check_eq(moves[0], 1000, "every sub-ulp move still emits changed")
+	check(absf(d.eye().x - d.eye_x()) < 1e-5, "the 32-bit mirror tracks it (%s)" % d.eye().x)
+	d.set_eye(1.000000001, 2.0, 3.0)
+	check(absf(d.eye_x() - 1.000000001) < 1e-15, "set_eye keeps the full 64-bit value")
+	check(d.eye().is_equal_approx(Vector3(1, 2, 3)), "and mirrors it into transform.origin")
+	var fwd := d.forward()
+	d.set_basis(Basis.looking_at(Vector3(0, 1, 0), Vector3(0, 0, 1)))
+	check(not d.forward().is_equal_approx(fwd), "set_basis turns the camera")
+	check(absf(d.eye_x() - 1.000000001) < 1e-15, "without touching the 64-bit eye")
+	d.transform = Transform3D(Basis.IDENTITY, Vector3(5, 5, 5))
+	check(absf(d.eye_x() - 5.0) < 1e-12, "assigning a transform makes its origin the eye again")
+	# the deep-zoom names: eye64() is the three doubles, set_eye64() is set_eye()
+	d.set_eye64(1.9600000012345678, 0.914, 0.787)
+	check_eq(d.eye64(), PackedFloat64Array([1.9600000012345678, 0.914, 0.787]), "eye64() returns the doubles exactly")
+	var e64 := d.eye64()
+	d.set_eye64(e64[0] + 1e-12, e64[1], e64[2])
+	check_eq(d.eye64()[0], e64[0] + 1e-12, "a 1e-12 move round-trips under the same 32-bit mirror")
 	d.transform = Transform3D(Basis.IDENTITY, d.eye()).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
-	check_eq(d.eye64()[0], x + 1e-12, "a transform whose origin is the shadow keeps the doubles")
-	# a new origin (orbit camera, Reset camera) replaces them
-	d.transform = Transform3D(d.transform.basis, Vector3(1, 2, 3))
-	check_eq(d.eye64(), PackedFloat64Array([1.0, 2.0, 3.0]), "a new origin replaces the doubles")
+	check_eq(d.eye64()[0], e64[0] + 1e-12, "re-basing at the mirror origin keeps the doubles")

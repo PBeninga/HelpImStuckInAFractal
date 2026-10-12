@@ -28,19 +28,22 @@ func _chord(keycode: Key) -> InputEventKey:
 
 
 func run() -> void:
-	var table := AttributeTable.new(ShapeCatalogue.specs())
+	var shapes := ShapeList.new()
+	var table := shapes.table(0)
+	var look := AttributeTable.new(ShapeCatalogue.scene_specs())
 	var km := Keymap.new()
 	km.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	var console := ConsoleWindow.new()
-	console.setup(table, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
+	console.setup(shapes, look, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	console.open()
 	await frames(1)
 
 	var inspector := console.inspector()
 	var movement := console.movement_pane()
+	check(inspector != null, "the console has an inspector for the first shape")
 
 	# --- sized through UiScale: embedded here, so 1:1 in logical units ---
 	check_eq(console.size, UiScale.px(ConsoleWindow.DEFAULT_SIZE, console), "the console is sized by UiScale")
@@ -50,8 +53,10 @@ func run() -> void:
 	# --- the Shape, Light and Material tabs share the specs out: one row per spec in all ---
 	var light := console.light_inspector()
 	var material := console.material_inspector()
-	check_eq(inspector.row_count() + light.row_count() + material.row_count(), table.specs.size(),
-		"one row per spec across the three inspectors")
+	check_eq(inspector.row_count() + light.row_count() + material.row_count(), ShapeCatalogue.specs().size(),
+		"one row per catalogue spec across the three inspectors")
+	check_eq(inspector.row_count(), table.specs.size(), "the shape's panel has a row per shape spec")
+	check(inspector.row(&"pos_x") != null and inspector.row(&"size") != null, "the Placement rows are on the shape's panel")
 	check(inspector.row(&"box_scale") != null and light.row(&"box_scale") == null and material.row(&"box_scale") == null,
 		"Scale is on the Shape tab")
 	check(light.row(&"light_color") != null and light.row(&"shadows") != null,
@@ -69,7 +74,7 @@ func run() -> void:
 	check(console.view_pane() != null and console.view_pane().get_parent() == console.tabs(), "which is the View pane")
 	check(console.palette_window() != null and material.is_ancestor_of(console.palette_window()),
 		"the palette window heads the Material tab's list")
-	check(console.palette().table() == table, "and edits the console's own table")
+	check(console.palette().table() == look, "and edits the scene's look table")
 
 	# --- a COLOR row's value control is a ColorPickerButton; changing it writes the table ---
 	var lc_row := light.row(&"light_color")
@@ -77,13 +82,15 @@ func run() -> void:
 	check(picker != null, "the Light colour row's value control is a ColorPickerButton")
 	picker.color = Color(0.2, 0.4, 0.6)
 	picker.color_changed.emit(picker.color)
-	check((table.get_default(&"light_color") as Color).is_equal_approx(Color(0.2, 0.4, 0.6, 1.0)),
-		"changing the picker writes the table")
+	check((look.get_default(&"light_color") as Color).is_equal_approx(Color(0.2, 0.4, 0.6, 1.0)),
+		"changing the picker writes the look table")
 
 	# --- the self-similarity line: read-only, at the head of the Shape tab ---
 	var ss := console.self_similarity_label()
-	check(ss != null and inspector.is_ancestor_of(ss), "the self-similarity line is on the Shape tab")
-	check(ss != null and ss.get_index() == 0, "at the head of its list, above the Box rows")
+	var pane := console.shape_pane()
+	check(ss != null and pane.is_ancestor_of(ss), "the self-similarity line is on the Shape tab")
+	check(ss != null and ss.get_parent() == pane.add_button().get_parent() and not pane.scroll_container().is_ancestor_of(ss),
+		"beside the Add shape button, above the list of shapes")
 	check(ss != null and ss.tooltip_text.contains("self-similar"), "with a tooltip saying what it means")
 	console.show_self_similarity({"qualifies": true, "reason": "Julia: all four c fixed"})
 	check_eq(ss.text, "Self-similar: yes (Julia: all four c fixed)", "a qualifying shape reads yes, with the reason")
@@ -111,10 +118,71 @@ func run() -> void:
 	src.select(2)                       # Axis A
 	src.item_selected.emit(2)
 	check_eq(table.binding(&"box_scale").source, &"a", "selecting a source writes the binding")
-	console.set_resolved({&"box_scale": -1.59})
+	console.set_resolved([{&"box_scale": -1.59}])
 	await frames(1)
 	check(inspector.row(&"box_scale").readout().visible, "an active binding shows a readout")
 	check(inspector.row(&"box_scale").readout().text.contains("-1.59"), "the readout shows the resolved value")
+	var lb := Binding.new(); lb.source = &"a"; lb.gain = 1.0
+	look.set_binding(&"exposure", lb)
+	console.set_resolved([{&"box_scale": -1.59}], {&"exposure": 1.7})
+	await frames(1)
+	check(light.row(&"exposure").readout().visible and light.row(&"exposure").readout().text.contains("1.7"),
+		"the look's readouts follow the look values")
+	look.set_binding(&"exposure", Binding.new())
+
+	# --- the Shape pane: one entry per shape; Add shape appends, selects and
+	# expands; the arrow collapses; ✕ removes (never the last); a relabel
+	# reaches the list; a load rebuilds the entries ---
+	check_eq(pane.entry_count(), 1, "one entry for one shape")
+	check(pane.is_expanded(0), "the first entry starts expanded")
+	check(pane.entry_widgets(0)["remove"].disabled, "its ✕ is disabled while it is the only shape")
+	pane.add_button().pressed.emit()
+	await frames(1)
+	check_eq(shapes.count(), 2, "Add shape adds a shape to the list")
+	check_eq(pane.entry_count(), 2, "and an entry")
+	check_eq(pane.selected(), 1, "the new shape is selected")
+	check(pane.is_expanded(1), "and expanded")
+	check(console.inspector() == pane.inspector(1), "inspector() is the selected shape's panel")
+	check_eq(console.inspector().row_count(), table.specs.size(), "with a row per spec")
+	check(not pane.entry_widgets(0)["remove"].disabled, "both ✕ are enabled now")
+	var chosen := [-1]
+	pane.selected_changed.connect(func(i: int): chosen[0] = i)
+	pane.entry_widgets(1)["arrow"].pressed.emit()
+	check(not pane.is_expanded(1), "the arrow collapses the entry")
+	check(not pane.inspector(1).visible, "hiding its panel")
+	pane.entry_widgets(1)["arrow"].pressed.emit()
+	check(pane.is_expanded(1) and pane.inspector(1).visible, "and expands it again")
+	pane.select(0)
+	check_eq(chosen[0], 0, "select() emits selected_changed")
+	check(console.inspector() == pane.inspector(0), "and inspector() follows")
+	(pane.entry_widgets(1)["label"] as LineEdit).text = "Inner"
+	(pane.entry_widgets(1)["label"] as LineEdit).text_submitted.emit("Inner")
+	await frames(1)
+	check_eq(shapes.label(1), "Inner", "typing a label and Enter renames the shape")
+	check_eq((pane.entry_widgets(1)["label"] as LineEdit).text, "Inner", "and the entry shows it")
+	var panel_before := pane.inspector(1)
+	shapes.set_label(1, "Core")
+	check_eq((pane.entry_widgets(1)["label"] as LineEdit).text, "Core", "a relabel from the list reaches the entry")
+	check(pane.inspector(1) == panel_before and is_instance_valid(panel_before), "without rebuilding the panels")
+	console.set_resolved([{&"box_scale": -1.59}, {&"box_scale": 0.4}])
+	pane.entry_widgets(1)["remove"].pressed.emit()
+	await frames(1)
+	check_eq(shapes.count(), 1, "✕ removes the shape")
+	check_eq(pane.entry_count(), 1, "and its entry")
+	check(pane.entry_widgets(0)["remove"].disabled, "the last ✕ is disabled again")
+	shapes.apply_dict([{"label": "A", "defaults": {}, "bindings": {}}, {"label": "B", "defaults": {"size": 0.1}, "bindings": {}}, {"label": "C", "defaults": {}, "bindings": {}}])
+	await frames(1)
+	check_eq(pane.entry_count(), 3, "a loaded list rebuilds the entries")
+	check_eq((pane.entry_widgets(2)["label"] as LineEdit).text, "C", "with their labels")
+	check_approx(pane.inspector(1).row(&"size").spin_box().value, 0.1, "and their values", 1e-9)
+	check_eq(pane.inspector(1).row(&"box_scale").source_option().item_count, km.axes().list().size() + 2,
+		"every panel lists the sources (None, Time, the axes)")
+	shapes.apply_dict([{"label": "Only", "defaults": {}, "bindings": {}}])
+	await frames(1)
+	check_eq(pane.entry_count(), 1, "and shrinks back on a one-shape load")
+	inspector = console.inspector()   # the panels were rebuilt by the loads
+	src = inspector.row(&"box_scale").source_option()
+	table = shapes.table(0)
 
 	# --- Movement pane: the zoom limit readout shows while set, hidden otherwise ---
 	check(movement.zoom_label != null and not movement.zoom_label.visible, "the zoom limit readout starts hidden")
@@ -127,6 +195,7 @@ func run() -> void:
 	# --- Movement pane: the keymap-file strip is gone (keys travel in the level) ---
 	check_eq(movement.get_node_or_null("KeymapFiles"), null, "the Movement pane has no keymap file panel")
 	check(not (&"save_button" in movement), "and no Save keymap button")
+
 	# --- Movement pane: "deep N" (the records in use) while the march is perturbed, hidden at 0 ---
 	check(movement.deep_label != null and not movement.deep_label.visible, "the deep readout starts hidden")
 	console.show_deep(14)

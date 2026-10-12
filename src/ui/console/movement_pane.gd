@@ -4,8 +4,7 @@ extends VBoxContainer
 ## a "0" button, speed, two key-capture buttons and a remove button), an "Add
 ## axis" button, the clock readout and the fly camera's speed-factor readout
 ## (with "zoom limit" beside it while the camera is held at the zoom floor, and
-## "deep N" while the renderer is perturbing)
-## beside a Reset camera button. The keys and axes have no file of their own any
+## "deep N" while the renderer is perturbing) beside a Reset camera button. The keys and axes have no file of their own any
 ## more — they are saved inside the level (the View tab's Save level…). It is a
 ## view over Keymap: it writes through the rebind API and refreshes on
 ## `Keymap.changed`.

@@ -1,36 +1,45 @@
 shader_type canvas_item;
-// The fractal raymarcher: the Mandelbox (written from the design spec's
-// algorithm; nothing is copied from icefractal.com), and through `shape` the
-// KIFS, Kleinian and Mandelbulb of kifs.gdshaderinc, kleinian.gdshaderinc and
-// mandelbulb.gdshaderinc. All float
-// math is highp (WebGL 2 => float32), which is Godot's canvas_item default.
+// The fractal raymarcher for a SCENE of up to MAX_SHAPES shapes: each a
+// Mandelbox (written from the design spec's algorithm; nothing is copied from
+// icefractal.com) or, through its `shape` entry, the KIFS, Kleinian or
+// Mandelbulb of kifs.gdshaderinc, kleinian.gdshaderinc and
+// mandelbulb.gdshaderinc. All float math is highp (WebGL 2 => float32), which
+// is Godot's canvas_item default.
 //
-// One Mandelbox iteration (mb_step) runs for both de() and field(): the fold
-// (box, cylinder or octahedral, or the box-to-abs hybrid fold),
-// sphere fold, optional per-iteration 4D rotation, scale (drifting with the
-// iteration) and add. Each shape uniform is named exactly as its catalogue id
-// (src/fractal/shape_catalogue.gd), so the uniform set equals
-// ShapeCatalogue.catalogue_ids() plus the renderer's own camera uniforms.
-// Past the 32-bit floor the march runs perturbed (perturbation.gdshaderinc); with
-// pert_iters 0 every path is exactly the direct one.
+// Every per-shape knob is a uniform ARRAY named exactly as its catalogue id
+// (src/fractal/shape_catalogue.gd), indexed by shape, so the uniform set equals
+// ShapeCatalogue.shader_ids() plus the scene's look uniforms (scene_ids(),
+// scalars) plus the renderer's own. One Mandelbox iteration (mb_step) runs for
+// both de() and field(): the fold (box, cylinder or octahedral, or the
+// box-to-abs hybrid fold), sphere fold, optional per-iteration 4D rotation,
+// scale (drifting with the iteration) and add.
+//
+// Each shape is evaluated in its OWN frame. The CPU (FractalView._push_frames,
+// in 64-bit) hands the shader the eye already mapped into every frame
+// (local_eye) and the frame's axes in world space (frame_x/y/z); a point at a
+// world offset `off` from the eye is then local_eye + Rᵀoff / size, so the
+// numbers a fold sees are O(1) whatever the shape's size or distance from the
+// origin. Forming eye + dir · t in world space and subtracting the shape's
+// position here would lose a nested shape to float32 cancellation.
+//
+// Past the 32-bit floor the shape the camera is nearest marches perturbed
+// (perturbation.gdshaderinc), in its own frame; with pert_iters 0 every path is
+// exactly the direct one.
 
-uniform vec3 eye;
+const int MAX_SHAPES = 8;
+
+uniform vec3 eye;             // world; only the probe dot reads it
 uniform vec3 cam_right;
 uniform vec3 cam_up;
 uniform vec3 cam_forward;
 uniform float tan_half_fov;
 uniform float aspect;
-uniform float box_half;
 // Level of detail with distance (see hit_eps) and the step budget.
 uniform float detail_range;
 uniform float detail_falloff;
 uniform float near_dist;
 uniform int coarse_steps;
 uniform int fine_steps;
-// The coarse pass's iteration count, 16..32: more as the camera nears the
-// surface, so the smoother surface it marches toward stays within its hit
-// threshold of the real one (FractalParams.coarse_iters). 16 at the default view.
-uniform int coarse_iters;
 // The self-shadow march's step budget (0 = no shadow ray). The view pushes it
 // from FractalParams.SHADOW_STEPS through the load-shed ladder, so it has no
 // default here: an unpushed frame casts no shadow, like the site.
@@ -46,6 +55,10 @@ uniform float nf_weight;
 uniform float fog_dist;
 uniform vec3 fog_color;
 uniform float fog_clear;
+// How far from the eye a ray may go before it stops, world units, 0 for no
+// limit: the smallest View distance among the scene's Kleinians
+// (FractalParams.scene_view_distance).
+uniform float view_limit;
 // The centre-ray probe: a dot painted on the surface where the ray through the
 // middle of the screen hits (CenterRay, marched on the CPU). Off when the probe
 // is hidden or the ray misses.
@@ -53,38 +66,53 @@ uniform bool probe_on;
 uniform vec3 probe_point;
 uniform float probe_radius;
 
-// --- shape uniforms (names == catalogue ids) ---
-uniform int shape;            // 0 Mandelbox, 1 KIFS, 2 Kleinian, 3 Mandelbulb
-uniform float box_scale;
-uniform float fold_limit;
-uniform float min_radius;
-uniform float fixed_radius;
-uniform int fold_order;       // 0 box -> sphere, 1 sphere -> box
-uniform int fold_shape;       // 0 box, 1 cylinder, 2 octahedral
-uniform float hybrid_mix;     // 0 off; box fold -> abs fold on hybrid iterations
-uniform int hybrid_every;     // the hybrid iterations: i % every == every - 1
-uniform float scale_drift;    // iteration i scales by box_scale + scale_drift * i
-uniform float w;              // the sample point's fourth coordinate
+// --- the shapes' frames (CPU, 64-bit; see FractalView._push_frames) ---
+uniform int shape_count;
+uniform vec3 local_eye[MAX_SHAPES];    // the eye in each shape's frame (already / size)
+uniform vec3 frame_x[MAX_SHAPES];      // the shape's local x axis in world space
+uniform vec3 frame_y[MAX_SHAPES];
+uniform vec3 frame_z[MAX_SHAPES];
+uniform float shape_size[MAX_SHAPES];  // world units per local unit
+uniform float box_half[MAX_SHAPES];    // the cube the march is bounded to (ShapeParams.bound_half)
+// The coarse pass's iteration count per shape, 16..32: more as the camera
+// nears the surface, so the smoother surface it marches toward stays within
+// its hit threshold of the real one (ShapeParams.coarse_iters). 16 at the
+// default view.
+uniform int coarse_iters[MAX_SHAPES];
 
-uniform bool julia_all;
-uniform bool julia_0;
-uniform bool julia_1;
-uniform bool julia_2;
-uniform bool julia_3;
-uniform float c_0;
-uniform float c_1;
-uniform float c_2;
-uniform float c_3;
+// --- per-shape uniforms (names == catalogue ids, one entry per shape) ---
+uniform int shape[MAX_SHAPES];            // 0 Mandelbox, 1 KIFS, 2 Kleinian, 3 Mandelbulb
+uniform float w[MAX_SHAPES];              // the sample point's fourth coordinate
+uniform float box_scale[MAX_SHAPES];
+uniform float fold_limit[MAX_SHAPES];
+uniform float min_radius[MAX_SHAPES];
+uniform float fixed_radius[MAX_SHAPES];
+uniform int fold_order[MAX_SHAPES];       // 0 box -> sphere, 1 sphere -> box
+uniform int fold_shape[MAX_SHAPES];       // 0 box, 1 cylinder, 2 octahedral
+uniform float hybrid_mix[MAX_SHAPES];     // 0 off; box fold -> abs fold on hybrid iterations
+uniform int hybrid_every[MAX_SHAPES];     // the hybrid iterations: i % every == every - 1
+uniform float scale_drift[MAX_SHAPES];    // iteration i scales by box_scale + scale_drift * i
 
-uniform float iter_rot_xy;
-uniform float iter_rot_xz;
-uniform float iter_rot_xw;
-uniform float iter_rot_yz;
-uniform float iter_rot_yw;
-uniform float iter_rot_zw;
+uniform int julia_all[MAX_SHAPES];        // the toggles are ints: 0 off, 1 on
+uniform int julia_0[MAX_SHAPES];
+uniform int julia_1[MAX_SHAPES];
+uniform int julia_2[MAX_SHAPES];
+uniform int julia_3[MAX_SHAPES];
+uniform float c_0[MAX_SHAPES];
+uniform float c_1[MAX_SHAPES];
+uniform float c_2[MAX_SHAPES];
+uniform float c_3[MAX_SHAPES];
 
-uniform float precision;
+uniform float iter_rot_xy[MAX_SHAPES];
+uniform float iter_rot_xz[MAX_SHAPES];
+uniform float iter_rot_xw[MAX_SHAPES];
+uniform float iter_rot_yz[MAX_SHAPES];
+uniform float iter_rot_yw[MAX_SHAPES];
+uniform float iter_rot_zw[MAX_SHAPES];
 
+uniform float precision[MAX_SHAPES];
+
+// --- the scene's look (names == catalogue ids) ---
 uniform int color_mode;
 uniform int palette_source = 0;   // 0 steps, 1 radius, 2 normal
 uniform float palette_frequency = 1.0;
@@ -140,12 +168,13 @@ const bool noise_texture_on = false;
 const bool noise_bump_on = false;
 // NOISE:END
 
-// The hit threshold at ray distance t: the pixel cone precision * t (detail is
-// folded into `precision` on the CPU, so the defaults are bit-for-bit the plain
-// cone), coarsened by (t / start)^falloff past start = detail_range x the
-// camera's distance to the nearest surface. Mirrors FractalParams.hit_epsilon.
-float hit_eps(float t) {
-	float e = precision * t;
+// The hit threshold at ray distance t for a shape of precision `prec`: the
+// pixel cone prec * t (detail is folded into each `precision` entry on the
+// CPU, so the defaults are bit-for-bit the plain cone), coarsened by
+// (t / start)^falloff past start = detail_range x the camera's distance to the
+// nearest surface. Mirrors FractalParams.hit_epsilon.
+float hit_eps(float t, float prec) {
+	float e = prec * t;
 	float start = detail_range * near_dist;
 	if (detail_falloff > 0.0 && t > start) {
 		e *= pow(t / start, detail_falloff);
@@ -173,17 +202,44 @@ vec3 probe_dot(vec3 col, vec3 v) {
 	return mix(dot_col, col, smoothstep(0.85, 1.0, r));
 }
 
+// A world direction in shape s's frame: Rᵀ d (unit length stays unit).
+vec3 local_dir(int s, vec3 d) {
+	return vec3(dot(d, frame_x[s]), dot(d, frame_y[s]), dot(d, frame_z[s]));
+}
+
+// A local direction back in the world: R d.
+vec3 world_dir(int s, vec3 d) {
+	return frame_x[s] * d.x + frame_y[s] * d.y + frame_z[s] * d.z;
+}
+
+// The point a world offset `off` from the eye, in shape s's frame.
+vec3 local_offset_point(int s, vec3 off) {
+	return local_eye[s] + local_dir(s, off) / shape_size[s];
+}
+
+// The point at world ray distance t, in shape s's frame.
+vec3 local_point(int s, vec3 dir, float t) {
+	return local_offset_point(s, dir * t);
+}
+
+// Distance from a local point to shape s's cube (0 inside): a cheap lower
+// bound on the shape's distance, used to skip shapes that cannot be nearest.
+float cube_dist(vec3 q, float half_size) {
+	vec3 d = max(abs(q) - vec3(half_size), vec3(0.0));
+	return length(d);
+}
+
 // Reflect every component that leaves [-L, L] back inside.
-vec4 mb_box_fold(vec4 p) {
-	return clamp(p, -fold_limit, fold_limit) * 2.0 - p;
+vec4 mb_box_fold(int s, vec4 p) {
+	return clamp(p, -fold_limit[s], fold_limit[s]) * 2.0 - p;
 }
 
 // Inflate the inner sphere, invert the shell between the two radii, and carry
 // the same factor into the running derivative.
-void mb_sphere_fold(inout vec4 p, inout float dr) {
+void mb_sphere_fold(int s, inout vec4 p, inout float dr) {
 	float r2 = dot(p, p);
-	float mr2 = max(min_radius * min_radius, 1e-12);
-	float fr2 = max(fixed_radius * fixed_radius, 1e-12);
+	float mr2 = max(min_radius[s] * min_radius[s], 1e-12);
+	float fr2 = max(fixed_radius[s] * fixed_radius[s], 1e-12);
 	if (r2 < mr2) {
 		float f = fr2 / mr2;
 		p *= f;
@@ -217,10 +273,11 @@ vec4 mb_rot_plane(vec4 p, int a, int b, float deg) {
 
 // Reflect the xy pair through the circle of radius L (r -> 2L - r outside it);
 // z and w get the plain box fold.
-vec4 mb_cylinder_fold(vec4 p) {
+vec4 mb_cylinder_fold(int s, vec4 p) {
+	float L = fold_limit[s];
 	float r = length(p.xy);
-	if (r > fold_limit) { p.xy *= (2.0 * fold_limit - r) / r; }
-	p.zw = clamp(p.zw, -fold_limit, fold_limit) * 2.0 - p.zw;
+	if (r > L) { p.xy *= (2.0 * L - r) / r; }
+	p.zw = clamp(p.zw, -L, L) * 2.0 - p.zw;
 	return p;
 }
 
@@ -228,8 +285,9 @@ vec4 mb_cylinder_fold(vec4 p) {
 // point minus the point (the box fold is the same rule for the cube). The
 // nearest point soft-thresholds every |component| by the theta that lands it on
 // the surface. w gets the plain box fold.
-vec4 mb_octahedral_fold(vec4 p) {
-	float lim = max(fold_limit, 0.0);
+vec4 mb_octahedral_fold(int s, vec4 p) {
+	float L = fold_limit[s];
+	float lim = max(L, 0.0);
 	vec3 a = abs(p.xyz);
 	float sum = a.x + a.y + a.z;
 	if (sum > lim) {
@@ -245,7 +303,7 @@ vec4 mb_octahedral_fold(vec4 p) {
 		}
 		p.xyz = 2.0 * sign(p.xyz) * max(a - theta, 0.0) - p.xyz;
 	}
-	p.w = clamp(p.w, -fold_limit, fold_limit) * 2.0 - p.w;
+	p.w = clamp(p.w, -L, L) * 2.0 - p.w;
 	return p;
 }
 
@@ -261,69 +319,73 @@ vec4 menger_fold(vec4 p) {
 // The hybrid fold: reflect each component through [lo, hi], sliding from the
 // box fold's [-L, L] at mix 0 to [0, infinity) at mix 1, the abs fold. (Mixing
 // the two folds' results would cancel far out; see DistanceEstimator.)
-vec4 mb_hybrid_fold(vec4 p) {
-	float lo = -fold_limit * (1.0 - hybrid_mix);
-	float hi = (fold_limit + hybrid_mix) / max(1.0 - hybrid_mix, 1e-6);
+vec4 mb_hybrid_fold(int s, vec4 p) {
+	float L = fold_limit[s];
+	float mix_ = hybrid_mix[s];
+	float lo = -L * (1.0 - mix_);
+	float hi = (L + mix_) / max(1.0 - mix_, 1e-6);
 	return clamp(p, vec4(lo), vec4(hi)) * 2.0 - p;
 }
 
 // The fold step of iteration i: the chosen fold, or the hybrid fold on a
 // hybrid iteration. Each reflects through a convex set's boundary, so each is
 // 1-Lipschitz and the running derivative needs no factor.
-vec4 mb_fold(vec4 p, int i) {
-	if (hybrid_mix > 0.0) {
-		int every = max(hybrid_every, 1);
-		if (i % every == every - 1) { return mb_hybrid_fold(p); }
+vec4 mb_fold(int s, vec4 p, int i) {
+	if (hybrid_mix[s] > 0.0) {
+		int every = max(hybrid_every[s], 1);
+		if (i % every == every - 1) { return mb_hybrid_fold(s, p); }
 	}
-	if (fold_shape == 1) { return mb_cylinder_fold(p); }
-	if (fold_shape == 2) { return mb_octahedral_fold(p); }
-	return mb_box_fold(p);
+	if (fold_shape[s] == 1) { return mb_cylinder_fold(s, p); }
+	if (fold_shape[s] == 2) { return mb_octahedral_fold(s, p); }
+	return mb_box_fold(s, p);
 }
 
 // The six per-iteration angles, fixed order xy, xz, xw, yz, yw, zw.
-vec4 mb_iter_rotate(vec4 p) {
-	p = mb_rot_plane(p, 0, 1, iter_rot_xy);
-	p = mb_rot_plane(p, 0, 2, iter_rot_xz);
-	p = mb_rot_plane(p, 0, 3, iter_rot_xw);
-	p = mb_rot_plane(p, 1, 2, iter_rot_yz);
-	p = mb_rot_plane(p, 1, 3, iter_rot_yw);
-	p = mb_rot_plane(p, 2, 3, iter_rot_zw);
+vec4 mb_iter_rotate(int s, vec4 p) {
+	p = mb_rot_plane(p, 0, 1, iter_rot_xy[s]);
+	p = mb_rot_plane(p, 0, 2, iter_rot_xz[s]);
+	p = mb_rot_plane(p, 0, 3, iter_rot_xw[s]);
+	p = mb_rot_plane(p, 1, 2, iter_rot_yz[s]);
+	p = mb_rot_plane(p, 1, 3, iter_rot_yw[s]);
+	p = mb_rot_plane(p, 2, 3, iter_rot_zw[s]);
 	return p;
 }
 
-bool mb_rotating() {
-	return (abs(iter_rot_xy) + abs(iter_rot_xz) + abs(iter_rot_xw)
-		+ abs(iter_rot_yz) + abs(iter_rot_yw) + abs(iter_rot_zw)) > 1e-6;
+bool mb_rotating(int s) {
+	return (abs(iter_rot_xy[s]) + abs(iter_rot_xz[s]) + abs(iter_rot_xw[s])
+		+ abs(iter_rot_yz[s]) + abs(iter_rot_yw[s]) + abs(iter_rot_zw[s])) > 1e-6;
 }
 
-// Iteration i of the Mandelbox on the 4D orbit point z with running
+// Iteration i of shape s's Mandelbox on the 4D orbit point z with running
 // derivative dz.
-void mb_step(inout vec4 z, inout float dz, vec4 c, bool rotating, int i) {
-	if (fold_order == 0) { z = mb_fold(z, i); mb_sphere_fold(z, dz); }
-	else                 { mb_sphere_fold(z, dz); z = mb_fold(z, i); }
-	if (rotating) { z = mb_iter_rotate(z); }
-	float s = box_scale + scale_drift * float(i);
-	z = s * z + c;
-	dz = dz * abs(s) + 1.0;
+void mb_step(int s, inout vec4 z, inout float dz, vec4 c, bool rotating, int i) {
+	if (fold_order[s] == 0) { z = mb_fold(s, z, i); mb_sphere_fold(s, z, dz); }
+	else                    { mb_sphere_fold(s, z, dz); z = mb_fold(s, z, i); }
+	if (rotating) { z = mb_iter_rotate(s, z); }
+	float sc = box_scale[s] + scale_drift[s] * float(i);
+	z = sc * z + c;
+	dz = dz * abs(sc) + 1.0;
 }
 
 // Per component: the Julia constant where it is checked, the point's own
 // coordinate where it is not.
-vec4 mb_constant(vec4 z0) {
+vec4 mb_constant(int s, vec4 z0) {
+	bool all = julia_all[s] != 0;
 	return vec4(
-		(julia_all || julia_0) ? c_0 : z0.x,
-		(julia_all || julia_1) ? c_1 : z0.y,
-		(julia_all || julia_2) ? c_2 : z0.z,
-		(julia_all || julia_3) ? c_3 : z0.w);
+		(all || julia_0[s] != 0) ? c_0[s] : z0.x,
+		(all || julia_1[s] != 0) ? c_1[s] : z0.y,
+		(all || julia_2[s] != 0) ? c_2[s] : z0.z,
+		(all || julia_3[s] != 0) ? c_3[s] : z0.w);
 }
 
-// Iterations first..iters-1 of the Mandelbox orbit: the direct de() runs them all
-// from 0 (exactly the loop it always ran), the perturbed de_pert() from its handoff.
-void mb_orbit(inout vec4 z, inout float dz, vec4 c, int first, int iters) {
-	bool rotating = mb_rotating();
+// Iterations first..iters-1 of shape s's Mandelbox orbit: the direct de() runs
+// them all from 0 (exactly the loop it always ran), the perturbed de_pert() from
+// its handoff.
+void mb_orbit(int s, inout vec4 z, inout float dz, vec4 c, int first, int iters) {
+	bool rotating = mb_rotating(s);
 	for (int i = first; i < 32; i++) {
 		if (i >= iters) { break; }
-		mb_step(z, dz, c, rotating, i);
+		mb_step(s, z, dz, c, rotating, i);
 	}
 }
 
@@ -331,67 +393,96 @@ void mb_orbit(inout vec4 z, inout float dz, vec4 c, int first, int iters) {
 #include "res://src/fractal/kleinian.gdshaderinc"
 #include "res://src/fractal/mandelbulb.gdshaderinc"
 
-// The Kleinian's rays stop at its View distance (0: no limit for the others).
-float view_limit() {
-	return shape == 2 ? kleinian_view_distance : 0.0;
-}
-
 // How far past the start of the view distance's horizon a hit at t is: 0 clear,
 // 1 at the limit, where it has faded fully into the background.
 float view_fade(float t) {
-	float vd = view_limit();
-	if (vd <= 0.0) { return 0.0; }
-	return smoothstep(0.67 * vd, vd, t);
+	if (view_limit <= 0.0) { return 0.0; }
+	return smoothstep(0.67 * view_limit, view_limit, t);
 }
 
-// The distance estimate for the shape being drawn, up to `iters` iterations
-// (<= 32). The Mandelbox's is below; DistanceEstimator is the CPU copy.
-float de(vec3 p, int iters) {
-	if (shape == 1) { return kifs_de(vec4(p, w), iters) + noise_displace(p); }
-	if (shape == 2) { return kleinian_de(vec4(p, w), iters) + noise_displace(p); }
-	if (shape == 3) { return mandelbulb_de(p, iters) + noise_displace(p); }
-	vec4 z0 = vec4(p, w);
-	vec4 c = mb_constant(z0);
+// Shape s's distance estimate at a point p in its own frame, up to `iters`
+// iterations (<= 32), in local units. The Mandelbox's is below;
+// DistanceEstimator is the CPU copy.
+float de(int s, vec3 p, int iters) {
+	int kind = shape[s];
+	if (kind == 1) { return kifs_de(s, vec4(p, w[s]), iters) + noise_displace(p); }
+	if (kind == 2) { return kleinian_de(s, vec4(p, w[s]), iters) + noise_displace(p); }
+	if (kind == 3) { return mandelbulb_de(s, p, iters) + noise_displace(p); }
+	vec4 z0 = vec4(p, w[s]);
+	vec4 c = mb_constant(s, z0);
 	vec4 z = z0;
 	float dz = 1.0;
-	mb_orbit(z, dz, c, 0, iters);
+	mb_orbit(s, z, dz, c, 0, iters);
 	return length(z) / abs(dz) + noise_displace(p);
 }
 
-// The "Ice Fractal" field: a 16-iteration Mandelbox orbit from z=0, c=(q, w),
-// no derivative, offset by -8. Not a true distance; its gradient gives the look.
-float field(vec3 q) {
+#include "res://src/fractal/perturbation.gdshaderinc"
+
+// The scene distance at a world offset `off` from the eye, in world units:
+// the smallest shape distance, each evaluated in its own frame and scaled back
+// by its size, with the coarse pass's iteration count per shape when `coarse`
+// (32 otherwise). `which` is the shape that gave it. A shape whose cube is
+// further away than the best so far cannot be nearest and is skipped (its true
+// distance is at least that far, so the step stays safe).
+float de_scene(vec3 off, bool coarse, out int which) {
+	float best = 1e30;
+	which = 0;
+	for (int i = 0; i < MAX_SHAPES; i++) {
+		if (i >= shape_count) { break; }
+		vec3 q = local_offset_point(i, off);
+		float bound = cube_dist(q, box_half[i]) * shape_size[i];
+		if (bound >= best) { continue; }
+		int iters = coarse ? clamp(coarse_iters[i], 16, 32) : 32;
+		float d = (pert_on(i) ? de_pert(i, pert_offset(i, off), iters) : de(i, q, iters)) * shape_size[i];
+		if (d < best) { best = d; which = i; }
+	}
+	return best;
+}
+
+// The "Ice Fractal" field of shape s: a 16-iteration Mandelbox orbit from z=0,
+// c=(q, w), no derivative, offset by -8. Not a true distance; its gradient
+// gives the look.
+float field(int s, vec3 q) {
 	vec4 z = vec4(0.0);
-	vec4 c = vec4(q, w);
+	vec4 c = vec4(q, w[s]);
 	float dz = 1.0;
-	bool rotating = mb_rotating();
+	bool rotating = mb_rotating(s);
 	for (int i = 0; i < 16; i++) {
-		mb_step(z, dz, c, rotating, i);
+		mb_step(s, z, dz, c, rotating, i);
 	}
 	return length(z) - 8.0 + noise_displace(q);
 }
 
-// Central-difference normal from the high-precision estimator.
-vec3 calc_normal(vec3 v, float delta) {
+// Central-difference normal from the high-precision estimator, in shape s's
+// frame.
+vec3 calc_normal(int s, vec3 v, float delta) {
 	vec2 e = vec2(delta, 0.0);
 	return normalize(vec3(
-		de(v + e.xyy, 32) - de(v - e.xyy, 32),
-		de(v + e.yxy, 32) - de(v - e.yxy, 32),
-		de(v + e.yyx, 32) - de(v - e.yyx, 32)));
+		de(s, v + e.xyy, 32) - de(s, v - e.xyy, 32),
+		de(s, v + e.yxy, 32) - de(s, v - e.yxy, 32),
+		de(s, v + e.yyx, 32) - de(s, v - e.yyx, 32)));
+}
+
+// The true surface normal of shape s at local point v, a world offset `off`
+// from the eye: calc_normal(s, v, delta), or for the perturbed shape the
+// perturbed estimate's (v is then too coarse to difference).
+vec3 true_normal(int s, vec3 v, vec3 off, float delta) {
+	if (pert_on(s)) { return calc_normal_pert(s, pert_offset(s, off), delta); }
+	return calc_normal(s, v, delta);
 }
 
 // The Ice Fractal normal: field at the half-scale base point h = v/2, offset
-// samples at the full-scale point + 0.01. Not a true gradient, by design.
-vec3 calc_nf(vec3 v, vec3 h) {
-	float lw = field(h);
+// samples at the full-scale point + 0.01 (local units). Not a true gradient,
+// by design.
+vec3 calc_nf(int s, vec3 v, vec3 h) {
+	float lw = field(s, h);
 	vec3 g = vec3(
-		field(v + vec3(0.01, 0.0, 0.0)) - lw,
-		field(v + vec3(0.0, 0.01, 0.0)) - lw,
-		field(v + vec3(0.0, 0.0, 0.01)) - lw) / 0.01;
+		field(s, v + vec3(0.01, 0.0, 0.0)) - lw,
+		field(s, v + vec3(0.0, 0.01, 0.0)) - lw,
+		field(s, v + vec3(0.0, 0.0, 0.01)) - lw) / 0.01;
 	return normalize(g);
 }
 
-#include "res://src/fractal/perturbation.gdshaderinc"
 
 // Six-segment rainbow ramp: red->yellow->green->cyan->blue->magenta->red.
 vec3 hue(float q) {
@@ -458,27 +549,29 @@ vec3 scatter(vec3 col, float t, vec3 dir, vec3 ldir) {
 	return mix(col, haze, clamp(a, 0.0, 1.0));
 }
 
-// A soft self-shadow: march from just off the surface toward the light, up to
-// shadow_steps steps (<= 64), stopping at the cube's far side. A near-hit darkens
-// fully; otherwise the closest approach, scaled by the lamp's angular size, is the
-// penumbra. k widens the penumbra as the lamp widens (light_size); a size-0 lamp
-// is near-hard. Costs one extra ray per pixel; skipped when shadow_steps is 0.
-// off is the hit's offset from the eye (dir * total): while the march is perturbed
-// the shadow ray's estimates go through march_de, so they keep their precision
-// at depth instead of being formed from the 32-bit point v.
-float soft_shadow(vec3 v, vec3 off, vec3 n, vec3 ldir, float total) {
-	float eps0 = hit_eps(total);
-	vec3 lift = n * 4.0 * eps0;
-	vec3 ro = v + lift;
-	vec3 oo = off + lift;
-	float far = box_intersect(ro, ldir, box_half).y;
+// A soft self-shadow for a hit on shape s at world ray distance `total` along
+// `dir`: march from just off the surface toward the light (`ldir`, world), up
+// to shadow_steps steps (<= 64), stopping at the hit shape's cube's far side,
+// against the whole scene. A near-hit darkens fully; otherwise the closest
+// approach, scaled by the lamp's angular size, is the penumbra. k widens the
+// penumbra as the lamp widens (light_size); a size-0 lamp is near-hard. Costs
+// one extra ray per pixel; skipped when shadow_steps is 0. The world offset
+// from the eye (dir · total + the normal lift + ldir · t) is what every shape
+// maps into its own frame, so the hit shape's numbers stay O(1); and since it
+// goes through de_scene, the perturbed shape's estimates are the perturbed ones,
+// which keep their precision at depth (de from the 32-bit point would be noise).
+float soft_shadow(int s, vec3 n_world, vec3 dir, vec3 ldir, float total) {
+	float eps0 = hit_eps(total, precision[s]);
+	vec3 lift = dir * total + n_world * 4.0 * eps0;
+	vec3 ro_local = local_offset_point(s, lift);
+	float far = box_intersect(ro_local, local_dir(s, ldir), box_half[s]).y * shape_size[s];
 	float k = 1.0 / tan(max(radians(light_size), radians(0.5)));
-	int n_coarse = clamp(coarse_iters, 16, 32);
 	float res = 1.0;
 	float t = eps0;
+	int which = 0;
 	for (int i = 0; i < 64; i++) {
 		if (i >= shadow_steps) { break; }
-		float d = march_de(ro + ldir * t, oo + ldir * t, n_coarse);
+		float d = de_scene(lift + ldir * t, true, which);
 		if (d < eps0) { return 0.0; }
 		res = min(res, k * d / t);
 		t += d * noise_step_scale();
@@ -506,29 +599,40 @@ void fragment() {
 	// into it without a seam.
 	if (fog_dist > 0.0) { bg = mix(fog_color, bg, fog_clear); }
 
-	vec2 tb = box_intersect(eye, dir, box_half);
-	if (tb.y < max(tb.x, 0.0)) {
+	// The march covers the union of the shapes' cubes, each met in its own
+	// frame (so a rotated shape's cube is oriented) and mapped back to world
+	// ray distance by its size.
+	float t_start = 1e30;
+	float t_exit = -1.0;
+	for (int i = 0; i < MAX_SHAPES; i++) {
+		if (i >= shape_count) { break; }
+		vec2 tb = box_intersect(local_eye[i], local_dir(i, dir), box_half[i]) * shape_size[i];
+		if (tb.y >= max(tb.x, 0.0)) {
+			t_start = min(t_start, max(tb.x, 0.0));
+			t_exit = max(t_exit, tb.y);
+		}
+	}
+
+	if (t_exit < 0.0) {
 		COLOR = vec4(bg, 1.0);
 	} else {
-		float t_exit = tb.y;
 		if (fog_dist > 0.0 && fog_clear <= 0.0) {
 			t_exit = min(t_exit, fog_dist * near_dist);  // nothing past the fog is marched
 		}
-		if (view_limit() > 0.0) {
-			t_exit = min(t_exit, view_limit());  // nor past the view distance
+		if (view_limit > 0.0) {
+			t_exit = min(t_exit, view_limit);  // nor past the view distance
 		}
-		float total = max(tb.x, 0.0);
+		float total = t_start;
 		bool left_cube = total > t_exit;
+		int which = 0;
 
-		// Phase 1: low precision (N = coarse_iters, 16 at the default view), up to
-		// coarse_steps (<= 384) steps. An unpushed 0 reads as the site's 16.
-		int n_coarse = clamp(coarse_iters, 16, 32);
+		// Phase 1: low precision (N = each shape's coarse_iters, 16 at the
+		// default view), up to coarse_steps (<= 384) steps.
 		int n1 = coarse_steps;
 		for (int i = 0; i < 384; i++) {
 			if (left_cube || i >= coarse_steps) { break; }
-			vec3 pos = eye + dir * total;
-			float d = march_de(pos, dir * total, n_coarse);
-			if (d < hit_eps(total) * 2.0) { n1 = i; break; }
+			float d = de_scene(dir * total, true, which);
+			if (d < hit_eps(total, precision[which]) * 2.0) { n1 = i; break; }
 			total += d * noise_step_scale();
 			if (total > t_exit) { left_cube = true; break; }
 		}
@@ -539,17 +643,16 @@ void fragment() {
 		if (!left_cube) {
 			for (int i = 0; i < 128; i++) {
 				if (i >= fine_steps) { break; }
-				vec3 pos = eye + dir * total;
-				float d = march_de(pos, dir * total, 32);
-				if (d < hit_eps(total)) { n2 = i; break; }
+				float d = de_scene(dir * total, false, which);
+				if (d < hit_eps(total, precision[which])) { n2 = i; break; }
 				total += d * noise_step_scale();
 				if (total > t_exit) { left_cube = true; break; }
 			}
 		}
 
 		if (left_cube) {
-			// The only misses: leaving the cube, the fog or the view distance. The
-			// haze fills the space the ray marched, to its exit (default: no haze).
+			// The only misses: leaving every cube, the fog or the view distance.
+			// The haze fills the space the ray marched, to its exit (default: no haze).
 			float t_scat = min(t_exit, total);
 			COLOR = vec4(scatter(bg, t_scat, dir, sky_ldir), 1.0);
 		} else {
@@ -567,112 +670,125 @@ void fragment() {
 				COLOR = vec4(mix(probe_dot(mix(gcol, fog_color, fog_amount(total)), eye + dir * total),
 					bg, view_fade(total)), 1.0);
 			} else {
-				vec3 v = eye + dir * total;
-			vec3 h = v * 0.5;
-			vec3 eh = eye * 0.5;
-			float delta = hit_eps(total) * 40.0;
+				// Everything below is in the hit shape's own frame: the point, the
+				// eye, the normal and the light, so one shape at the identity
+				// placement shades exactly as the single-shape viewer did. The
+				// camera's axes come into the frame for the light's swing; the
+				// normal and light go back to world for the view-relative modes,
+				// the shadow and the haze.
+				int s = which;
+				vec3 v = local_point(s, dir, total);
+				vec3 h = v * 0.5;
+				vec3 eh = local_eye[s] * 0.5;
+				float delta = hit_eps(total, precision[s]) * 40.0 / shape_size[s];
+				vec3 cam_up_l = local_dir(s, cam_up);
+				vec3 cam_right_l = local_dir(s, cam_right);
 
-			// Normal: NF for modes 1..9 on the Mandelbox outside Julia mode (the NF
-			// field is the Mandelbox's own orbit), N otherwise. Up close NF
-			// crossfades to N by nf_weight; each end computes only its own normal,
-			// so a weight of exactly 1 (the default view) is the site's maths.
-			vec3 n;
-			if (shape == 0 && color_mode >= 1 && color_mode <= 9 && !julia_all) {
-				if (nf_weight >= 1.0) {
-					n = calc_nf(v, h);
-				} else if (nf_weight <= 0.0) {
-					n = true_normal(v, dir * total, delta);
+				// Normal: NF for modes 1..9 on the Mandelbox outside Julia mode (the NF
+				// field is the Mandelbox's own orbit), N otherwise. Up close NF
+				// crossfades to N by nf_weight; each end computes only its own normal,
+				// so a weight of exactly 1 (the default view) is the site's maths.
+				vec3 n;
+				if (shape[s] == 0 && color_mode >= 1 && color_mode <= 9 && julia_all[s] == 0) {
+					if (nf_weight >= 1.0) {
+						n = calc_nf(s, v, h);
+					} else if (nf_weight <= 0.0) {
+						n = true_normal(s, v, dir * total, delta);
+					} else {
+						vec3 nf = calc_nf(s, v, h);
+						vec3 m = mix(true_normal(s, v, dir * total, delta), nf, nf_weight);
+						// The two can point nearly opposite ways (NF is not a gradient);
+						// a blend that cancels to nothing keeps NF rather than a NaN.
+						n = dot(m, m) > 1e-12 ? normalize(m) : nf;
+					}
 				} else {
-					vec3 nf = calc_nf(v, h);
-					vec3 m = mix(true_normal(v, dir * total, delta), nf, nf_weight);
-					// The two can point nearly opposite ways (NF is not a gradient);
-					// a blend that cancels to nothing keeps NF rather than a NaN.
-					n = dot(m, m) > 1e-12 ? normalize(m) : nf;
+					n = true_normal(s, v, dir * total, delta);
 				}
-			} else {
-				n = true_normal(v, dir * total, delta);
-			}
 
-			// Bump: tilt the normal by the across-surface part of noise_bump's
-			// gradient (a fake relief; the surface does not move). A result with
-			// no length (a NaN) keeps the old normal.
-			if (noise_bump_on && bump_strength != 0.0) {
-				vec2 e2 = vec2(delta, 0.0);
-				vec3 g = vec3(
-					noise_bump(v + e2.xyy) - noise_bump(v - e2.xyy),
-					noise_bump(v + e2.yxy) - noise_bump(v - e2.yxy),
-					noise_bump(v + e2.yyx) - noise_bump(v - e2.yyx)) / (2.0 * delta);
-				vec3 m = n - bump_strength * (g - n * dot(n, g));
-				if (dot(m, m) > 1e-12) { n = normalize(m); }
-			}
+				// Bump: tilt the normal by the across-surface part of noise_bump's
+				// gradient (a fake relief; the surface does not move). A result with
+				// no length (a NaN) keeps the old normal.
+				if (noise_bump_on && bump_strength != 0.0) {
+					vec2 e2 = vec2(delta, 0.0);
+					vec3 g = vec3(
+						noise_bump(v + e2.xyy) - noise_bump(v - e2.xyy),
+						noise_bump(v + e2.yxy) - noise_bump(v - e2.yxy),
+						noise_bump(v + e2.yyx) - noise_bump(v - e2.yyx)) / (2.0 * delta);
+					vec3 m = n - bump_strength * (g - n * dot(n, g));
+					if (dot(m, m) > 1e-12) { n = normalize(m); }
+				}
 
-			vec3 ldir = normalize(2.0 * eh - h);
-			bool swung = light_yaw != 0.0 || light_pitch != 0.0;
-			if (swung) {
-				ldir = rotate_about(rotate_about(ldir, cam_up, light_yaw), cam_right, light_pitch);
-			}
-			// Shadow only when the lamp is off the headlight: a headlight's shadow
-			// ray retraces the view ray and would self-shadow the whole surface.
-			float sh = 1.0;
-			if (shadows > 0.0 && shadow_steps > 0 && swung) {
-				sh = mix(1.0, soft_shadow(v, dir * total, n, ldir, total), shadows);
-			}
-			float nl = abs(dot(n, ldir));
-			// The specular exponent from roughness; the lamp's size widens the lobe.
-			// r_eff^2 = roughness^2 + radians(light_size)^2, so size 0 is the site's.
-			// Floored at 0 (r_eff^2 >= 1, a matte surface under a wide light): the
-			// widest lobe is a flat sheen, never a negative power that blows up
-			// at grazing angles (pow(0, neg) is a NaN).
-			float r_eff2 = roughness * roughness + radians(light_size) * radians(light_size);
-			float e = max(0.0, 2.0 / max(r_eff2, 1e-9) - 2.0);
-			float lgt = sh * (light_diffuse * nl + light_specular * pow(nl, e)) + light_ambient;
-			vec3 base = vec3(lgt) * (-n * 0.25 + 0.75) + vec3(0.0, 0.0, 0.2);
+				vec3 ldir = normalize(2.0 * eh - h);
+				bool swung = light_yaw != 0.0 || light_pitch != 0.0;
+				if (swung) {
+					ldir = rotate_about(rotate_about(ldir, cam_up_l, light_yaw), cam_right_l, light_pitch);
+				}
+				vec3 n_world = world_dir(s, n);
+				vec3 ldir_world = world_dir(s, ldir);
+				// Shadow only when the lamp is off the headlight: a headlight's shadow
+				// ray retraces the view ray and would self-shadow the whole surface.
+				float sh = 1.0;
+				if (shadows > 0.0 && shadow_steps > 0 && swung) {
+					sh = mix(1.0, soft_shadow(s, n_world, dir, ldir_world, total), shadows);
+				}
+				float nl = abs(dot(n, ldir));
+				// The specular exponent from roughness; the lamp's size widens the lobe.
+				// r_eff^2 = roughness^2 + radians(light_size)^2, so size 0 is the site's.
+				// Floored at 0 (r_eff^2 >= 1, a matte surface under a wide light): the
+				// widest lobe is a flat sheen, never a negative power that blows up
+				// at grazing angles (pow(0, neg) is a NaN).
+				float r_eff2 = roughness * roughness + radians(light_size) * radians(light_size);
+				float e = max(0.0, 2.0 / max(r_eff2, 1e-9) - 2.0);
+				float lgt = sh * (light_diffuse * nl + light_specular * pow(nl, e)) + light_ambient;
+				vec3 base = vec3(lgt) * (-n * 0.25 + 0.75) + vec3(0.0, 0.0, 0.2);
 
 				vec3 col;
 				if (color_mode == 1) {
-				col = base * vec3(inv + 0.5, 2.0 * inv * inv + 0.5, 5.0 * pow(inv, 4.0) + 0.5);
-			} else if (color_mode == 2) {
-				col = base * vec3(max(lgt * ce, inv), max(ce, inv), max(0.5 * lgt * ce, inv));
-			} else if (color_mode == 3) {
-				float q = dot(h, h) / 4.0;
-				col = hue(q) * ce + 0.5 * lgt;
-			} else if (color_mode == 4) {
-				float q = dot(h, h) / 4.0;
-				col = hue(q) * inv;
-			} else if (color_mode == 8) {
-				float q = n.z * 0.5 + 0.5 - 0.1;
-				col = hue(q) * inv;
-			} else if (color_mode == 5) {
-				float avg = (base.r + base.g + base.b) / 3.0;
-				col = base * vec3(lgt * max(lgt * ce, inv), lgt + avg, inv + lgt);
-			} else if (color_mode == 6) {
-				float avg = (base.r + base.g + base.b) / 3.0;
-				col = base * vec3(lgt * max(lgt * ce, inv), lgt + avg, inv + lgt) + vec3(ce * ce);
-			} else if (color_mode == 7) {
-				float avg = (base.r + base.g + base.b) / 3.0;
-				col = vec3(1.0 - 2.0 * ce * (lgt + 0.5), avg * inv, inv * (lgt + 0.5));
-			} else if (color_mode == 9) {
-				col = vec3(inv * inv, 1.0 - 1.9 * ce * ce, 1.17 - ce * ce);
-			} else if (color_mode == 16) {
-				col = clamp(vec3(inv * inv, 1.0 - 1.9 * ce * ce, 1.17 - ce * ce), 0.0, 1.0) * (lgt + 0.5);
-			} else if (color_mode == 15) {
-				vec3 nv = vec3(dot(n, cam_right), dot(n, cam_up), dot(n, -cam_forward));
-				float lv = pow(max(0.0, nv.z), 4.0);
-				vec3 n2v = normalize(nv + vec3(0.5, 0.5, 0.0));
-				col = (n2v + 1.0) * 0.5 * (lv - 2.0 * ce + 0.5);
-			} else if (color_mode == 14) {
-				vec3 nv = vec3(dot(n, cam_right), dot(n, cam_up), dot(n, -cam_forward));
-				float lv = pow(max(0.0, nv.z), 4.0);
-				col = (0.75 - ce) * 2.0 * vec3(lv, lv * lv, lv * ce);
-			} else if (color_mode == 20) {
-				float src = ce;
-				if (palette_source == 1) { src = dot(h, h) / 4.0; }
-				else if (palette_source == 2) { src = n.z * 0.5 + 0.5; }
-				float pt = fract(src * palette_frequency + palette_offset);
-				col = palette(pt) * (lgt + 0.5) * mix(1.0, inv, palette_occlusion);
-			} else {
-				col = vec3(inv);
-			}
+					col = base * vec3(inv + 0.5, 2.0 * inv * inv + 0.5, 5.0 * pow(inv, 4.0) + 0.5);
+				} else if (color_mode == 2) {
+					col = base * vec3(max(lgt * ce, inv), max(ce, inv), max(0.5 * lgt * ce, inv));
+				} else if (color_mode == 3) {
+					float q = dot(h, h) / 4.0;
+					col = hue(q) * ce + 0.5 * lgt;
+				} else if (color_mode == 4) {
+					float q = dot(h, h) / 4.0;
+					col = hue(q) * inv;
+				} else if (color_mode == 8) {
+					float q = n.z * 0.5 + 0.5 - 0.1;
+					col = hue(q) * inv;
+				} else if (color_mode == 5) {
+					float avg = (base.r + base.g + base.b) / 3.0;
+					col = base * vec3(lgt * max(lgt * ce, inv), lgt + avg, inv + lgt);
+				} else if (color_mode == 6) {
+					float avg = (base.r + base.g + base.b) / 3.0;
+					col = base * vec3(lgt * max(lgt * ce, inv), lgt + avg, inv + lgt) + vec3(ce * ce);
+				} else if (color_mode == 7) {
+					float avg = (base.r + base.g + base.b) / 3.0;
+					col = vec3(1.0 - 2.0 * ce * (lgt + 0.5), avg * inv, inv * (lgt + 0.5));
+				} else if (color_mode == 9) {
+					col = vec3(inv * inv, 1.0 - 1.9 * ce * ce, 1.17 - ce * ce);
+				} else if (color_mode == 16) {
+					col = clamp(vec3(inv * inv, 1.0 - 1.9 * ce * ce, 1.17 - ce * ce), 0.0, 1.0) * (lgt + 0.5);
+				} else if (color_mode == 15) {
+					// The view-relative modes read the normal against the camera's
+					// axes, so it goes back to world space first.
+					vec3 nv = vec3(dot(n_world, cam_right), dot(n_world, cam_up), dot(n_world, -cam_forward));
+					float lv = pow(max(0.0, nv.z), 4.0);
+					vec3 n2v = normalize(nv + vec3(0.5, 0.5, 0.0));
+					col = (n2v + 1.0) * 0.5 * (lv - 2.0 * ce + 0.5);
+				} else if (color_mode == 14) {
+					vec3 nv = vec3(dot(n_world, cam_right), dot(n_world, cam_up), dot(n_world, -cam_forward));
+					float lv = pow(max(0.0, nv.z), 4.0);
+					col = (0.75 - ce) * 2.0 * vec3(lv, lv * lv, lv * ce);
+				} else if (color_mode == 20) {
+					float src = ce;
+					if (palette_source == 1) { src = dot(h, h) / 4.0; }
+					else if (palette_source == 2) { src = n.z * 0.5 + 0.5; }
+					float pt = fract(src * palette_frequency + palette_offset);
+					col = palette(pt) * (lgt + 0.5) * mix(1.0, inv, palette_occlusion);
+				} else {
+					col = vec3(inv);
+				}
 				// Texture: recolour the surface by the Texture output (white = no change).
 				if (noise_texture_on) { col *= mix(vec3(1.0), noise_texture(v), texture_strength); }
 				// Surface and light colour, each guarded so white stays bit-for-bit.
@@ -685,9 +801,9 @@ void fragment() {
 					col = mix(vec3(luma), col, saturation);
 				}
 				vec3 shaded = noise_tint(col, v);
-				shaded = scatter(shaded, total, dir, ldir);
+				shaded = scatter(shaded, total, dir, ldir_world);
 				shaded = mix(shaded, fog_color, fog_amount(total));
-				COLOR = vec4(mix(probe_dot(shaded, v), bg, view_fade(total)), 1.0);
+				COLOR = vec4(mix(probe_dot(shaded, eye + dir * total), bg, view_fade(total)), 1.0);
 			}
 		}
 	}

@@ -97,12 +97,16 @@ func _material() -> ShaderMaterial:
 	return main.view.get_node("SubViewport/ColorRect").material as ShaderMaterial
 
 
+## A uniform's value; a per-shape array's first slot (the one shape there is).
 func _uniform(name: String) -> Variant:
-	return _material().get_shader_parameter(name)
+	var v: Variant = _material().get_shader_parameter(name)
+	if v is PackedFloat32Array or v is PackedInt32Array or v is PackedVector3Array:
+		return v[0]
+	return v
 
 
 func _scroll() -> ScrollContainer:
-	return main.console().inspector().get_child(0) as ScrollContainer
+	return main.console().shape_pane().scroll_container()
 
 
 ## The player clicks somewhere neutral so no text field keeps keyboard focus

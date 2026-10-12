@@ -2,18 +2,26 @@ class_name DistanceEstimator
 extends RefCounted
 ## CPU copy of the shader's distance estimators, N = 32 (the high-precision
 ## variant) unless a smaller iteration count is asked for, as the shader's
-## coarse pass does (FractalParams.coarse_iters): estimate_at() dispatches on
-## params.shape to the Mandelbox core below, KifsEstimator,
-## KleinianEstimator or MandelbulbEstimator. The Mandelbox core mirrors mandelbox.gdshader's mb_step
-## in 64-bit scalars (zx, zy, zz, zw): the fold (box, cylinder or octahedral,
-## or the box-to-abs hybrid fold), the sphere fold, optional 4D iteration
-## rotation, scale (drifting with the iteration) and add, carrying the running
-## derivative dz. Must give the same numbers as the shader's `de(p, iters)`.
+## coarse pass does (ShapeParams.coarse_iters), and the scene functions built
+## on them. estimate_at() takes a point in ONE shape's own frame and dispatches
+## on shape.shape to the Mandelbox core below, KifsEstimator, KleinianEstimator
+## or MandelbulbEstimator. The Mandelbox core mirrors mandelbox.gdshader's
+## mb_step in 64-bit scalars (zx, zy, zz, zw): the fold (box, cylinder or
+## octahedral, or the box-to-abs hybrid fold), the sphere fold, optional 4D
+## iteration rotation, scale (drifting with the iteration) and add, carrying
+## the running derivative dz. Must give the same numbers as the shader's
+## `de(i, p, iters)`.
+##
+## The scene: a world point is mapped into each shape's frame (ShapeParams
+## .to_local, 64-bit), the local estimate is scaled back by the shape's size,
+## and the smallest wins: the union of the shapes. A shape whose cube is further
+## away than the best distance so far is skipped, as the shader does.
 ##
 ## The orbit runs in scalar `float` locals (GDScript floats are 64-bit) rather
 ## than Vector math, because Vector components are 32-bit in a standard build
 ## and that lost input precision is amplified near the surface, throwing off the
-## near-boundary fixtures.
+## near-boundary fixtures; the frame maths is 64-bit for the same reason, where
+## it matters even more (a small shape far from the origin).
 
 const ITERATIONS := 32
 
@@ -22,25 +30,130 @@ const ITERATIONS := 32
 const PLANES := [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
 
 
-static func estimate(p: Vector3, params: FractalParams) -> float:
-	return estimate_at(p.x, p.y, p.z, params)
+# ------------------------------------------------------------------ the scene
+
+## The scene distance at a world point: the smallest shape distance.
+static func estimate(p: Vector3, params: FractalParams, iters: int = ITERATIONS) -> float:
+	return scene_estimate_at(p.x, p.y, p.z, params, iters)
 
 
-## `iters` is clamped to [0, ITERATIONS]; the default is the shader's `de(p, 32)`.
-static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
+## The scene distance at a world point given in 64-bit components.
+static func scene_estimate_at(px: float, py: float, pz: float, params: FractalParams,
 		iters: int = ITERATIONS) -> float:
-	match params.shape:
+	return nearest_at(px, py, pz, params, iters)["distance"]
+
+
+## The nearest shape and its (world) distance at a world point:
+## {"distance": float, "index": int}.
+static func nearest_at(px: float, py: float, pz: float, params: FractalParams,
+		iters: int = ITERATIONS) -> Dictionary:
+	var best := INF
+	var which := 0
+	for i in params.shapes.size():
+		var s := params.shapes[i]
+		var q := s.to_local(px, py, pz)
+		var bound := cube_distance(q[0], q[1], q[2], s.bound_half()) * s.size
+		if bound >= best:
+			continue
+		var d := estimate_at(q[0], q[1], q[2], s, iters) * s.size
+		if d < best:
+			best = d
+			which = i
+	return {"distance": best, "index": which}
+
+
+## Distance from a local point to the cube of half-size `half` (0 inside): the
+## cheap lower bound the scene uses to skip shapes that cannot be nearest.
+static func cube_distance(qx: float, qy: float, qz: float, half: float) -> float:
+	var dx := maxf(absf(qx) - half, 0.0)
+	var dy := maxf(absf(qy) - half, 0.0)
+	var dz := maxf(absf(qz) - half, 0.0)
+	return sqrt(dx * dx + dy * dy + dz * dz)
+
+
+## Where a world ray enters and leaves the union of the shapes' cubes, in world
+## ray distance: [t_enter, t_exit], or null when it meets none. Each cube is
+## intersected in its shape's own frame (so a rotated shape's box is oriented).
+## The exit is also cut at the scene's view distance (a Kleinian's horizon).
+static func scene_bounds(ex: float, ey: float, ez: float, dir: Vector3, params: FractalParams) -> Variant:
+	var t_start := INF
+	var t_exit := -1.0
+	for s in params.shapes:
+		var o := s.to_local(ex, ey, ez)
+		var d := s.dir_to_local(dir.x, dir.y, dir.z)
+		var tb := box_intersect(o, d, s.bound_half())
+		var enter: float = tb[0] * s.size
+		var leave: float = tb[1] * s.size
+		if leave >= maxf(enter, 0.0):
+			t_start = minf(t_start, maxf(enter, 0.0))
+			t_exit = maxf(t_exit, leave)
+	if t_exit < 0.0:
+		return null
+	var vd := params.scene_view_distance()
+	if vd > 0.0:
+		t_exit = minf(t_exit, vd)   # the shader stops there too
+	return [t_start, t_exit]
+
+
+## Ray vs the axis-aligned cube of half-size `half` at the origin, in whatever
+## frame `o` and `d` are given: [t_enter, t_exit]; a miss has
+## t_exit < max(t_enter, 0). Mirrors box_intersect() in the shader.
+static func box_intersect(o: Array, d: Array, half: float) -> Array:
+	var t_enter := -INF
+	var t_exit := INF
+	for a in 3:
+		var sgn := 1.0 if d[a] >= 0.0 else -1.0
+		var safe: float = sgn * maxf(absf(d[a]), 1e-9)
+		var inv := 1.0 / safe
+		var n: float = inv * o[a]
+		var k := absf(inv) * half
+		t_enter = maxf(t_enter, -n - k)
+		t_exit = minf(t_exit, -n + k)
+	return [t_enter, t_exit]
+
+
+## Single-phase high-precision CPU march of a world ray from a 64-bit eye, with
+## the shader's level-of-detail hit threshold. Returns the hit Vector3 or null.
+## The orbit camera uses it to re-centre on what is under the cursor.
+static func march(ex: float, ey: float, ez: float, dir: Vector3, params: FractalParams, max_steps := 200) -> Variant:
+	var bounds: Variant = scene_bounds(ex, ey, ez, dir, params)
+	if bounds == null:
+		return null
+	var total: float = bounds[0]
+	var t_exit: float = bounds[1]
+	var near := scene_estimate_at(ex, ey, ez, params)
+	for i in max_steps:
+		var px := ex + dir.x * total
+		var py := ey + dir.y * total
+		var pz := ez + dir.z * total
+		var n := nearest_at(px, py, pz, params)
+		var d: float = n["distance"]
+		if d < params.hit_epsilon(total, near, params.shapes[n["index"]].precision):
+			return Vector3(px, py, pz)
+		total += d
+		if total > t_exit:
+			return null
+	return null
+
+
+# ------------------------------------------------------------------ one shape
+
+## The distance of one shape at a point in ITS OWN frame, in local units.
+## `iters` is clamped to [0, ITERATIONS]; the default is the shader's `de(i, p, 32)`.
+static func estimate_at(px: float, py: float, pz: float, shape: ShapeParams,
+		iters: int = ITERATIONS) -> float:
+	match shape.shape:
 		FractalParams.Shape.KIFS:
-			return KifsEstimator.estimate_at(px, py, pz, params, iters)
+			return KifsEstimator.estimate_at(px, py, pz, shape, iters)
 		FractalParams.Shape.KLEINIAN:
-			return KleinianEstimator.estimate_at(px, py, pz, params, iters)
+			return KleinianEstimator.estimate_at(px, py, pz, shape, iters)
 		FractalParams.Shape.MANDELBULB:
-			return MandelbulbEstimator.estimate_at(px, py, pz, params, iters)
-	return mandelbox_at(px, py, pz, params, iters)
+			return MandelbulbEstimator.estimate_at(px, py, pz, shape, iters)
+	return mandelbox_at(px, py, pz, shape, iters)
 
 
-## The Mandelbox estimate, whatever params.shape says.
-static func mandelbox_at(px: float, py: float, pz: float, params: FractalParams,
+## The Mandelbox estimate, whatever shape.shape says.
+static func mandelbox_at(px: float, py: float, pz: float, params: ShapeParams,
 		iters: int = ITERATIONS) -> float:
 	var scale := params.box_scale
 	var drift := params.scale_drift

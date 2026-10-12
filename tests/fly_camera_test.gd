@@ -175,7 +175,7 @@ func _place(cam: CameraState, s: Array, back: float) -> void:
 ## [distance to the surface, the zoom floor] at the camera's 64-bit eye.
 func _depth(cam: CameraState, params: FractalParams) -> Array:
 	var e := cam.eye64()
-	return [DistanceEstimator.estimate_at(e[0], e[1], e[2], params), params.zoom_floor(e)]
+	return [DistanceEstimator.scene_estimate_at(e[0], e[1], e[2], params), params.zoom_floor(e)]
 
 
 ## Place the camera where its distance is `ratio` x the zoom floor.
@@ -202,7 +202,7 @@ func _zoom_floor_guard() -> void:
 	var params: FractalParams = ctx[0]
 	var cam: CameraState = ctx[1]
 	var fly: FlyCamera = ctx[2]
-	params.fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
+	params.shape().fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
 	var s := SurfaceFixture.default_surface(params)
 	check_eq(fly.at_zoom_limit, false, "a new fly camera is not at the zoom limit")
 
@@ -268,7 +268,7 @@ func _zoom_floor_guard() -> void:
 ## first surface and slows as it goes, and it never stalls far out.
 func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
 	var params := FractalParams.new()
-	params.apply_resolved(knobs)
+	params.shape().apply_resolved(knobs)
 	var cam := CameraState.new()
 	cam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
 	var fly := FlyCamera.new()
@@ -296,7 +296,7 @@ func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
 			break   # at the zoom floor
 		travelled += step
 		cam.set_eye64(to[0], to[1], to[2])
-		if DistanceEstimator.estimate_at(to[0], to[1], to[2], params) < 0.0:
+		if DistanceEstimator.scene_estimate_at(to[0], to[1], to[2], params) < 0.0:
 			inside = true
 	check_eq(tunnels, 0, "%s: no frame's step jumps a surface" % label)
 	check(not inside, "%s: the eye never ends up inside" % label)
@@ -310,10 +310,10 @@ func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
 ## Whether a quarter-step march from `origin` along `dir` meets the surface
 ## (the hit threshold at that distance) before going `length`.
 func _surface_within(origin: PackedFloat64Array, dir: Vector3, length: float, params: FractalParams) -> bool:
-	var near := maxf(DistanceEstimator.estimate_at(origin[0], origin[1], origin[2], params), FractalParams.NEAR_FLOOR)
+	var near := maxf(DistanceEstimator.scene_estimate_at(origin[0], origin[1], origin[2], params), FractalParams.NEAR_FLOOR)
 	var t := 0.0
 	for i in 400:
-		var d := DistanceEstimator.estimate_at(origin[0] + dir.x * t, origin[1] + dir.y * t, origin[2] + dir.z * t, params)
+		var d := DistanceEstimator.scene_estimate_at(origin[0] + dir.x * t, origin[1] + dir.y * t, origin[2] + dir.z * t, params)
 		if d < params.hit_epsilon(maxf(t, near), near):
 			return t < length
 		t += 0.25 * d
@@ -334,7 +334,7 @@ func _deep_flight() -> void:
 	var s := SurfaceFixture.default_surface(params)
 	_place(cam, s, 1e-6)
 	var e0 := cam.eye64()
-	var d0 := DistanceEstimator.estimate_at(e0[0], e0[1], e0[2], params)
+	var d0 := DistanceEstimator.scene_estimate_at(e0[0], e0[1], e0[2], params)
 	check(d0 < params.floor32(e0), "1e-6 short of the surface is below the 32-bit floor (%s < %s): the old guard refused W" % [d0, params.floor32(e0)])
 	check(d0 > params.zoom_floor(e0), "and above the new one (%s)" % params.zoom_floor(e0))
 	var ray := CenterRay.new(params, cam)
@@ -356,7 +356,7 @@ func _deep_flight() -> void:
 			first_step = last_step   # the first tick after the press may not have moved yet
 	Input.action_release("move_forward")
 	var e1 := cam.eye64()
-	var d1 := DistanceEstimator.estimate_at(e1[0], e1[1], e1[2], params)
+	var d1 := DistanceEstimator.scene_estimate_at(e1[0], e1[1], e1[2], params)
 	check(fly.at_zoom_limit, "holding W reaches the new zoom limit (after %d ticks, at %s)" % [ticks, d1])
 	check(d1 < 0.1 * d0, "after closing in more than ten times (%s from %s)" % [d1, d0])
 	check(d1 >= params.zoom_floor(e1), "and stopping at the floor, not past it (%s over %s)" % [d1, params.zoom_floor(e1)])

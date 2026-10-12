@@ -1,13 +1,18 @@
 class_name FractalParams
 extends Resource
-## Every value the renderer, cameras and governor read. The shape fields are the
-## RESOLVED knob values, named by catalogue id and written once per frame by
-## apply_resolved(); the preference and renderer fields (fast_controls,
-## camera_mode, mouse_sensitivity, the level of detail, step budget and minimum
-## render scale) are still edited directly. Setters emit Resource's built-in
-## `changed`; apply_resolved batches a frame's writes into at most one emit.
-## Defaults match the site (the level-of-detail defaults reproduce its plain
-## pixel cone).
+## Every value the renderer, cameras and governor read: the list of shapes in
+## the scene (each a ShapeParams of resolved shape knobs and placement, written
+## once per frame from its AttributeTable by Main), the scene's LOOK (the
+## RESOLVED colour, light and material knobs, named by catalogue id and written
+## once per frame by apply_resolved() from the look table) and the preference
+## and renderer fields (fast_controls, camera_mode, mouse_sensitivity, the level
+## of detail, step budget and minimum render scale), which are edited directly.
+## Setters emit Resource's built-in `changed`; apply_resolved batches a frame's
+## writes into at most one emit, and any shape's `changed` is relayed as this
+## resource's, so one signal still means "re-render". Defaults match the site
+## (the level-of-detail defaults reproduce its plain pixel cone): a new
+## FractalParams holds one default shape at the identity placement, which is
+## exactly the single-shape viewer.
 
 enum CameraMode { FLY, ORBIT }
 ## Which fractal de() draws: the `shape` catalogue row.
@@ -22,21 +27,11 @@ const COLOR_MODE_NAMES: Array[String] = [
 	"Palette",
 ]
 
-## The resolved shape fields, in catalogue order. apply_resolved writes these.
+## The resolved LOOK fields (the scene-wide colour, light and material knobs),
+## in catalogue order (ShapeCatalogue.scene_ids()). apply_resolved writes these;
+## the per-shape fields are ShapeParams.RESOLVED_KEYS.
 const RESOLVED_KEYS: Array[StringName] = [
-	&"shape", &"w", &"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order",
-	&"fold_shape", &"hybrid_mix", &"hybrid_every", &"scale_drift", &"julia_all", &"julia_0",
-	&"julia_1", &"julia_2", &"julia_3", &"c_0", &"c_1", &"c_2", &"c_3", &"iter_rot_xy",
-	&"iter_rot_xz", &"iter_rot_xw", &"iter_rot_yz", &"iter_rot_yw", &"iter_rot_zw", &"kifs_scale",
-	&"kifs_fold", &"kifs_poly_k", &"kifs_twist", &"kifs_offset_0", &"kifs_offset_1",
-	&"kifs_offset_2", &"kifs_offset_3", &"kifs_rot1_xy", &"kifs_rot1_xz", &"kifs_rot1_xw",
-	&"kifs_rot1_yz", &"kifs_rot1_yw", &"kifs_rot1_zw", &"kifs_rot2_xy", &"kifs_rot2_xz",
-	&"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw", &"kleinian_box_0",
-	&"kleinian_box_1", &"kleinian_box_2", &"kleinian_box_3", &"kleinian_radius",
-	&"kleinian_shift_0", &"kleinian_shift_1", &"kleinian_shift_2", &"kleinian_shift_3",
-	&"kleinian_thickness", &"kleinian_view_distance", &"mandelbulb_power",
-	&"mandelbulb_phase_theta", &"mandelbulb_phase_phi", &"mandelbulb_julia", &"mandelbulb_c_0",
-	&"mandelbulb_c_1", &"mandelbulb_c_2", &"precision", &"color_mode",
+	&"color_mode",
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
 	&"light_color", &"light_yaw", &"light_pitch", &"light_size", &"light_ambient",
 	&"light_diffuse", &"shadows", &"scatter_density", &"scatter_glow", &"scatter_brightness",
@@ -45,6 +40,24 @@ const RESOLVED_KEYS: Array[StringName] = [
 	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
 	&"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
+
+## The most shapes a scene holds: the shader's uniform arrays are this long.
+const MAX_SHAPES := 8
+
+## The shapes, outermost first by convention (the order only affects which
+## shape's distance is tried first per march step). Never empty.
+var shapes: Array[ShapeParams] = []
+
+## The shape the console has selected: the Julia marker follows it, a new
+## shape is placed relative to it, and the per-shape conveniences below
+## (bound_half, julia_point…) answer for it.
+var active: int = 0:
+	set(v):
+		v = clampi(v, 0, maxi(shapes.size() - 1, 0))
+		if v == active:
+			return
+		active = v
+		emit_changed()
 
 ## The two COLOR fields after color_mode: pushed to the shader as a `Vector3`,
 ## not as the plain value. Kept out of LOOK_KEYS so every look key is a scalar.
@@ -63,154 +76,67 @@ const LOOK_KEYS: Array[StringName] = [
 	&"palette_c_r", &"palette_c_g", &"palette_c_b", &"palette_d_r", &"palette_d_g", &"palette_d_b",
 ]
 
-# While true the shape setters do not emit; apply_resolved emits once at the end.
+# While true the look setters do not emit; apply_resolved emits once at the end.
 var _suppress := false
 
-# --- Fractal: which shape de() draws (see Shape) ---
-@export var shape: int = Shape.MANDELBOX:
-	set(v): shape = v; _emit()
 
-# --- Box ---
-@export var box_scale: float = -2.09:
-	set(v): box_scale = v; _emit()
-@export var fold_limit: float = 1.0:
-	set(v): fold_limit = v; _emit()
-@export var min_radius: float = 0.7:
-	set(v): min_radius = v; _emit()
-@export var fixed_radius: float = 1.0:
-	set(v): fixed_radius = v; _emit()
-@export var fold_order: int = 0:
-	set(v): fold_order = v; _emit()
-@export var w: float = 0.0:
-	set(v): w = v; _emit()
-@export var fold_shape: int = 0:
-	set(v): fold_shape = v; _emit()
-@export var hybrid_mix: float = 0.0:
-	set(v): hybrid_mix = v; _emit()
-@export var hybrid_every: int = 2:
-	set(v): hybrid_every = v; _emit()
-@export var scale_drift: float = 0.0:
-	set(v): scale_drift = v; _emit()
+func _init() -> void:
+	add_shape()
 
-# --- Julia ---
-@export var julia_all: bool = false:
-	set(v): julia_all = v; _emit()
-@export var julia_0: bool = false:
-	set(v): julia_0 = v; _emit()
-@export var julia_1: bool = false:
-	set(v): julia_1 = v; _emit()
-@export var julia_2: bool = false:
-	set(v): julia_2 = v; _emit()
-@export var julia_3: bool = false:
-	set(v): julia_3 = v; _emit()
-@export var c_0: float = -0.23:
-	set(v): c_0 = v; _emit()
-@export var c_1: float = 1.512:
-	set(v): c_1 = v; _emit()
-@export var c_2: float = 1.892:
-	set(v): c_2 = v; _emit()
-@export var c_3: float = 0.0:
-	set(v): c_3 = v; _emit()
 
-# --- Iteration rotation (degrees) ---
-@export var iter_rot_xy: float = 0.0:
-	set(v): iter_rot_xy = v; _emit()
-@export var iter_rot_xz: float = 0.0:
-	set(v): iter_rot_xz = v; _emit()
-@export var iter_rot_xw: float = 0.0:
-	set(v): iter_rot_xw = v; _emit()
-@export var iter_rot_yz: float = 0.0:
-	set(v): iter_rot_yz = v; _emit()
-@export var iter_rot_yw: float = 0.0:
-	set(v): iter_rot_yw = v; _emit()
-@export var iter_rot_zw: float = 0.0:
-	set(v): iter_rot_zw = v; _emit()
+# ------------------------------------------------------------------ shapes
 
-# --- KIFS (see KifsShape) ---
-@export var kifs_scale: float = 3.0:
-	set(v): kifs_scale = v; _emit()
-@export var kifs_fold: int = 0:
-	set(v): kifs_fold = v; _emit()
-@export var kifs_poly_k: float = 5.0:
-	set(v): kifs_poly_k = v; _emit()
-@export var kifs_twist: float = 0.0:
-	set(v): kifs_twist = v; _emit()
-@export var kifs_offset_0: float = 1.0:
-	set(v): kifs_offset_0 = v; _emit()
-@export var kifs_offset_1: float = 1.0:
-	set(v): kifs_offset_1 = v; _emit()
-@export var kifs_offset_2: float = 1.0:
-	set(v): kifs_offset_2 = v; _emit()
-@export var kifs_offset_3: float = 0.0:
-	set(v): kifs_offset_3 = v; _emit()
-@export var kifs_rot1_xy: float = 0.0:
-	set(v): kifs_rot1_xy = v; _emit()
-@export var kifs_rot1_xz: float = 0.0:
-	set(v): kifs_rot1_xz = v; _emit()
-@export var kifs_rot1_xw: float = 0.0:
-	set(v): kifs_rot1_xw = v; _emit()
-@export var kifs_rot1_yz: float = 0.0:
-	set(v): kifs_rot1_yz = v; _emit()
-@export var kifs_rot1_yw: float = 0.0:
-	set(v): kifs_rot1_yw = v; _emit()
-@export var kifs_rot1_zw: float = 0.0:
-	set(v): kifs_rot1_zw = v; _emit()
-@export var kifs_rot2_xy: float = 0.0:
-	set(v): kifs_rot2_xy = v; _emit()
-@export var kifs_rot2_xz: float = 0.0:
-	set(v): kifs_rot2_xz = v; _emit()
-@export var kifs_rot2_xw: float = 0.0:
-	set(v): kifs_rot2_xw = v; _emit()
-@export var kifs_rot2_yz: float = 0.0:
-	set(v): kifs_rot2_yz = v; _emit()
-@export var kifs_rot2_yw: float = 0.0:
-	set(v): kifs_rot2_yw = v; _emit()
-@export var kifs_rot2_zw: float = 0.0:
-	set(v): kifs_rot2_zw = v; _emit()
+## The selected shape.
+func active_shape() -> ShapeParams:
+	return shapes[clampi(active, 0, shapes.size() - 1)]
 
-# --- Kleinian (see KleinianShape) ---
-@export var kleinian_box_0: float = 0.92436:
-	set(v): kleinian_box_0 = v; _emit()
-@export var kleinian_box_1: float = 0.90756:
-	set(v): kleinian_box_1 = v; _emit()
-@export var kleinian_box_2: float = 0.92436:
-	set(v): kleinian_box_2 = v; _emit()
-@export var kleinian_box_3: float = 0.92436:
-	set(v): kleinian_box_3 = v; _emit()
-@export var kleinian_radius: float = 1.0:
-	set(v): kleinian_radius = v; _emit()
-@export var kleinian_shift_0: float = 0.0:
-	set(v): kleinian_shift_0 = v; _emit()
-@export var kleinian_shift_1: float = 0.0:
-	set(v): kleinian_shift_1 = v; _emit()
-@export var kleinian_shift_2: float = 0.0:
-	set(v): kleinian_shift_2 = v; _emit()
-@export var kleinian_shift_3: float = 0.0:
-	set(v): kleinian_shift_3 = v; _emit()
-@export var kleinian_thickness: float = 0.01:
-	set(v): kleinian_thickness = v; _emit()
-@export var kleinian_view_distance: float = 10.0:
-	set(v): kleinian_view_distance = v; _emit()
 
-# --- Mandelbulb (see MandelbulbShape) ---
-@export var mandelbulb_power: float = 8.0:
-	set(v): mandelbulb_power = v; _emit()
-@export var mandelbulb_phase_theta: float = 0.0:
-	set(v): mandelbulb_phase_theta = v; _emit()
-@export var mandelbulb_phase_phi: float = 0.0:
-	set(v): mandelbulb_phase_phi = v; _emit()
-@export var mandelbulb_julia: bool = false:
-	set(v): mandelbulb_julia = v; _emit()
-@export var mandelbulb_c_0: float = -0.2:
-	set(v): mandelbulb_c_0 = v; _emit()
-@export var mandelbulb_c_1: float = 0.6:
-	set(v): mandelbulb_c_1 = v; _emit()
-@export var mandelbulb_c_2: float = 0.4:
-	set(v): mandelbulb_c_2 = v; _emit()
+## The i-th shape (the first by default).
+func shape(i: int = 0) -> ShapeParams:
+	return shapes[clampi(i, 0, shapes.size() - 1)]
 
-# --- Render ---
-@export var precision: float = 0.000025:
-	set(v): precision = v; _emit()
+
+func shape_count() -> int:
+	return shapes.size()
+
+
+## Append a shape (a fresh default one when none is given) and relay its
+## `changed`. Returns it, or null once MAX_SHAPES are held.
+func add_shape(s: ShapeParams = null) -> ShapeParams:
+	if shapes.size() >= MAX_SHAPES:
+		push_warning("FractalParams.add_shape: already holds %d shapes" % MAX_SHAPES)
+		return null
+	if s == null:
+		s = ShapeParams.new()
+	shapes.append(s)
+	s.changed.connect(emit_changed)
+	emit_changed()
+	return s
+
+
+## Drop the i-th shape. The scene keeps at least one; returns whether it did.
+func remove_shape(i: int) -> bool:
+	if shapes.size() <= 1 or i < 0 or i >= shapes.size():
+		return false
+	var s := shapes[i]
+	if s.changed.is_connected(emit_changed):
+		s.changed.disconnect(emit_changed)
+	shapes.remove_at(i)
+	if active >= shapes.size():
+		active = shapes.size() - 1
+	emit_changed()
+	return true
+
+
+## Grow or shrink the list to `n` shapes (1..MAX_SHAPES), keeping the leading
+## ones: Main calls this to mirror the ShapeList.
+func set_shape_count(n: int) -> void:
+	n = clampi(n, 1, MAX_SHAPES)
+	while shapes.size() < n:
+		add_shape()
+	while shapes.size() > n:
+		remove_shape(shapes.size() - 1)
+
 
 # --- Colour ---
 @export var color_mode: int = 1:
@@ -317,8 +243,8 @@ const DETAIL_RANGE_MIN := 1.0
 const DETAIL_RANGE_MAX := 1000.0
 const DETAIL_FALLOFF_MAX := 3.0
 const NEAR_FLOOR := 1e-14   # only guards against a zero: near must follow the camera below 1e-6
-## The Kleinian's bounding cube: effectively none (see bound_half()).
-const KLEINIAN_BOUND := 1.0e4   # the near distance never reaches 0 (a camera on the surface)
+## The Kleinian's bounding cube: effectively none (ShapeParams.bound_half()).
+const KLEINIAN_BOUND := ShapeParams.KLEINIAN_BOUND
 
 ## Per colour-mode id, in the dropdown's order.
 const FOG_COLORS := {
@@ -366,8 +292,11 @@ const SHADOW_STEPS := 48
 
 
 ## The hit threshold at ray distance `t`, for a camera `near` from the nearest
-## surface. Mirrors hit_eps() in mandelbox.gdshader.
-func hit_epsilon(t: float, near: float) -> float:
+## surface and a shape of the given precision (the active shape's when none is
+## given). Mirrors hit_eps() in mandelbox.gdshader.
+func hit_epsilon(t: float, near: float, precision: float = -1.0) -> float:
+	if precision < 0.0:
+		precision = active_shape().precision
 	var eps := precision / detail * t
 	if detail_falloff > 0.0:
 		var start := detail_range * maxf(near, NEAR_FLOOR)
@@ -376,45 +305,13 @@ func hit_epsilon(t: float, near: float) -> float:
 	return eps
 
 
-## The fewest iterations the march's coarse pass uses (the site's fixed count),
-## and the box half-size its count is worked out against.
-const COARSE_ITERS_MIN := 16
-const COARSE_BOX_HALF := 2.0
-
-
-## How many iterations the march's coarse pass needs for a camera `near` from
-## the nearest surface. Each iteration adds detail |box_scale| times finer, so
-## stopping after n leaves a smoother surface about COARSE_BOX_HALF /
-## |box_scale|^n away from the real one. The coarse pass stops at twice the hit
-## threshold, 2 × eps × near (eps = precision / detail), so it needs that gap
-## under the threshold: n = log(box / (2 eps near)) / log|box_scale|, rounded
-## up, kept in [16, 32]. 16 at the default view, so the site's picture is
-## unchanged; it rises inside about 0.3 of the surface and reaches 32 by about
-## 3e-6. A |box_scale| of 1 or less has no shrinking detail: 32. Uses the
-## unshed detail: the still frame renders at load level 0.
-##
-## The KIFS shrinks its detail by its own scale each iteration, so the same
-## rule runs on kifs_scale. The Kleinian has no steady rate (its inversion
-## magnifies only inside the sphere, by a varying amount), so it always gets
-## the full 32; its loop stops early anyway once the point settles. (With a
-## scale drift the Mandelbox's rate changes along the orbit; |box_scale| is the
-## rate it starts at.) The Mandelbulb's orbit near its surface has radius about
-## 1, where each iteration stretches by about the power, so the rule runs on
-## mandelbulb_power.
-func coarse_iters(near: float) -> int:
-	var s := absf(box_scale)
-	match shape:
-		Shape.KLEINIAN:
-			return DistanceEstimator.ITERATIONS
-		Shape.KIFS:
-			s = absf(kifs_scale)
-		Shape.MANDELBULB:
-			s = absf(mandelbulb_power)
-	if s <= 1.0:
-		return DistanceEstimator.ITERATIONS
-	var gap := maxf(2.0 * precision / detail * maxf(near, 0.0), 1e-300)
-	var n := ceilf(log(COARSE_BOX_HALF / gap) / log(s))
-	return clampi(int(minf(n, 1e6)), COARSE_ITERS_MIN, DistanceEstimator.ITERATIONS)
+## The coarse pass's iteration count for shape `i` (the active one by default)
+## with the camera `near` (world units) from the nearest surface: the shape's
+## own rule (ShapeParams.coarse_iters) in its local units, at this view's
+## detail.
+func coarse_iters(near: float, i: int = -1) -> int:
+	var s := active_shape() if i < 0 else shapes[clampi(i, 0, shapes.size() - 1)]
+	return s.coarse_iters(near / s.size, detail)
 
 
 ## The shading crossfade's band, in the camera's distance to the nearest
@@ -435,12 +332,6 @@ static func nf_weight(near: float) -> float:
 	return smoothstep(NF_FADE_NEAR, NF_FADE_FAR, near)
 
 
-## The zoom floor sits where the hit threshold is this many times finer than
-## the 32-bit grid. Measured: hits start failing at a distance of 1e-4 with
-## ulp32 ~1.2e-7 and eps 2.5e-5, which is ulp32 / (48 × eps).
-const ZOOM_FLOOR_DIVISOR := 50.0
-
-
 ## The gap between neighbouring 32-bit floats near x: 2^(floor(log2 |x|) − 23)
 ## (a 32-bit float keeps 23 bits after its leading one). Below the smallest
 ## normal 32-bit float the gap is the fixed 2^-149.
@@ -457,17 +348,17 @@ static func ulp32(x: float) -> float:
 	return pow(2.0, e - 23)
 
 
-## The 32-bit floor: how close the fly camera may come to the surface with its
-## eye at `eye` when the shader forms ray positions in 32-bit floats, which near
-## the eye can only land on a grid ulp32(largest |coordinate|) apart. Once the hit
-## threshold (eps × distance, eps = precision / detail) is much finer than that
-## grid, rays reach the surface only by luck. ulp32 / (ZOOM_FLOOR_DIVISOR × eps):
-## about 1e-4 near the box at the default precision. The guard for shapes that
-## are not perturbed, and the scale pert_iters() switches on at. Uses the unshed
-## detail, like coarse_iters.
-func floor32(eye: PackedFloat64Array) -> float:
-	var m := maxf(absf(eye[0]), maxf(absf(eye[1]), absf(eye[2])))
-	return ulp32(m) / (ZOOM_FLOOR_DIVISOR * maxf(precision / detail, 1e-30))
+## The 32-bit floor at a world eye (64-bit components, as [x, y, z] or a
+## PackedFloat64Array): how close the fly camera may come to the surface while
+## the shader forms ray positions in 32-bit floats, in world units. It is the
+## floor (ShapeParams.zoom_floor) of the shape the eye is nearest to, in that
+## shape's own frame, at this view's detail: about 1e-4 near the box at the
+## default precision for one shape at the identity placement, and a thousandth
+## of that for a shape a thousandth the size. The guard for shapes that are not
+## perturbed, and the scale pert_iters() switches on at.
+func floor32(eye) -> float:
+	var i: int = DistanceEstimator.nearest_at(eye[0], eye[1], eye[2], self)["index"]
+	return shapes[i].zoom_floor(eye[0], eye[1], eye[2], detail)
 
 
 ## Perturbation (see ReferenceOrbit and perturbation.gdshaderinc) switches on
@@ -482,24 +373,33 @@ const PERT_ON := 10.0
 const PERT_HANDOFF := 0.1
 
 
+## The shape a reference orbit was built for (ReferenceOrbit.index).
+func orbit_shape(orbit: ReferenceOrbit) -> ShapeParams:
+	return shapes[clampi(orbit.index, 0, shapes.size() - 1)]
+
+
 ## How many of the reference orbit's records the shader may use for a camera
-## whose raw distance to the surface is `near`: 0 (off: the direct march, exactly
-## as before) when the shape is not perturbable or the camera is at least
-## PERT_ON × floor32 away; else all of them, min(PERT_MAX, orbit.n). Each ray
-## decides its own handoff from the size of its offset (PERT_HANDOFF).
+## whose raw (world) distance to the surface is `near`: 0 (off: the direct
+## march, exactly as before) when the orbit's shape is not perturbable or the
+## camera is at least PERT_ON × floor32 away; else all of them,
+## min(PERT_MAX, orbit.n). Each ray decides its own handoff from the size of
+## its offset (PERT_HANDOFF). Only the orbit's shape, the one the camera is
+## nearest, is perturbed.
 func pert_iters(orbit: ReferenceOrbit, near: float) -> int:
-	if not orbit.perturbable or near >= PERT_ON * floor32(orbit.eye):
+	if not orbit.perturbable or near >= PERT_ON * floor32(orbit.world_eye):
 		return 0
 	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
 
 
-## The perturbed march's own floor: the 32-bit floor applied at the last handoff
-## point X_K (K = min(PERT_MAX, n)), where the view is mag[K] times bigger.
+## The perturbed march's own floor, in world units: the 32-bit floor applied at
+## the last handoff point X_K (K = min(PERT_MAX, n)), where the view is mag[K]
+## times bigger, in the orbit's shape's frame and scaled back by its size.
 func floor_pert(orbit: ReferenceOrbit) -> float:
+	var s := orbit_shape(orbit)
 	var k := mini(ReferenceOrbit.PERT_MAX, orbit.n)
 	var x: Vector4 = orbit.points[k]
 	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
-	return ulp32(m) / (ZOOM_FLOOR_DIVISOR * maxf(precision / detail, 1e-30) * maxf(orbit.mag[k], 1e-300))
+	return ulp32(m) * s.size / (ShapeParams.ZOOM_FLOOR_DIVISOR * maxf(s.precision / detail, 1e-30) * maxf(orbit.mag[k], 1e-300))
 
 
 ## The zoom floor for a reference orbit already built at the eye: floor_pert when
@@ -509,13 +409,19 @@ func floor_pert(orbit: ReferenceOrbit) -> float:
 ## and past it rays run out of steps and the picture darkens; a follow-up.
 func zoom_floor_for(orbit: ReferenceOrbit) -> float:
 	if not orbit.perturbable:
-		return floor32(orbit.eye)
+		return floor32(orbit.world_eye)
 	return floor_pert(orbit)
 
 
-## How close the fly camera may come to the surface with its eye at `eye` (64-bit).
-func zoom_floor(eye: PackedFloat64Array) -> float:
-	return zoom_floor_for(ReferenceOrbit.build(self, eye[0], eye[1], eye[2]))
+## How close the fly camera may come to the surface with its eye at `eye` (world
+## units; a Vector3, or 64-bit components as [x, y, z] or a PackedFloat64Array):
+## the floor of the reference orbit at the eye, built for the nearest shape.
+func zoom_floor(eye) -> float:
+	return zoom_floor_at(eye[0], eye[1], eye[2])
+
+
+func zoom_floor_at(ex: float, ey: float, ez: float) -> float:
+	return zoom_floor_for(ReferenceOrbit.build(self, ex, ey, ez))
 
 
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the
@@ -540,9 +446,10 @@ func _emit() -> void:
 		emit_changed()
 
 
-## Write every listed resolved value (by catalogue id) in one batch, emitting
-## `changed` at most once and only if something actually differed. A view with
-## no active binding costs no signal per frame.
+## Write every listed resolved LOOK value (by catalogue id) in one batch,
+## emitting `changed` at most once and only if something actually differed. A
+## view with no active binding costs no signal per frame. Per-shape ids in
+## `values` are ignored here: each ShapeParams takes its own.
 func apply_resolved(values: Dictionary) -> void:
 	var dirty := false
 	_suppress = true
@@ -558,44 +465,29 @@ func apply_resolved(values: Dictionary) -> void:
 		emit_changed()
 
 
-## The Julia constant's first three components, for the marker and orbit camera.
+## Per-shape conveniences, answering for the ACTIVE shape (see ShapeParams).
 func julia_point() -> Vector3:
-	return Vector3(c_0, c_1, c_2)
+	return active_shape().julia_point()
 
 
-## Whether the Julia marker shows: the master toggle, on the Mandelbox only
-## (the other shapes have no Julia constant).
 func julia_enabled() -> bool:
-	return julia_all and shape == Shape.MANDELBOX
+	return active_shape().julia_enabled()
 
 
-## Half the side of the origin-centred cube the rays march in (and the orbit
-## camera aims into): the Mandelbox's 2, or 20 for its Julia sets, which reach
-## further, and more with a hybrid fold, whose interval [lo, hi] lets the shape
-## grow to about hi (measured: 3.2 at mix 0.5, 5.6 at 0.75, 13 at 0.9; capped
-## at 20); for the KIFS a margin over its offset, which its attractor lies
-## within; for the Kleinian, which fills space, a cube too large to matter
-## (view_distance() ends its rays instead); for the Mandelbulb its escape
-## radius (MandelbulbEstimator.escape_radius: 2^(1/7), about 1.1, at power 8),
-## which every point of it lies within, or 2 if larger.
 func bound_half() -> float:
-	match shape:
-		Shape.MANDELBULB:
-			return maxf(2.0, MandelbulbEstimator.escape_radius(self))
-		Shape.KIFS:
-			var o := sqrt(kifs_offset_0 * kifs_offset_0 + kifs_offset_1 * kifs_offset_1
-				+ kifs_offset_2 * kifs_offset_2 + kifs_offset_3 * kifs_offset_3)
-			return maxf(2.0, 1.5 * o)
-		Shape.KLEINIAN:
-			return KLEINIAN_BOUND
-	var half := 20.0 if julia_all else 2.0
-	if hybrid_mix > 0.0:
-		var hi := (fold_limit + hybrid_mix) / maxf(1.0 - hybrid_mix, 1e-6)
-		half = maxf(half, minf(1.0 + hi, 20.0))
-	return half
+	return active_shape().bound_half()
 
 
-## How far from the eye a ray may go before it stops, or 0 for no limit: the
-## Kleinian's View distance, so its endless corridors end in a soft horizon.
 func view_distance() -> float:
-	return kleinian_view_distance if shape == Shape.KLEINIAN else 0.0
+	return active_shape().view_distance()
+
+
+## The furthest any ray may go before it stops, in world units, or 0 for no
+## limit: the smallest View distance among the Kleinians in the scene.
+func scene_view_distance() -> float:
+	var out := 0.0
+	for s in shapes:
+		var v := s.view_distance()
+		if v > 0.0 and (out == 0.0 or v < out):
+			out = v
+	return out

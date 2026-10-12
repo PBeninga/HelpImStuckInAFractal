@@ -24,9 +24,9 @@ const BAILOUT := 2.0
 
 ## The radius past which every orbit escapes, at least BAILOUT: 2^(1/(n-1))
 ## for power n (a point that far out gains radius every iteration however c
-## points), or |c| in Julia mode if larger. FractalParams.bound_half() uses the
+## points), or |c| in Julia mode if larger. ShapeParams.bound_half() uses the
 ## same radius.
-static func escape_radius(params: FractalParams) -> float:
+static func escape_radius(params: ShapeParams) -> float:
 	var n := params.mandelbulb_power
 	var r := 20.0 if n <= 1.0 else minf(pow(2.0, 1.0 / (n - 1.0)), 20.0)
 	if params.mandelbulb_julia:
@@ -34,12 +34,12 @@ static func escape_radius(params: FractalParams) -> float:
 	return r
 
 
-static func bailout(params: FractalParams) -> float:
+static func bailout(params: ShapeParams) -> float:
 	return maxf(BAILOUT, escape_radius(params))
 
 
 ## `iters` is clamped to [0, ITERATIONS], as DistanceEstimator's.
-static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
+static func estimate_at(px: float, py: float, pz: float, params: ShapeParams,
 		iters: int = ITERATIONS) -> float:
 	var n := params.mandelbulb_power
 	var julia := params.mandelbulb_julia

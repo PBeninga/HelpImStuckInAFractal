@@ -1,7 +1,9 @@
 // Perturbation: the march past the 32-bit floor (spec: docs/superpowers/specs/
 // 2026-10-09-perturbation-deep-zoom-design.md). Included by mandelbox.gdshader
-// after calc_nf. While pert_iters > 0 the march never forms eye + dir * t for the
-// estimate. The CPU (ReferenceOrbit) runs the camera's own orbit X_0 .. X_32 in
+// after de(). Only one shape is perturbed, pert_shape (the one the camera is
+// nearest), in its own frame: every "eye" and "offset" below is that shape's
+// local eye and the local offset Rᵀoff / size. While pert_iters > 0 the march
+// never forms local_eye + offset for that shape's estimate. The CPU (ReferenceOrbit) runs the camera's own orbit X_0 .. X_32 in
 // 64-bit and hands down, for each of the first iterations, the gaps between X and
 // each fold's creases: small numbers, which a 32-bit float holds precisely. The
 // GPU iterates only the pixel's offset dl = P - X, with a difference formula per
@@ -9,7 +11,7 @@
 // its own, at the first iteration h where it runs out of records or its offset
 // reaches PERT_HANDOFF: z = X_h + dl (pert_x[h], a 32-bit sum, now precise
 // enough), and the ordinary loop runs from h. A far ray (|off| >= PERT_HANDOFF)
-// hands off at h = 0, where z = eye + off: today's expression exactly.
+// hands off at h = 0, where z = local_eye + off: the direct expression exactly.
 // tests/perturbation_port.gd is this file's GDScript twin: keep them in step.
 //
 // The record for iteration i (ReferenceOrbit builds it):
@@ -23,6 +25,7 @@
 //              d: (|c|^2 - radius^2, m, 0, 0)
 
 uniform int pert_iters;    // the records available, min(PERT_MAX, n); 0 = off (the direct march, exactly as before)
+uniform int pert_shape;    // the shape the record is for (ReferenceOrbit.index); the others march directly
 uniform vec4 pert_a[20];   // the record, ReferenceOrbit.PERT_MAX = 20 iterations
 uniform vec4 pert_b[20];
 uniform vec4 pert_c[20];
@@ -124,8 +127,8 @@ void pert_sphere(inout vec4 dl, inout float dz, vec4 X, float gmin, float gfix, 
 // The cylinder fold's xy pair (r -> 2L - r outside the circle of radius L): the
 // sphere fold's template with m = (2L - r) / r. X is the reference's xy (record
 // a.xy), g = r - L its radial gap (record d.w).
-vec2 pert_cylinder(vec2 d, vec2 X, float g) {
-	float L = fold_limit;
+vec2 pert_cylinder(int s, vec2 d, vec2 X, float g) {
+	float L = fold_limit[s];
 	float rr = L + g;
 	float q = 2.0 * dot(X, d) + dot(d, d);
 	float rp = sqrt(max(rr * rr + q, 0.0));
@@ -143,14 +146,14 @@ vec2 pert_cylinder(vec2 d, vec2 X, float g) {
 // The Mandelbox's fold step on the offset: the clamp on every component (the
 // box fold, or on a hybrid iteration the hybrid interval: the CPU's gaps already
 // use the right creases), or the cylinder fold on xy and the clamp on zw.
-vec4 pert_mb_fold(vec4 dl, vec4 a, vec4 b, float gr, int i) {
+vec4 pert_mb_fold(int s, vec4 dl, vec4 a, vec4 b, float gr, int i) {
 	bool hybrid = false;
-	if (hybrid_mix > 0.0) {
-		int every = max(hybrid_every, 1);
+	if (hybrid_mix[s] > 0.0) {
+		int every = max(hybrid_every[s], 1);
 		hybrid = i % every == every - 1;
 	}
-	if (fold_shape == 1 && !hybrid) {
-		return vec4(pert_cylinder(dl.xy, a.xy, gr), pert_clamp2(dl.zw, a.zw, b.zw));
+	if (fold_shape[s] == 1 && !hybrid) {
+		return vec4(pert_cylinder(s, dl.xy, a.xy, gr), pert_clamp2(dl.zw, a.zw, b.zw));
 	}
 	return pert_clamp(dl, a, b);
 }
@@ -158,20 +161,21 @@ vec4 pert_mb_fold(vec4 dl, vec4 a, vec4 b, float gr, int i) {
 // ---- the perturbed estimates. Each runs the perturbed step while i < lim
 // (min(pert_iters, iters)) and |dl| < PERT_HANDOFF, then hands off at h.
 
-float de_pert_mandelbox(vec4 dl, vec3 p, int iters) {
+float de_pert_mandelbox(int s, vec4 dl, vec3 p, int iters) {
 	int lim = min(pert_iters, iters);
 	// The pixel's c differs from the reference's by its own starting offset where
 	// c follows the point (Mandelbrot mode), by nothing where c is the Julia
 	// constant; w is the slice's own, the same for both.
+	bool all = julia_all[s] != 0;
 	vec4 dc = vec4(
-		(julia_all || julia_0) ? 0.0 : dl.x,
-		(julia_all || julia_1) ? 0.0 : dl.y,
-		(julia_all || julia_2) ? 0.0 : dl.z,
+		(all || julia_0[s] != 0) ? 0.0 : dl.x,
+		(all || julia_1[s] != 0) ? 0.0 : dl.y,
+		(all || julia_2[s] != 0) ? 0.0 : dl.z,
 		0.0);
-	float mr2 = max(min_radius * min_radius, 1e-12);
-	float fr2 = max(fixed_radius * fixed_radius, 1e-12);
+	float mr2 = max(min_radius[s] * min_radius[s], 1e-12);
+	float fr2 = max(fixed_radius[s] * fixed_radius[s], 1e-12);
 	float dz = 1.0;
-	bool rotating = mb_rotating();
+	bool rotating = mb_rotating(s);
 	int h = 0;
 	for (int i = 0; i < PERT_MAX; i++) {
 		if (i >= lim || dot(dl, dl) >= PERT_HANDOFF * PERT_HANDOFF) { break; }
@@ -179,59 +183,61 @@ float de_pert_mandelbox(vec4 dl, vec3 p, int iters) {
 		vec4 rb = pert_b[i];
 		vec4 rc = pert_c[i];
 		vec4 rd = pert_d[i];
-		if (fold_order == 0) {
-			dl = pert_mb_fold(dl, ra, rb, rd.w, i);
+		if (fold_order[s] == 0) {
+			dl = pert_mb_fold(s, dl, ra, rb, rd.w, i);
 			pert_sphere(dl, dz, rc, rd.x, rd.y, mr2, fr2);
 		} else {
 			pert_sphere(dl, dz, rc, rd.x, rd.y, mr2, fr2);
-			dl = pert_mb_fold(dl, ra, rb, rd.w, i);
+			dl = pert_mb_fold(s, dl, ra, rb, rd.w, i);
 		}
-		if (rotating) { dl = mb_iter_rotate(dl); }
-		float s = box_scale + scale_drift * float(i);
-		dl = s * dl + dc;
-		dz = dz * abs(s) + 1.0;
+		if (rotating) { dl = mb_iter_rotate(s, dl); }
+		float sc = box_scale[s] + scale_drift[s] * float(i);
+		dl = sc * dl + dc;
+		dz = dz * abs(sc) + 1.0;
 		h = i + 1;
 	}
 	vec4 z = pert_x[h] + dl;
 	// 32-bit c: about one eye-ulp off, against an offset of at least PERT_HANDOFF
-	vec4 c = mb_constant(vec4(p, w));
-	mb_orbit(z, dz, c, h, iters);
+	vec4 c = mb_constant(s, vec4(p, w[s]));
+	mb_orbit(s, z, dz, c, h, iters);
 	return length(z) / abs(dz);
 }
 
-float de_pert_kifs(vec4 dl, int iters) {
+float de_pert_kifs(int s, vec4 dl, int iters) {
 	int lim = min(pert_iters, iters);
-	float s = kifs_scale;
-	float t = kifs_offset_2 * (s - 1.0);
-	bool rot1 = kifs_rot1_on();
-	bool rot2 = kifs_rot2_on();
+	float sc = kifs_scale[s];
+	float t = kifs_offset_2[s] * (sc - 1.0);
+	int fold = kifs_fold[s];
+	float twist = kifs_twist[s];
+	bool rot1 = kifs_rot1_on(s);
+	bool rot2 = kifs_rot2_on(s);
 	int n = 0;
 	int h = 0;
 	for (int i = 0; i < PERT_MAX; i++) {
 		if (i >= lim || dot(dl, dl) >= PERT_HANDOFF * PERT_HANDOFF) { break; }
-		if (rot1) { dl = kifs_rot1(dl); }
-		if (kifs_fold == 1) {
+		if (rot1) { dl = kifs_rot1(s, dl); }
+		if (fold == 1) {
 			dl = pert_diagonal(dl, pert_b[i]);
 		} else {
 			dl = pert_sort(pert_abs(dl, pert_a[i]), pert_b[i]);
 		}
-		if (rot2) { dl = kifs_rot2(dl); }
-		if (kifs_twist != 0.0) { dl = mb_rot_plane(dl, 0, 1, kifs_twist * float(i)); }
-		dl = s * dl;   // the offset term -(s - 1) o cancels
-		if (kifs_fold == 0) { dl.z = pert_menger(dl.z, pert_c[i].x, t); }
+		if (rot2) { dl = kifs_rot2(s, dl); }
+		if (twist != 0.0) { dl = mb_rot_plane(dl, 0, 1, twist * float(i)); }
+		dl = sc * dl;   // the offset term -(sc - 1) o cancels
+		if (fold == 0) { dl.z = pert_menger(dl.z, pert_c[i].x, t); }
 		n = i + 1;
 		h = i + 1;
 		vec4 zi = pert_d[i] + dl;   // the pixel's point: large, fine in 32 bits
-		if (dot(zi, zi) > 1.0e6) { return kifs_distance(zi, n); }   // the pixel escapes first
+		if (dot(zi, zi) > 1.0e6) { return kifs_distance(s, zi, n); }   // the pixel escapes first
 	}
 	vec4 z = pert_x[h] + dl;
-	kifs_orbit(z, n, h, iters);
-	return kifs_distance(z, n);
+	kifs_orbit(s, z, n, h, iters);
+	return kifs_distance(s, z, n);
 }
 
-float de_pert_kleinian(vec4 dl, int iters) {
+float de_pert_kleinian(int s, vec4 dl, int iters) {
 	int lim = min(pert_iters, iters);
-	float kk = kleinian_radius * kleinian_radius;
+	float kk = kleinian_radius[s] * kleinian_radius[s];
 	float dr = 1.0;
 	int h = 0;
 	for (int i = 0; i < PERT_MAX; i++) {
@@ -243,44 +249,44 @@ float de_pert_kleinian(vec4 dl, int iters) {
 		h = i + 1;
 	}
 	vec4 z = pert_x[h] + dl;
-	kleinian_orbit(z, dr, h, iters);
-	return kleinian_distance(z, dr);
+	kleinian_orbit(s, z, dr, h, iters);
+	return kleinian_distance(s, z, dr);
 }
 
-// The estimate at eye + off while pert_iters > 0, without forming that sum for the
-// orbit. The noise field is still evaluated at the 32-bit point: a displaced
-// surface is smooth below the displacement's size, so there is nothing finer to
-// resolve.
-float de_pert(vec3 off, int iters) {
-	vec3 p = eye + off;
-	if (shape == 3) { return de(p, iters); }   // never perturbed (ReferenceOrbit.perturbable is false)
+// Whether shape s's estimate runs perturbed: it is the record's shape and the
+// record is on.
+bool pert_on(int s) {
+	return pert_iters > 0 && s == pert_shape;
+}
+
+// A world offset from the eye as an offset in shape s's frame: Rᵀoff / size,
+// small and precise (never added to the local eye here).
+vec3 pert_offset(int s, vec3 off) {
+	return local_dir(s, off) / shape_size[s];
+}
+
+// Shape s's estimate at local_eye + off (off in its frame, local units) while
+// it is perturbed, without forming that sum for the orbit. The noise field is
+// still evaluated at the 32-bit point: a displaced surface is smooth below the
+// displacement's size, so there is nothing finer to resolve.
+float de_pert(int s, vec3 off, int iters) {
+	vec3 p = local_eye[s] + off;
+	int kind = shape[s];
+	if (kind == 3) { return de(s, p, iters); }   // never perturbed (ReferenceOrbit.perturbable is false)
 	vec4 dl = vec4(off, 0.0);
 	float d;
-	if (shape == 1) { d = de_pert_kifs(dl, iters); }
-	else if (shape == 2) { d = de_pert_kleinian(dl, iters); }
-	else { d = de_pert_mandelbox(dl, p, iters); }
+	if (kind == 1) { d = de_pert_kifs(s, dl, iters); }
+	else if (kind == 2) { d = de_pert_kleinian(s, dl, iters); }
+	else { d = de_pert_mandelbox(s, dl, p, iters); }
 	return d + noise_displace(p);
 }
 
-// The march's estimate at ray distance t: the perturbed one while pert_iters > 0,
-// else exactly today's de(eye + dir * t). pos is that 32-bit point, off = dir * t.
-float march_de(vec3 pos, vec3 off, int iters) {
-	if (pert_iters > 0) { return de_pert(off, iters); }
-	return de(pos, iters);
-}
-
-// calc_normal for the perturbed march: central differences of de_pert around off.
-vec3 calc_normal_pert(vec3 off, float delta) {
+// calc_normal for the perturbed shape: central differences of de_pert around
+// the local offset off.
+vec3 calc_normal_pert(int s, vec3 off, float delta) {
 	vec2 e = vec2(delta, 0.0);
 	return normalize(vec3(
-		de_pert(off + e.xyy, 32) - de_pert(off - e.xyy, 32),
-		de_pert(off + e.yxy, 32) - de_pert(off - e.yxy, 32),
-		de_pert(off + e.yyx, 32) - de_pert(off - e.yyx, 32)));
-}
-
-// The true surface normal at v = eye + off: today's calc_normal(v, delta) while
-// pert_iters is 0.
-vec3 true_normal(vec3 v, vec3 off, float delta) {
-	if (pert_iters > 0) { return calc_normal_pert(off, delta); }
-	return calc_normal(v, delta);
+		de_pert(s, off + e.xyy, 32) - de_pert(s, off - e.xyy, 32),
+		de_pert(s, off + e.yxy, 32) - de_pert(s, off - e.yxy, 32),
+		de_pert(s, off + e.yyx, 32) - de_pert(s, off - e.yyx, 32)));
 }

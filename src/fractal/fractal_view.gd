@@ -1,8 +1,11 @@
 class_name FractalView
 extends Control
-## Renders the fractal in a SubViewport and displays it full-window. Also owns
-## the ray maths (project/unproject) so the Julia marker and orbit camera agree
-## with the shader exactly.
+## Renders the scene of shapes in a SubViewport and displays it full-window.
+## Also owns the ray maths (project/unproject) so the Julia marker and orbit
+## camera agree with the shader exactly. Every per-shape knob goes to the shader
+## as an array indexed by shape; each shape's frame (the eye in its local
+## coordinates, its axes) is computed here in 64-bit; the scene's look knobs go
+## as the scalar uniforms they always were.
 ##
 ## `size` (and so project/unproject) is in logical units; the SubViewport is in
 ## physical pixels: size * render_scale * the window's content scale (UiScale),
@@ -17,6 +20,12 @@ const PROBE_ANGULAR_RADIUS := 0.005
 ## budget climb back to the level's. A shed is never eased: that is the governor
 ## buying frame time back now.
 const RESTORE_FRAMES := 18
+## The per-shape uniform ids that travel as PackedInt32Array (enums and the
+## bool toggles); every other shader id is a PackedFloat32Array.
+const INT_IDS: Array[StringName] = [
+	&"shape", &"fold_order", &"fold_shape", &"hybrid_every", &"kifs_fold",
+	&"julia_all", &"julia_0", &"julia_1", &"julia_2", &"julia_3", &"mandelbulb_julia",
+]
 
 ## A noise rebuild failed to compile, or recovered. "" means all clear. The panel
 ## shows the message on its status line; the console gets it too.
@@ -403,31 +412,68 @@ func _push_probe() -> void:
 func _push_params() -> void:
 	if _material == null or _params == null:
 		return
-	# Every catalogue id is a uniform of the same name, pushed as it is; the two
-	# COLOR keys go as a vec3 (the shader's colour uniforms); the precision folds
-	# in the detail and the load shedder's factor.
+	# Every scene id is a scalar uniform of the same name, pushed as it is; the
+	# two COLOR keys go as a vec3 (the shader's colour uniforms).
 	for key in FractalParams.RESOLVED_KEYS:
-		if key == &"precision":
-			continue
 		if FractalParams.COLOR_KEYS.has(key):
 			var c: Color = _params.get(key)
 			_material.set_shader_parameter(key, Vector3(c.r, c.g, c.b))
 		else:
 			_material.set_shader_parameter(key, _params.get(key))
+	# Every per-shape shader id is an array of MAX_SHAPES entries, filled from
+	# params.shapes in order and padded with zeros (the precision folds in the
+	# detail and the load shedder's factor, in _push_shed).
+	var n := FractalParams.MAX_SHAPES
+	var floats := {}
+	var ints := {}
+	for id in ShapeCatalogue.shader_ids():
+		if id == &"precision":
+			continue
+		if INT_IDS.has(id):
+			var a := PackedInt32Array()
+			a.resize(n)
+			ints[id] = a
+		else:
+			var f := PackedFloat32Array()
+			f.resize(n)
+			floats[id] = f
+	var sizes := PackedFloat32Array()
+	sizes.resize(n)
+	var halves := PackedFloat32Array()
+	halves.resize(n)
+	for i in _params.shapes.size():
+		var sh := _params.shapes[i]
+		for id in floats:
+			floats[id][i] = sh.get(id)
+		for id in ints:
+			ints[id][i] = int(sh.get(id))
+		sizes[i] = sh.size
+		halves[i] = sh.bound_half()
+	for id in floats:
+		_material.set_shader_parameter(id, floats[id])
+	for id in ints:
+		_material.set_shader_parameter(id, ints[id])
+	_material.set_shader_parameter("shape_size", sizes)
+	_material.set_shader_parameter("box_half", halves)
+	_material.set_shader_parameter("shape_count", _params.shapes.size())
+	_material.set_shader_parameter("view_limit", _params.scene_view_distance())
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
-	_material.set_shader_parameter("box_half", _params.bound_half())
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
 	_push_shed()
 	_push_near()
 
 
-## The values the load-shed level (or a restore easing in) bends: the precision,
-## the step budget and the fog.
+## The values the load-shed level (or a restore easing in) bends: the precision
+## (per shape), the step budget and the fog.
 func _push_shed() -> void:
 	if _material == null or _params == null:
 		return
-	_material.set_shader_parameter("precision", _params.precision / (_params.detail * _detail))
+	var precisions := PackedFloat32Array()
+	precisions.resize(FractalParams.MAX_SHAPES)
+	for i in _params.shapes.size():
+		precisions[i] = _params.shapes[i].precision / (_params.detail * _detail)
+	_material.set_shader_parameter("precision", precisions)
 	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _steps)))
 	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
 	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
@@ -449,28 +495,66 @@ func _push_camera() -> void:
 	_push_near()
 
 
-## The camera's distance to the nearest surface, which the level-of-detail range
-## is measured in, and the coarse pass's iteration count and the shading
-## crossfade that follow from it; and the perturbed march's iteration count and
-## record. All come from one ReferenceOrbit built at the 64-bit eye (its distance
-## is the estimate, so nothing is computed twice). They depend on both the camera
-## and the shape, so both pushes refresh them. The record arrays are pushed only
-## while perturbation is on.
+## Every shape's frame as the shader wants it — the eye mapped into the frame
+## (Rᵀ (eye − position) / size, in 64-bit, so a small shape far from the
+## origin keeps its precision) and the frame's axes in world space — along with
+## the camera's distance to the nearest surface (of any shape), which the
+## level-of-detail range is measured in, and the coarse pass's iteration count
+## per shape and the shading crossfade that follow from it; and the perturbed
+## march's iteration count and record, for the nearest shape. The distance and
+## the record come from one ReferenceOrbit built at the 64-bit eye (its distance
+## is the scene estimate, so nothing is computed twice). They depend on both
+## the camera and the shapes, so both pushes refresh them. The record arrays
+## are pushed only while perturbation is on.
 func _push_near() -> void:
 	if _material == null or _params == null or _camera == null:
 		return
-	var e := _camera.eye64()
-	var orbit := ReferenceOrbit.build(_params, e[0], e[1], e[2])
+	var n := FractalParams.MAX_SHAPES
+	var eyes := PackedVector3Array()
+	eyes.resize(n)
+	var fx := PackedVector3Array()
+	fx.resize(n)
+	var fy := PackedVector3Array()
+	fy.resize(n)
+	var fz := PackedVector3Array()
+	fz.resize(n)
+	var iters := PackedInt32Array()
+	iters.resize(n)
+	var ex := _camera.eye_x()
+	var ey := _camera.eye_y()
+	var ez := _camera.eye_z()
+	var orbit := ReferenceOrbit.build(_params, ex, ey, ez)
 	var near := maxf(orbit.distance, FractalParams.NEAR_FLOOR)
+	for i in _params.shapes.size():
+		var sh := _params.shapes[i]
+		var q := sh.to_local(ex, ey, ez)
+		eyes[i] = Vector3(q[0], q[1], q[2])
+		var ax := sh.axes()
+		fx[i] = ax[0]
+		fy[i] = ax[1]
+		fz[i] = ax[2]
+		iters[i] = _params.coarse_iters(near, i)
+	_material.set_shader_parameter("local_eye", eyes)
+	_material.set_shader_parameter("frame_x", fx)
+	_material.set_shader_parameter("frame_y", fy)
+	_material.set_shader_parameter("frame_z", fz)
+	_material.set_shader_parameter("coarse_iters", iters)
 	_material.set_shader_parameter("near_dist", near)
-	_material.set_shader_parameter("coarse_iters", _params.coarse_iters(near))
 	_material.set_shader_parameter("nf_weight", FractalParams.nf_weight(near))
 	_pert_iters = _params.pert_iters(orbit, orbit.distance)
 	_material.set_shader_parameter("pert_iters", _pert_iters)
 	if _pert_iters > 0:
+		_material.set_shader_parameter("pert_shape", orbit.index)
 		_material.set_shader_parameter("pert_a", orbit.a)
 		_material.set_shader_parameter("pert_b", orbit.b)
 		_material.set_shader_parameter("pert_c", orbit.c)
 		_material.set_shader_parameter("pert_d", orbit.d)
 		_material.set_shader_parameter("pert_x", orbit.points.slice(0, ReferenceOrbit.PERT_MAX + 1))
 		_pert_pushes += 1
+
+
+## The shape the camera is nearest to (index into params.shapes).
+func nearest_shape() -> int:
+	if _params == null or _camera == null:
+		return 0
+	return DistanceEstimator.nearest_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _params)["index"]

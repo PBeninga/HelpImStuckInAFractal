@@ -4,14 +4,14 @@ extends "res://tests/test_case.gd"
 ## view distance that ends its rays.
 
 
-func _de(p: Vector3, params: FractalParams, expected: float, label: String) -> void:
+func _de(p: Vector3, params: ShapeParams, expected: float, label: String) -> void:
 	var got := KleinianEstimator.estimate_at(p.x, p.y, p.z, params)
 	var tol := maxf(1e-9, 1e-5 * absf(expected))
 	check(absf(got - expected) <= tol, "%s: expected %s got %s (tol %s)" % [label, expected, got, tol])
 
 
-func _kl() -> FractalParams:
-	var p := FractalParams.new()
+func _kl() -> ShapeParams:
+	var p := ShapeParams.new()
 	p.shape = FractalParams.Shape.KLEINIAN
 	return p
 
@@ -39,7 +39,7 @@ func run() -> void:
 
 	# --- the view distance: only the Kleinian has one ---
 	check_approx(k.view_distance(), 10.0, "the Kleinian's rays stop at 10 by default")
-	check_approx(FractalParams.new().view_distance(), 0.0, "the Mandelbox's do not stop early")
+	check_approx(ShapeParams.new().view_distance(), 0.0, "the Mandelbox's do not stop early")
 	check_eq(k.bound_half(), FractalParams.KLEINIAN_BOUND, "the Kleinian has no real bounding cube")
 	check(not k.julia_enabled(), "no Julia marker off the Mandelbox")
 	k.julia_all = true
