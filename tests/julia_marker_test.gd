@@ -3,7 +3,7 @@ extends "res://tests/test_case.gd"
 
 func run() -> void:
 	var params := FractalParams.new()
-	var cam := CameraState.make_default()
+	var cam := SurfaceFixture.overview_camera()
 	var view: FractalView = load("res://src/fractal/fractal_view.tscn").instantiate()
 	root.add_child(view)
 	view.size = Vector2(1280, 800)

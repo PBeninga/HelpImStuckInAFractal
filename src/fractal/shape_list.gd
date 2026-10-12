@@ -89,20 +89,25 @@ func tables() -> Array:
 	return out
 
 
-## Append a shape at the catalogue defaults, overridden by `defaults` (id ->
-## value, sanitized through the specs). Returns its index, or -1 when the scene
-## is full.
+## Append an independent copy of the last shape's settings, or catalogue
+## defaults for the first shape. Explicit defaults override inherited values.
+## Returns its index, or -1 when the scene is full.
 func add(defaults: Dictionary = {}, p_label: String = "", look_defaults: Dictionary = {}) -> int:
 	if _entries.size() >= FractalParams.MAX_SHAPES:
 		push_warning("ShapeList.add: already holds %d shapes" % FractalParams.MAX_SHAPES)
 		return -1
-	var t := AttributeTable.new(ShapeCatalogue.shape_specs())
+	var previous: Entry = _entries.back() if not _entries.is_empty() else null
+	var t := previous.table.duplicate() if previous != null else AttributeTable.new(ShapeCatalogue.shape_specs())
 	for id in defaults:
 		if t.has(StringName(id)):
 			t.set_default(StringName(id), defaults[id])
 	var name := p_label if p_label != "" else "Shape %d" % _next_number
 	_next_number += 1
 	var e := Entry.new(name, t)
+	if previous != null:
+		e.look = previous.look.duplicate()
+		e.next_level_distance = previous.next_level_distance
+		e.commands.assign(previous.commands)
 	for id in look_defaults:
 		if e.look.has(StringName(id)):
 			e.look.set_default(StringName(id), look_defaults[id])

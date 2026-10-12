@@ -16,7 +16,7 @@ func run() -> void:
 	check_eq(mat.get_shader_parameter("exit_radius"), render_radius, "editing progression does not change shader clipping")
 	check_eq(DistanceEstimator.scene_bounds(0.0, 0.0, 0.0, Vector3.RIGHT, main.params), bounds,
 		"editing progression does not change CPU ray bounds")
-	main.camera.set_eye(0.6, 0.0, 0.0)
+	main.camera.set_eye(1.1, 0.5, 0.5)
 	main._check_shape_progress()
 	check(main.shape_run.escaped, "the independent gameplay threshold still triggers completion")
 	main.return_to_spawn()
@@ -28,7 +28,7 @@ func run() -> void:
 	(pane._entries[0].distance as SpinBox).value = 3.0
 	check(pane._entries[1].threshold.text.contains("4.0 world units"), "editing an earlier field leaves later thresholds unchanged")
 	check_eq(main.shape_run.briefing().stages[1].next_level_threshold, 4.0, "agent briefing agrees with the UI threshold")
-	main.camera.set_eye(3.1, 0.0, 0.0)
+	main.camera.set_eye(3.6, 0.5, 0.5)
 	main._check_shape_progress()
 	main.shape_run.step(1.0)
 	main.shape_run.step(0.1)
@@ -40,7 +40,7 @@ func run() -> void:
 	check_eq(main.params.next_level_threshold, 4.0, "editing an earlier distance preserves the active absolute threshold")
 	main.shapes().set_stage(1, 1.0, [])
 	check_eq(main.params.next_level_threshold, 1.0, "editing the active distance refreshes its cached threshold")
-	main.camera.set_eye(1.1, 0.0, 0.0)
+	main.camera.set_eye(1.6, 0.5, 0.5)
 	main._check_shape_progress()
 	check(main.shape_run.escaped, "a later stage can finish at a smaller absolute distance")
 	main.shapes().remove(0)

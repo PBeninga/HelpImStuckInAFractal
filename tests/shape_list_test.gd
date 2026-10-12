@@ -6,6 +6,7 @@ extends "res://tests/test_case.gd"
 
 
 func run() -> void:
+	_test_inherited_settings()
 	var shapes := ShapeList.new()
 	check_eq(shapes.count(), 1, "a new list holds one shape")
 	check_eq(shapes.label(0), "Shape 1", "named Shape 1")
@@ -96,3 +97,39 @@ func run() -> void:
 		shapes.add()
 	check_eq(shapes.count(), FractalParams.MAX_SHAPES, "add stops at MAX_SHAPES")
 	check_eq(shapes.add(), -1, "and returns -1 past it")
+
+
+func _test_inherited_settings() -> void:
+	var shapes := ShapeList.new(2)
+	shapes.table(1).set_default(&"shape", FractalParams.Shape.KLEINIAN)
+	shapes.table(1).set_default(&"size", 3.0)
+	shapes.table(1).set_default(&"pos_x", 7.5)
+	shapes.table(1).set_default(&"rot_z", 25.0)
+	shapes.look_table(1).set_default(&"roughness", 0.67)
+	shapes.look_table(1).set_default(&"light_yaw", -32.0)
+	var binding := Binding.new()
+	binding.source = &"a"
+	binding.gain = 2.5
+	shapes.table(1).set_binding(&"pos_y", binding)
+	shapes.look_table(1).set_binding(&"exposure", binding.duplicate())
+	check(shapes.set_stage(1, 45.0, ["size 2"]), "source stage settings are valid")
+	var previous: Dictionary = shapes.to_dict()[1]
+	shapes.add()
+	var added: Dictionary = shapes.to_dict()[2]
+	check_eq(added["label"], "Shape 3", "inheriting settings gives the new shape its own name")
+	added.erase("label")
+	previous.erase("label")
+	check_eq(added, previous, "add inherits all settings from the immediately previous entry")
+	shapes.table(2).set_default(&"size", 4.0)
+	shapes.look_table(2).set_default(&"roughness", 0.2)
+	shapes.table(2).binding(&"pos_y").gain = 8.0
+	shapes.look_table(2).binding(&"exposure").gain = 9.0
+	shapes.entry(2).commands.append("size 3")
+	check_approx(shapes.table(1).get_default(&"size"), 3.0, "copied geometry edits are independent")
+	check_approx(shapes.look_table(1).get_default(&"roughness"), 0.67, "copied look edits are independent")
+	check_approx(shapes.table(1).binding(&"pos_y").gain, 2.5, "copied geometry bindings are independent")
+	check_approx(shapes.look_table(1).binding(&"exposure").gain, 2.5, "copied look bindings are independent")
+	check_eq(Array(shapes.entry(1).commands), ["size 2"], "copied commands are independent")
+	shapes.add({&"size": 6.0}, "Override", {&"roughness": 0.4})
+	check_approx(shapes.table(3).get_default(&"size"), 6.0, "explicit geometry defaults override inheritance")
+	check_approx(shapes.look_table(3).get_default(&"roughness"), 0.4, "explicit look defaults override inheritance")

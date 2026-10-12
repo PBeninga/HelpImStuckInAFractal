@@ -6,7 +6,7 @@ func _fresh() -> Array:
 	params.fractal_iterations = 16
 	params.shape().precision = 0.000025
 	params.shape().kleinian_view_distance = 10.0
-	var cam := CameraState.make_default()
+	var cam := SurfaceFixture.overview_camera()
 	var fly := FlyCamera.new()
 	root.add_child(fly)
 	fly.setup(params, cam)
@@ -85,7 +85,7 @@ func run() -> void:
 	await physics_frame
 	check(cam.eye() == stopped, "and stops on the frame the key is released")
 	fly.enabled = false
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 
 	# --- the step is added in 64-bit: a step far below the 32-bit grid still moves the eye ---
 	cam.speed_factor = 1e-9   # about 1e-10 per tick at the default view (the grid there is ~1e-6)
@@ -104,7 +104,7 @@ func run() -> void:
 	check(absf(dist / step - 1.0) < 1e-4, "but the 64-bit eye moves by the whole step (%s of %s)" % [dist, step])
 	check(dv.normalized().is_equal_approx(cam.forward()), "along forward")
 	cam.speed_factor = 1.0
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 
 	# --- the wheel scales the factor by 1.25, clamped to [0.01, 100] ---
 	var f0 := cam.speed_factor
@@ -118,12 +118,12 @@ func run() -> void:
 	check(cam.speed_factor <= 100.0, "factor ceils at 100")
 
 	# --- yaw keeps the camera level ---
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 	fly.apply_look(100.0, 0.0)   # pure yaw
 	check_approx(cam.right().z, 0.0, "after yaw the right axis is still level", 1e-5)
 
 	# --- pitching down actually tilts the view by a real amount ---
-	cam.transform = CameraState.make_default().transform   # forward.z ~ -0.342
+	cam.transform = SurfaceFixture.overview_camera().transform   # forward.z ~ -0.342
 	fly.apply_look(0.0, 300.0)   # 30 deg down at sensitivity 0.1
 	check(cam.forward().z < -0.75,
 		"pitching down drops forward.z well below the start (got %s)" % cam.forward().z)
@@ -151,9 +151,9 @@ func run() -> void:
 
 	# --- every fractal flies the same way: hold W straight at it, sprinting ---
 	for shot in [
-			["Mandelbox", {}, CameraState.DEFAULT_EYE],
-			["octahedral fold", {&"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL}, CameraState.DEFAULT_EYE],
-			["hybrid fold", {&"hybrid_mix": 0.5}, CameraState.DEFAULT_EYE],
+			["Mandelbox", {}, SurfaceFixture.OVERVIEW_EYE],
+			["octahedral fold", {&"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL}, SurfaceFixture.OVERVIEW_EYE],
+			["hybrid fold", {&"hybrid_mix": 0.5}, SurfaceFixture.OVERVIEW_EYE],
 			["Menger", {&"shape": FractalParams.Shape.KIFS}, Vector3(3.2, 2.4, 1.9)],
 			["Sierpinski", {&"shape": FractalParams.Shape.KIFS, &"kifs_fold": KifsEstimator.FoldSet.DIAGONAL, &"kifs_scale": 2.0}, Vector3(3.5, -2.0, 2.2)],
 			["Kleinian", {&"shape": FractalParams.Shape.KLEINIAN}, Vector3(2.5, 1.6, 1.2)],
@@ -168,7 +168,7 @@ func run() -> void:
 
 ## A camera on the default view's line of sight, `back` short of the surface (64-bit).
 func _place(cam: CameraState, s: Array, back: float) -> void:
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 	var e := SurfaceFixture.backed(s, back)
 	cam.set_eye64(e[0], e[1], e[2])
 

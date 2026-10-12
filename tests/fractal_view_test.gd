@@ -9,7 +9,7 @@ func run() -> void:
 	var params := FractalParams.new()
 	params.fractal_iterations = 32
 	params.max_steps = 128  # full-detail fixtures below exercise the opt-in budget
-	var cam := CameraState.make_default()
+	var cam := SurfaceFixture.overview_camera()
 	var view: FractalView = load("res://src/fractal/fractal_view.tscn").instantiate()
 	root.add_child(view)
 	await frames(1)                                    # let _ready wire the SubViewport
@@ -218,7 +218,7 @@ func run() -> void:
 	check(float(mat.get_shader_parameter("near_dist")) < far_near, "and the near distance is to it (%s)" % mat.get_shader_parameter("near_dist"))
 	var iters: PackedInt32Array = mat.get_shader_parameter("coarse_iters")
 	check(iters[1] >= 16 and iters[0] >= 16, "each shape has its own coarse pass (%s, %s)" % [iters[0], iters[1]])
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 	params.remove_shape(1)
 	await frames(1)
 	check_eq(int(mat.get_shader_parameter("shape_count")), 1, "removing it drops shape_count")

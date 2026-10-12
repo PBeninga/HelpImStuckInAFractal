@@ -1,5 +1,7 @@
 # Speed-based world units implementation plan
 
+**Superseded unit behavior (2026-10-12):** World units now capture flight speed once at run start, after resolving geometry and positioning the camera. The scale stays fixed through movement, speed changes and stage transitions. Restarting captures a new scale. The original live-scale implementation record below is retained as history.
+
 **Goal:** One gameplay world unit equals one second of travel at current player speed. Origin distance and authored advancement thresholds use this live unit.
 
 **Spec:** User approved changing both readouts and progression, including the CPU cost of live speed evaluation. Preserve scene coordinates and rendering-only clipping. Use current flight speed including sprint, wheel factor and speed limiter.

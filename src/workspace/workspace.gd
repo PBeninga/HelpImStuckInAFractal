@@ -1,11 +1,11 @@
 class_name Workspace
 extends RefCounted
-## Saving and loading a level as JSON, version 5: the shapes as a list (each a
+## Saving and loading a level as JSON, version 6: the shapes as a list (each a
 ## label and an AttributeTable over the per-shape catalogue: defaults + active
 ## bindings, placement included), its own look table (light and material),
-## which one is active, the keymap
+## the keymap
 ## (its axes, keys, speeds and values), the non-shape preference fields, the
-## camera, gameplay (spawn, exit sphere and movement), and the noise graph.
+## gameplay (spawn, escape animation and movement), and the noise graph.
 ## There is one file type — the level — tagged
 ## `"kind": "level"`; `"kind": "sequence"` is reserved for the level-sequence
 ## editor to come, and such a file is refused by name here. The clock and
@@ -18,7 +18,7 @@ extends RefCounted
 ## replaces the keymap in hand with the file's axes; until a level is loaded the
 ## keymap is the shipped default (E / Q).
 ##
-## What else is saved under "fractal": fast controls, the camera mode, the mouse
+## What else is saved under "fractal": fast controls, the mouse
 ## sensitivity and the renderer options (level of detail, step budget and
 ## minimum render scale).
 ##
@@ -32,12 +32,11 @@ extends RefCounted
 ## keys left alone) still load the same way, all without warnings. A saved
 ## light_shininess (from before Roughness replaced it) becomes roughness =
 ## sqrt(2 / (shininess + 2)) with no warning; a binding on light_shininess is
-## dropped with one. Saving always writes version 5. The camera's eye is
-## written at full precision (every digit of its 64-bit value): a camera inside
-## a nested shape sits at a position the 7 digits
-## the unit vectors get would not hold.
+## dropped with one. Saving always writes version 6, without a live camera
+## snapshot. Loading any version starts at the authored full-precision spawn,
+## with the first shape selected, default facing, fly mode and normal speed.
 
-const VERSION := 5
+const VERSION := 6
 
 ## The preference and renderer fields kept under "fractal" (everything that is
 ## not a shape knob), in file order.
@@ -52,27 +51,21 @@ const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
 
 
 ## Snapshot the level. Pure: it reads, it does not change anything.
-static func capture(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Dictionary:
+static func capture(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, params: FractalParams, _camera: CameraState, noise := {}) -> Dictionary:
 	var fractal := {}
 	for key in FRACTAL_KEYS:
+		if key == "camera_mode": # Still editable through the console/MCP API.
+			continue
 		var value: Variant = params.get(key)
-		if key == "camera_mode":
-			value = CAMERA_MODE_NAMES[int(value)]
 		fractal[key] = value
 	var out := {
 		"version": VERSION,
 		"kind": "level",
 		"gameplay": params.gameplay.to_dict(),
 		"shapes": shapes.to_dict(),
-		"active": params.active,
+		"active": 0,
 		"axes": keymap.to_list(),
 		"fractal": fractal,
-		"camera": {
-			"eye": _eye_to_array(camera),
-			"forward": _vec_to_array(camera.forward()),
-			"up": _vec_to_array(camera.up()),
-			"speed_factor": camera.speed_factor,
-		},
 	}
 	if not noise.is_empty():
 		out["noise"] = noise
@@ -120,11 +113,8 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 		for w in shapes.apply_dict(saved_shapes):   # warns, keeps one default shape
 			warnings.append(w)
 	params.set_shape_count(shapes.count())
-	var active: Variant = data.get("active", 0)
-	if active is float or active is int:
-		params.active = clampi(int(active), 0, shapes.count() - 1)
-	else:
-		warnings.append("Malformed active shape ignored")
+	# A level is a fresh sequence, not an editor/player checkpoint.
+	params.active = 0
 
 	# Compatibility output for callers of the older Workspace API. Rendering
 	# and editing use shapes.look_table() directly; this is only a snapshot.
@@ -165,7 +155,7 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 			params.painterly_enabled = false
 		for key in fractal:
 			# Retired renderer settings in older levels are harmless and discarded.
-			if key in ["perturbation_enabled", "perturbation_iterations"]:
+			if key in ["perturbation_enabled", "perturbation_iterations", "camera_mode"]:
 				continue
 			if not FRACTAL_KEYS.has(key):
 				warnings.append("Unknown fractal value '%s' ignored" % key)
@@ -178,11 +168,10 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 	else:
 		warnings.append("Malformed fractal section ignored")
 
-	var cam: Variant = data.get("camera", {})
-	if cam is Dictionary:
-		_restore_camera(cam, camera, warnings)
-	else:
-		warnings.append("Malformed camera section ignored")
+	# Ignore legacy camera snapshots too: always load at the authored spawn.
+	params.camera_mode = FractalParams.CameraMode.FLY
+	camera.set_basis(CameraState.make_default().transform.basis)
+	params.gameplay.return_to_spawn(camera)
 
 	return warnings
 
@@ -367,61 +356,3 @@ static func _parse_fractal(key: String, raw: Variant) -> Variant:
 			return int(raw) if (raw is float or raw is int) and float(raw) >= 1.0 else null
 		_:
 			return float(raw) if (raw is float or raw is int) else null
-
-
-static func _restore_camera(cam: Dictionary, camera: CameraState, warnings: Array) -> void:
-	var eye_raw: Variant = _array_to_floats(cam.get("eye", null))
-	var forward: Variant = _array_to_vec(cam.get("forward", null))
-	var up: Variant = _array_to_vec(cam.get("up", null))
-	if eye_raw != null and forward != null and up != null:
-		var f := (forward as Vector3).normalized()
-		var u := (up as Vector3).normalized()
-		if f.is_zero_approx() or u.is_zero_approx() or absf(f.dot(u)) > 0.999:
-			warnings.append("Malformed camera orientation ignored")
-		else:
-			camera.set_basis(Basis.looking_at(f, u))
-			camera.set_eye(eye_raw[0], eye_raw[1], eye_raw[2])   # 64-bit, past Vector3
-	elif cam.has("eye") or cam.has("forward") or cam.has("up"):
-		warnings.append("Malformed camera position ignored")
-	if cam.has("speed_factor"):
-		var s: Variant = cam["speed_factor"]
-		if (s is float or s is int) and float(s) > 0.0:
-			camera.speed_factor = float(s)
-		else:
-			warnings.append("Malformed camera speed_factor ignored")
-
-
-## The 64-bit eye at full precision (no _tidy: a deep view needs every digit).
-static func _eye_to_array(camera: CameraState) -> Array:
-	var e := camera.eye64()
-	return [e[0], e[1], e[2]]
-
-
-static func _vec_to_array(v: Vector3) -> Array:
-	return [_tidy(v.x), _tidy(v.y), _tidy(v.z)]
-
-
-## Round to `digits` significant digits, so the JSON stays readable.
-static func _tidy(x: float, digits := 7) -> float:
-	if x == 0.0 or not is_finite(x):
-		return x
-	var decimals := digits - int(ceil(log(absf(x)) / log(10.0)))
-	var p := pow(10.0, decimals)
-	return roundf(x * p) / p
-
-
-## Three numbers as 64-bit floats, or null.
-static func _array_to_floats(raw: Variant) -> Variant:
-	if not (raw is Array) or raw.size() != 3:
-		return null
-	for n in raw:
-		if not (n is float or n is int):
-			return null
-	return [float(raw[0]), float(raw[1]), float(raw[2])]
-
-
-static func _array_to_vec(raw: Variant) -> Variant:
-	var f: Variant = _array_to_floats(raw)
-	if f == null:
-		return null
-	return Vector3(f[0], f[1], f[2])

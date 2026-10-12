@@ -9,8 +9,18 @@ extends RefCounted
 ## point by d sits about d (along the ray) from the real surface. (fx, fy, fz) is the default camera's forward.
 
 
+## Fixed exterior Mandelbox view: numerical fixtures must not depend on the
+## player's default spawn, which is inside the Kleinian now.
+const OVERVIEW_EYE := Vector3(8.175847, 3.812460, 3.283393)
+
+static func overview_camera() -> CameraState:
+	var camera := CameraState.new()
+	camera.transform = Transform3D(Basis.IDENTITY, OVERVIEW_EYE).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+	return camera
+
+
 static func default_surface(params: FractalParams) -> Array:
-	var cam := CameraState.make_default()
+	var cam := overview_camera()
 	var e := cam.eye()
 	var f := cam.forward()
 	var t: float = CenterRay.march(e, f, params)[0]

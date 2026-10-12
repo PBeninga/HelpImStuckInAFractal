@@ -68,8 +68,8 @@ func _refresh() -> void:
 		else:
 			lines.append("Status: Fly beyond the level boundary")
 	lines.append("")
-	lines.append("1 world unit = 1 second of travel at current speed")
-	lines.append("F4 to close · updates with movement and speed")
+	lines.append("1 world unit = 1 second of travel at starting speed (fixed for this run)")
+	lines.append("F4 to close · updates with movement")
 	readout.text = "\n".join(lines)
 	panel.reset_size()
 	_place_panel()

@@ -6,8 +6,8 @@ extends VBoxContainer
 ## it, its editable label, and a ✕ that removes it) above that shape's full
 ## AttributeInspector over the per-shape groups (Placement, Fractal, Box, …).
 ## Clicking anywhere on a header selects the shape: the selected one is the
-## console's "active" shape (the Julia marker follows it, a new shape is
-## placed relative to it, the self-similarity line is its). The pane rebuilds
+## console's "active" shape (the Julia marker follows it and the
+## self-similarity line is its). The pane rebuilds
 ## its entries whenever the ShapeList's structure changes (a load, an add, a
 ## remove), keeping the expanded and selected entries by table identity; a relabel only
 ## updates the one label.
@@ -21,16 +21,13 @@ const SCROLLBAR_ALLOWANCE := 16.0
 const SELECTED_COLOR := Color(0.72, 0.82, 1.0)
 const PLAIN_COLOR := Color(0.85, 0.85, 0.85)
 
-const ADD_TOOLTIP := "Add a shape: a copy of the selected shape's knobs at a tenth of its size, centred in front of the camera, with no bindings. Shapes are played in list order; only the gameplay-active shape is visible."
+const ADD_TOOLTIP := "Add a shape: an independent copy of all the previous shape's settings, including placement, appearance, bindings and level settings. Shapes are played in list order; only the gameplay-active shape is visible."
 const ARROW_TOOLTIP := "Expand or collapse this shape's control panel."
-const LABEL_TOOLTIP := "The shape's name, saved with the level. Click a header to select the shape for editing: the Julia marker, Add shape and the self-similarity line work on it."
+const LABEL_TOOLTIP := "The shape's name, saved with the level. Click a header to select the shape for editing: the Julia marker and the self-similarity line work on it."
 const REMOVE_TOOLTIP := "Remove this shape from the scene. The last shape cannot be removed."
 
 var _shapes: ShapeList
 var _group_tooltips: Dictionary = {}
-## Returns the id -> value defaults for a new shape (Main computes a placement
-## in front of the camera). Unset: the catalogue defaults.
-var _placement_source: Callable = Callable()
 var _add_button: Button
 var _header_line: Control
 var _scroll: ScrollContainer
@@ -44,11 +41,10 @@ var _rebuilding := false
 
 
 ## `header_line` (the console's self-similarity label) sits beside the Add
-## button; `placement_source` gives the defaults for a new shape.
-func setup(shapes: ShapeList, group_tooltips: Dictionary, placement_source: Callable = Callable(), header_line: Control = null) -> void:
+## button. New shapes inherit the last entry's settings.
+func setup(shapes: ShapeList, group_tooltips: Dictionary, header_line: Control = null) -> void:
 	_shapes = shapes
 	_group_tooltips = group_tooltips
-	_placement_source = placement_source
 	_header_line = header_line
 	_build()
 	_shapes.changed.connect(_rebuild)
@@ -138,13 +134,9 @@ func expanded_index() -> int:
 
 # ------------------------------------------------------------------ actions
 
-## Append a shape (through the placement source when one is set), select it
-## and expand it.
+## Append a copy of the last shape's settings, select it and expand it.
 func add_shape() -> void:
-	var defaults: Dictionary = {}
-	if _placement_source.is_valid():
-		defaults = _placement_source.call()
-	var i := _shapes.add(defaults, "", _shapes.look_table(_selected).defaults())
+	var i := _shapes.add()
 	if i < 0:
 		return
 	# _rebuild ran on `changed`; now pick the new one
@@ -280,7 +272,7 @@ func _make_entry(i: int) -> Dictionary:
 	distance.allow_greater = true
 	distance.step = 0.0
 	distance.value = _shapes.entry(i).next_level_distance
-	distance.tooltip_text = "Distance from run origin (spawn) in world units. One world unit is one second of travel at current player speed; the scene distance changes with speed. 0 uses 20. Crossing this distance advances regardless of scripted commands and returns you to origin under a screen fade; does not affect rendering."
+	distance.tooltip_text = "Distance from run origin (spawn) in world units. One world unit is one second of travel at starting player speed; the scene distance stays fixed during the run. 0 uses 20. Crossing this distance advances regardless of scripted commands and returns you to origin under a screen fade; does not affect rendering."
 	distance_row.add_child(distance)
 	var threshold := Label.new()
 	threshold.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -387,7 +379,7 @@ func set_gameplay_active(index: int) -> void:
 
 
 func _threshold_text(i: int) -> String:
-	return "Advances beyond %s world units from run origin (spawn); 1 unit = 1 second at current speed." % _shapes.next_level_threshold(i)
+	return "Advances beyond %s world units from run origin (spawn); 1 unit = 1 second at starting speed (fixed for the run)." % _shapes.next_level_threshold(i)
 
 
 func _refresh_stage_distances(_index: int) -> void:

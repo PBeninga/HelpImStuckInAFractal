@@ -57,11 +57,11 @@ var shapes: Array[ShapeParams] = []
 var gameplay_active := -1
 ## Gameplay threshold in speed-based world units; never used to clip geometry.
 var next_level_threshold := ShapeList.DEFAULT_NEXT_LEVEL_DISTANCE
-## Scene distance travelled in one second at the current player speed.
+## Scene distance travelled in one second at the run's starting player speed.
 var world_unit_size := 1.0
 ## Rendering-only clipping radius, independent of stage objectives.
 var render_escape_radius := 20.0
-var run_origin: Array = [0.0, 0.0, 0.0]
+var run_origin: Array = [CameraState.DEFAULT_EYE.x, CameraState.DEFAULT_EYE.y, CameraState.DEFAULT_EYE.z]
 var run_escaped := false
 
 func gameplay_boundary_scene_distance() -> float:

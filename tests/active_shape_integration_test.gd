@@ -16,6 +16,8 @@ func run() -> void:
 	main.shapes().set_stage(0, 2.0, [])
 	main.shapes().set_stage(1, 4.0, [])
 	main.params.gameplay.spawn_x = 10.0
+	main.params.gameplay.spawn_y = 0.0
+	main.params.gameplay.spawn_z = 0.0
 	main.return_to_spawn()
 	main._resolve_once()
 	var mat: ShaderMaterial = main.view._material
@@ -68,5 +70,20 @@ func run() -> void:
 	var planner := load("res://src/mcp/escape_planner.gd")
 	var target: Array = planner._exit_point([10.0, 0.0, 0.0], Vector3.RIGHT, 2.0, [10.0, 0.0, 0.0])
 	check_approx(target[0], 12.0002, "planner exits the spawn-centered stage radius")
+	main.params.gameplay.spawn_x = 0.0
+	main.return_to_spawn()
+	var bridge := root.get_node("McpBridge")
+	bridge._go(main, [20.0, 0.0, 0.0], main.camera.transform.basis, 10.0)
+	main.camera.set_eye(2.6, 0.5, 0.5)
+	main._check_shape_progress()
+	await frames(2)
+	main.shape_run.step(1.0)
+	await create_timer(0.15).timeout
+	check_eq(main.camera.eye64(), PackedFloat64Array([0.5, 0.5, 0.5]),
+		"in-flight MCP movement cannot overwrite the hidden return to origin")
+	main.shape_run.step(0.1)
+	main.shape_run.step(1.0)
+	main.shape_run.check_position()
+	check(not main.shape_run.escaped, "cancelled MCP movement cannot skip the next level")
 	main.queue_free()
 	await frames(1)

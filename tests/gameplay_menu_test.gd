@@ -26,10 +26,13 @@ func run() -> void:
 	main._check_shape_progress()
 	main.shapes().set_stage(0, 100.0, [])
 	main.params.gameplay.spawn_x = 10.0
+	main.params.gameplay.spawn_y = 0.0
+	main.params.gameplay.spawn_z = 0.0
 	main.return_to_spawn()
 	# Deep-zoom travel must reach both the 64-bit eye and the visible label.
 	# Three fixed decimal places incorrectly render every one of these as zero.
 	main.params.gameplay.spawn_x = 0.0
+	main.params.gameplay.spawn_z = 1.0
 	main.return_to_spawn()
 	for i in range(1, 5):
 		await frames(1)
@@ -39,6 +42,8 @@ func run() -> void:
 		var shown: float = menu.readout.text.get_slice("Distance from origin (spawn): ", 1).get_slice(" world units", 0).to_float()
 		check_approx(shown, i * 5e-14, "frame %d writes the tiny origin distance to F4" % i, 1e-20)
 	main.params.gameplay.spawn_x = 10.0
+	main.params.gameplay.spawn_y = 0.0
+	main.params.gameplay.spawn_z = 0.0
 	main.return_to_spawn()
 	main.camera.set_eye(13.0, 4.0, 0.0)
 	main._check_shape_progress()
@@ -82,42 +87,49 @@ func run() -> void:
 	check(menu.readout.text.contains("Status: Escaped"), "F4 immediately reports final completion")
 	main.load_level_from(path)
 	check(menu.readout.text.contains("Shape / level: 1 / 1"), "loading fewer levels refreshes F4 after resetting the old active index")
-	check(menu.readout.text.contains("Distance from origin (spawn): 10.000"), "F4 shows the loaded camera's distance")
+	check(menu.readout.text.contains("Distance from origin (spawn): 0.000"), "F4 shows the fresh run at spawn")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	check(not FrameProfiler.enabled, "F4 never enables performance profiling")
 	main.shapes().set_stage(0, 100.0, [])
-	main.return_to_spawn()
 	main.params.gameplay.move_speed = 2.0
+	main.return_to_spawn()
+	check_eq(main.params.world_unit_size, 2.0, "restart captures speed before the first movement")
 	main.camera.set_eye(20.0, 0.0, 0.0)
 	main._process(0.0)
-	check(menu.readout.text.contains("Distance from origin (spawn): 5.000"), "one world unit is one second of current travel")
+	check(menu.readout.text.contains("Distance from origin (spawn): 5.000"), "one world unit is one second of starting travel")
 	main.params.gameplay.move_speed = 4.0
 	main.set_process(true)
 	await frames(2)
 	main.set_process(false)
-	check_eq(main.params.world_unit_size, 4.0, "the game loop samples speed internally each frame")
-	check(menu.readout.text.contains("Distance from origin (spawn): 2.500"), "speed changes rescale distance without moving")
+	check_eq(main.params.world_unit_size, 2.0, "the game loop preserves the starting scale")
+	check(menu.readout.text.contains("Distance from origin (spawn): 5.000"), "speed changes do not rescale distance")
 	main.camera.speed_factor = 2.0
 	main._process(0.0)
-	check(menu.readout.text.contains("Distance from origin (spawn): 1.250"), "wheel speed changes the world unit")
+	check(menu.readout.text.contains("Distance from origin (spawn): 5.000"), "wheel speed preserves the world unit")
 	main.fly.sprinting = true
 	main._process(0.0)
-	check(menu.readout.text.contains("Distance from origin (spawn): 0.625"), "sprint changes the world unit")
+	check(menu.readout.text.contains("Distance from origin (spawn): 5.000"), "sprint preserves the world unit")
 	main.fly.speed_limit = 0.5
 	main._process(0.0)
-	check(menu.readout.text.contains("Distance from origin (spawn): 1.250"), "speed limiter changes the world unit")
+	check(menu.readout.text.contains("Distance from origin (spawn): 5.000"), "speed limiter preserves the world unit")
 	main.fly.sprinting = false
 	main.fly.speed_limit = 1.0
 	main.camera.speed_factor = 1.0
 	main.shapes().set_stage(0, 3.0, [])
+	main.return_to_spawn()
+	check_eq(main.params.world_unit_size, 4.0, "a new run captures the new starting speed")
+	main.camera.set_eye(20.0, 0.0, 0.0)
 	main._process(0.0)
-	check(not main.shape_run.escaped, "distance 10 stays within three world units at speed 4")
+	check(not main.shape_run.escaped, "distance 10 stays within three world units at starting speed 4")
 	menu.hide()
 	main.params.gameplay.move_speed = 2.0
 	main._process(0.0)
-	check(main.shape_run.escaped, "speed change crosses the converted boundary even with F4 hidden")
+	check(not main.shape_run.escaped, "speed change cannot cross the fixed boundary with F4 hidden")
+	main.camera.set_eye(22.1, 0.0, 0.0)
+	main._process(0.0)
+	check(main.shape_run.escaped, "movement beyond the fixed boundary advances with F4 hidden")
 	menu.show()
-	check(menu.readout.text.contains("Status: Escaped"), "F4 and advancement agree on speed-based units")
+	check(menu.readout.text.contains("Status: Escaped"), "F4 and advancement agree on fixed units")
 	var edit := LineEdit.new()
 	main.console().add_child(edit)
 	edit.grab_focus()
@@ -130,7 +142,26 @@ func run() -> void:
 	main.noise_window().push_input(key())
 	check(menu.visible, "F4 opens from another child window")
 	check(menu.readout.text.contains("Distance from origin (spawn): 0.000"), "reopening F4 shows the latest position")
+	_ray_scaled_units(main)
 	main.queue_free()
 	await frames(2)
 	check(menu.readout.text.contains("No active run"), "scene exit releases the gameplay source")
 	menu.hide()
+
+func _ray_scaled_units(main: Node) -> void:
+	main.shapes().table(0).set_default(&"shape", FractalParams.Shape.MANDELBOX)
+	main.params.gameplay.distance_scaling = true
+	main.params.gameplay.move_speed = 1.0
+	var overview := SurfaceFixture.overview_camera()
+	main.params.gameplay.spawn_x = overview.eye_x()
+	main.params.gameplay.spawn_y = overview.eye_y()
+	main.params.gameplay.spawn_z = overview.eye_z()
+	main.camera.set_basis(overview.transform.basis)
+	main.return_to_spawn()
+	var starting_speed: float = main.fly.current_speed()
+	check_eq(main.params.world_unit_size, starting_speed, "start captures ray-scaled speed after returning to spawn")
+	main.camera.move_by(main.camera.forward() * 2.0)
+	main._process(0.0)
+	check(absf(main.fly.current_speed() - starting_speed) > 0.01, "moving toward geometry changes the live ray-scaled speed")
+	check_eq(main.params.world_unit_size, starting_speed, "changing raycast distance preserves the starting world unit")
+	check_approx(main.shape_run.distance_from_origin() * starting_speed, 2.0, "ray-scaled movement measures distance using the fixed unit")

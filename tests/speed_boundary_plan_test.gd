@@ -24,17 +24,17 @@ func run() -> void:
 	var planner := preload("res://src/mcp/escape_planner.gd").new()
 	var result: Dictionary = await planner.plan(game)
 	check(result.ok, "planner accepts measured corridor")
-	check_approx(result.points[0][0], 15.0, "speed-scaled boundary beyond the scan keeps a bounded leg")
+	check_approx(result.points[0][0], 15.5, "speed-scaled boundary beyond the scan keeps a bounded leg")
 	check(not result.exit_clear, "render-boundary clearance does not promise gameplay-boundary clearance")
 	game.params.world_unit_size = 0.5
 	game.params.gameplay.move_speed = 0.5
 	result = await planner.plan(game)
-	check_approx(result.points[0][0], 10.001, "a measured boundary uses the converted scene radius")
+	check_approx(result.points[0][0], 10.501, "a measured boundary uses the converted scene radius")
 	check(result.exit_clear, "a converted boundary within measured clearance can finish the leg")
 	game.params.world_unit_size = 1.0
 	game.params.gameplay.move_speed = 1.0
 	result = await planner.plan(game)
-	check_approx(result.points[0][0], 20.002, "a boundary at the scan edge retains the small crossing margin")
+	check_approx(result.points[0][0], 20.502, "a boundary at the scan edge retains the small crossing margin")
 	check(result.exit_clear, "matching scan and gameplay boundaries can still finish")
 	game.fly.free()
 	game.queue_free()

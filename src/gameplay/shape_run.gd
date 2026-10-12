@@ -12,6 +12,7 @@ var fog_alpha := 0.0
 var command_index := 0
 var human_turn := 0
 var _serial := 0
+var _units_captured := false
 var _session_id := Crypto.new().generate_random_bytes(16).hex_encode()
 var _phase := 0 # idle, covering, opaque hold, revealing
 var _elapsed := 0.0
@@ -31,12 +32,14 @@ func run_id() -> String:
 
 func reset() -> void:
 	_serial += 1
+	_units_captured = false
+	_params.world_unit_size = 1.0
 	_overrides.clear()
 	escaped = false
 	_phase = 0
 	_elapsed = 0.0
 	fog_alpha = 0.0
-	_params.run_origin = [_params.gameplay.spawn_x, _params.gameplay.spawn_y, _params.gameplay.spawn_z]
+	_params.run_origin = _params.gameplay.spawn_position()
 	_activate(0)
 	fog_changed.emit(0.0)
 
@@ -94,7 +97,7 @@ func apply_command(command: String, expected_run: String, expected_stage: int, e
 	changed.emit()
 	return {"ok": true, "shape_index": i, "command": command, "attribute": result.id, "value": result.value}
 
-## All gameplay distances share the current flight speed's one-second unit.
+## All gameplay distances share the starting flight speed's fixed one-second unit.
 func distance_from_origin() -> float:
 	var origin := _params.run_origin
 	var unit := _params.world_unit_size
@@ -103,12 +106,15 @@ func distance_from_origin() -> float:
 	var z: float = (_camera.eye_z() - origin[2]) / unit
 	return sqrt(x * x + y * y + z * z)
 
-func check_position(speed: float = -1.0) -> void:
-	# Main samples once per frame, even while stationary or the HUD is hidden.
-	# Retain the last valid unit if the supplied speed is zero or invalid.
-	if is_finite(speed) and speed > 0.0 and speed != _params.world_unit_size:
-		_params.world_unit_size = speed
-		units_changed.emit()
+## Capture once after resolving the starting geometry and placing the camera.
+func capture_start_speed(speed: float) -> void:
+	if _units_captured or not is_finite(speed) or speed <= 0.0:
+		return
+	_units_captured = true
+	_params.world_unit_size = speed
+	units_changed.emit()
+
+func check_position() -> void:
 	if escaped or transitioning() or _params.gameplay_active < 0:
 		return
 	var i := _params.gameplay_active
@@ -160,7 +166,7 @@ func briefing() -> Dictionary:
 	return {"run_id": run_id(), "active_shape": index, "stages": stages,
 		"command_index": command_index, "human_turn": human_turn, "next_command": commands[command_index] if command_index < commands.size() else "",
 		"origin": _params.run_origin.duplicate(), "transitioning": transitioning(), "escaped": escaped,
-		"instructions": "Scripted commands are optional shape changes and never block level advancement. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never apply shape commands on startup, timers, stage changes or movement completion. Commands affect only the active shape. One gameplay world unit is one second of travel at the current player speed; its scene-coordinate size changes with speed. next_level_threshold uses these units; camera coordinates and route distances remain in scene coordinates. Flying beyond the active shape's next_level_threshold from the run origin (spawn) advances automatically, regardless of commands. Advancing returns the player to origin under a screen fade before revealing the next shape. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
+		"instructions": "Scripted commands are optional shape changes and never block level advancement. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never apply shape commands on startup, timers, stage changes or movement completion. Commands affect only the active shape. One gameplay world unit is one second of travel at the starting player speed; its scene-coordinate size stays fixed for the whole run. next_level_threshold uses these units; camera coordinates and route distances remain in scene coordinates. Flying beyond the active shape's next_level_threshold from the run origin (spawn) advances automatically, regardless of commands. Advancing returns the player to origin under a screen fade before revealing the next shape. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
 
 
 func apply_request(args: Dictionary) -> Dictionary:

@@ -408,6 +408,8 @@ func _dive(main: Main, args: Dictionary) -> Dictionary:
 ## `basis`. Linear in position (in 64-bit, through CameraState.set_eye), slerp
 ## in rotation, eased. In orbit mode the orbit centre is re-derived afterwards.
 func _go(main: Main, to: Array, basis: Basis, duration: float) -> void:
+	if main.shape_run.transitioning():
+		return
 	var cam := main.camera
 	if duration > 0.0:
 		var from := _eye64(cam)
@@ -417,6 +419,9 @@ func _go(main: Main, to: Array, basis: Basis, duration: float) -> void:
 		while elapsed < duration:
 			await get_tree().process_frame
 			if not is_instance_valid(main):
+				return
+			# A stage transition owns the camera until the new shape is revealed.
+			if main.shape_run.transitioning():
 				return
 			elapsed += get_process_delta_time()
 			var k := smoothstep(0.0, 1.0, minf(elapsed / duration, 1.0))

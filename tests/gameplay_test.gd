@@ -8,7 +8,7 @@ func run() -> void:
 	check(game != null, "each level has gameplay settings")
 	if game == null:
 		return
-	check_eq(game.spawn_x, 0.0, "spawn defaults to the origin")
+	check_eq(game.spawn_x, 0.5, "spawn defaults to the safe position")
 	check_eq(params.next_level_threshold, 20.0, "the exit sphere defaults to radius 20")
 	check_eq(game.surrounding_ray_count, 12, "surrounding geometry defaults to a low-fidelity 12-ray sweep")
 	var camera := CameraState.make_default()
@@ -51,7 +51,7 @@ func run() -> void:
 	check_eq(restored.get("gameplay").to_dict(), game.to_dict(), "all gameplay settings round-trip at full precision")
 	snapshot.erase("gameplay")
 	Workspace.restore(snapshot, shapes, look, keys, restored, camera)
-	check_eq(restored.gameplay.spawn_x, 0.0, "older levels restore default gameplay rather than inheriting another level")
+	check_eq(restored.gameplay.spawn_x, 0.5, "older levels restore default gameplay rather than inheriting another level")
 	var hidden := FractalParams.new()
 	hidden.shape().pos_x = 30.0
 	check(DistanceEstimator.scene_bounds(25.0, 0.0, 0.0, Vector3.RIGHT, hidden) == null,
@@ -73,7 +73,7 @@ func run() -> void:
 	await frames(1)
 	check(main.find_child("EscapeMessage", true, false) == null, "escaping no longer displays a text HUD")
 	pane.return_button.pressed.emit()
-	check_eq(main.camera.eye64(), PackedFloat64Array([0.0, 0.0, 0.0]), "Return to spawn uses the default origin")
+	check_eq(main.camera.eye64(), PackedFloat64Array([0.5, 0.5, 0.5]), "Return to spawn uses the safe default")
 	check_eq(main.view._material.get_shader_parameter("exit_has_skybox"), false, "returning to spawn disables sky sampling immediately")
 	main.params.gameplay.spawn_x = 1.23456789012345
 	main.params.gameplay.spawn_y = -2.0

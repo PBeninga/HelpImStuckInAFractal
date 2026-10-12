@@ -1,6 +1,6 @@
 extends "res://tests/test_case.gd"
 ## Workspace version 4: a level (shape list + look table + the keymap's
-## keys/axes/values + prefs + camera + noise) survives a save and a load; a
+## keys/axes/values + prefs + spawn + noise) survives a save and a load; a
 ## version-3 file (one "shape" table) loads as a one-shape scene at the
 ## identity placement with its light and material rows in the look table; a
 ## version-2 file (axes a dict of values) and a version-1 file still load as
@@ -50,6 +50,9 @@ func run() -> void:
 	var params := FractalParams.new()
 	params.set_shape_count(2)
 	params.active = 1
+	params.gameplay.spawn_x = 1.000000001234
+	params.gameplay.spawn_y = -2.0
+	params.gameplay.spawn_z = 0.5
 	params.fast_controls = false
 	params.camera_mode = FractalParams.CameraMode.ORBIT
 	params.mouse_sensitivity = 0.2
@@ -79,7 +82,7 @@ func run() -> void:
 	check_approx(float(s2.table(1).get_default(&"size")), 0.01, "size included", 1e-12)
 	check_approx(float(s2.table(1).get_default(&"rot_y")), 30.0, "rotation included")
 	check_eq(p2.shape_count(), 2, "params were sized to the list")
-	check_eq(p2.active, 1, "and the active shape restored")
+	check_eq(p2.active, 0, "loading selects the first shape")
 	var t2 := s2.table(0)
 	check_approx(t2.get_default(&"box_scale"), -2.29, "box_scale default")
 	check_approx(t2.get_default(&"fold_limit"), 0.72, "fold_limit default")
@@ -100,27 +103,26 @@ func run() -> void:
 	check_eq(k2.negative_key(&"turn"), KEY_A, "and its negative key")
 	check(InputMap.action_get_events(&"axis_turn_pos").size() == 1, "the InputMap action followed the restored key")
 	check(not p2.fast_controls, "fast controls")
-	check_eq(p2.camera_mode, FractalParams.CameraMode.ORBIT, "camera mode")
+	check_eq(p2.camera_mode, FractalParams.CameraMode.FLY, "loading resets camera mode")
 	check_approx(p2.mouse_sensitivity, 0.2, "mouse sensitivity")
 	check_approx(p2.detail, 2.5, "detail")
 	check_approx(p2.detail_range, 40.0, "detail range")
 	check_approx(p2.detail_falloff, 1.5, "detail falloff")
 	check_eq(p2.max_steps, 256, "max steps")
 	check_approx(p2.min_render_scale, 0.4, "min render scale")
-	check(c2.eye().is_equal_approx(camera.eye()), "camera eye %s" % c2.eye())
-	check(absf(c2.eye_x() - 1.000000001234) < 1e-12, "the eye's 64-bit x survives the file (%s)" % c2.eye_x())
-	check(c2.forward().is_equal_approx(camera.forward()), "and its facing")
-	check_approx(c2.speed_factor, 3.5, "speed factor")
+	check_eq(c2.eye64(), PackedFloat64Array([1.000000001234, -2.0, 0.5]), "loading uses the authored spawn")
+	check(c2.forward().is_equal_approx(CameraState.make_default().forward()), "loading resets facing")
+	check_approx(c2.speed_factor, 1.0, "loading resets speed factor")
 
 	# --- the file is readable JSON with the documented sections ---
 	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TMP))
 	check_eq(int(data["version"]), Workspace.VERSION, "the file carries version 4")
 	check_eq(data["kind"], "level", "and is tagged as a level")
-	check(data.has("shapes") and data.has("active") and data.has("axes") and data.has("fractal") and data.has("camera"),
-		"it has the shapes / active / axes / fractal / camera sections")
+	check(data.has("shapes") and data.has("active") and data.has("axes") and data.has("fractal") and not data.has("camera"),
+		"it keeps level sections and omits the live camera")
 	check(not data.has("shape"), "and no version-3 'shape' section")
 	check(data["axes"] is Array, "axes is a list of entries")
-	check_eq(data["fractal"]["camera_mode"], "orbit", "camera mode is saved by name")
+	check(not data["fractal"].has("camera_mode"), "camera mode is transient")
 	check(data["shapes"][0]["bindings"].has("box_scale"), "only active bindings are written")
 	check_eq(data["shapes"][1]["label"], "Inner", "each entry carries its label")
 	check(data["shapes"][1]["defaults"].has("pos_x"), "and its placement among the defaults")
@@ -212,7 +214,7 @@ func run() -> void:
 	check_approx(t4.get_default(&"c_2"), 0.3, "v1 julia_point -> c_2")
 	check_eq(l4.get_default(&"color_mode"), 3, "v1 color_mode -> the look's color_mode")
 	check(not p4.fast_controls, "v1 fast_controls migrates")
-	check_eq(p4.camera_mode, FractalParams.CameraMode.ORBIT, "v1 camera_mode migrates")
+	check_eq(p4.camera_mode, FractalParams.CameraMode.FLY, "v1 camera mode is ignored")
 	check(k4.axes().has(&"a") and k4.positive_key(&"a") == KEY_E, "and v1 leaves the default keymap alone")
 
 	# --- the renderer options are checked too ---
@@ -237,7 +239,7 @@ func run() -> void:
 	check(w8.size() == 1, "with one warning: %s" % [w8])
 	var p9 := FractalParams.new()
 	var w9 := Workspace.restore({"version": 4, "shapes": [{}, {}], "active": 7, "look": "bad", "axes": [], "fractal": {}}, _table(), _look(), _keymap(), p9, CameraState.make_default())
-	check_eq(p9.active, 1, "an active index past the list is clamped")
+	check_eq(p9.active, 0, "legacy editor selection does not change the starting shape")
 	check(w9.size() == 1 and String(w9[0]).to_lower().contains("look"), "a malformed look section warns: %s" % [w9])
 
 	# --- files that cannot load change nothing ---
@@ -360,42 +362,28 @@ func _write(path: String, text: String) -> void:
 	f.close()
 
 
-## The eye is saved at full precision, so a deep view comes back exactly through
-## capture/restore and to within one 64-bit rounding step through a file; the
-## shipped default save loads to the same camera as before.
+## The authored spawn keeps its doubles; live camera checkpoints are ignored.
 func _deep_eye() -> void:
-	var deep_params := FractalParams.new()
-	var s := SurfaceFixture.default_surface(deep_params)
-	var deep := SurfaceFixture.backed(s, 1e-9)
-	var dc := CameraState.make_default()
-	dc.set_eye64(deep[0], deep[1], deep[2])
-	var cap := Workspace.capture(_table(), _look(), _keymap(), deep_params, dc)
+	var params := FractalParams.new()
+	params.gameplay.spawn_x = 1.000000001234
+	params.gameplay.spawn_y = -2.000000009876
+	params.gameplay.spawn_z = 0.1234567890123
+	var camera := CameraState.make_default()
+	camera.set_eye(100.0, 200.0, 300.0)
+	var cap := Workspace.capture(_table(), _look(), _keymap(), params, camera)
+	check(not cap.has("camera"), "capture omits the live camera")
 	var back := CameraState.make_default()
 	Workspace.restore(cap, _table(), _look(), _keymap(), FractalParams.new(), back)
-	check_eq(back.eye64(), dc.eye64(), "a capture 1e-9 from the surface restores the 64-bit eye exactly")
-	check(back.transform.basis.is_equal_approx(dc.transform.basis), "and the same orientation")
-	check_eq(Workspace.save_file(TMP, _table(), _look(), _keymap(), deep_params, dc), OK, "a deep view saves")
-	var from_file := CameraState.make_default()
-	Workspace.load_file(TMP, _table(), _look(), _keymap(), FractalParams.new(), from_file)
-	# Godot's float parser is not correctly rounded: about a third of doubles come
-	# back one 64-bit step (ulp) off, at most about 4e-15 for coordinates under 20,
-	# thousands of times below the deepest zoom floor (about 5e-12)
-	var fe := from_file.eye64()
-	var want := dc.eye64()
-	var worst := 0.0
-	for j in 3:
-		worst = maxf(worst, absf(fe[j] - want[j]))
-	check(worst <= 4e-15, "and loads from the file to within a 64-bit rounding step (%s): full-precision JSON" % worst)
-
-	# --- saves/default.json loads to the same camera as before ---
-	var dj := CameraState.new()
-	var res := Workspace.load_file("res://saves/default.json", _table(), _look(), _keymap(), FractalParams.new(), dj)
-	check(res["ok"], "saves/default.json loads")
-	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://saves/default.json"))["camera"]
-	var re := Vector3(raw["eye"][0], raw["eye"][1], raw["eye"][2])
-	var rf := Vector3(raw["forward"][0], raw["forward"][1], raw["forward"][2]).normalized()
-	var ru := Vector3(raw["up"][0], raw["up"][1], raw["up"][2]).normalized()
-	check_eq(dj.transform, Transform3D(Basis.looking_at(rf, ru), re),
-		"to exactly the transform it loaded to before")
-	check_eq(dj.eye64(), PackedFloat64Array([raw["eye"][0], raw["eye"][1], raw["eye"][2]]),
-		"with the file's own digits as the 64-bit eye")
+	var spawn := PackedFloat64Array([1.000000001234, -2.000000009876, 0.1234567890123])
+	check_eq(back.eye64(), spawn, "capture restores the full-precision spawn")
+	check_eq(Workspace.save_file(TMP, _table(), _look(), _keymap(), params, camera), OK, "a precise spawn saves")
+	Workspace.load_file(TMP, _table(), _look(), _keymap(), FractalParams.new(), back)
+	for i in 3:
+		check_approx(back.eye64()[i], spawn[i], "spawn component %d survives JSON" % i, 1e-14)
+	var legacy := {"version": 5, "kind": "level", "shapes": [{}], "axes": [],
+		"camera": {"eye": [999, 999, 999], "forward": [1, 0, 0], "up": [0, 0, 1], "speed_factor": 7.0},
+		"fractal": {"camera_mode": "orbit"}}
+	var warnings := Workspace.restore(legacy, _table(), _look(), _keymap(), params, back)
+	check_eq(warnings, [], "legacy camera snapshots are ignored without warnings")
+	check_eq(back.eye64(), PackedFloat64Array([0.5, 0.5, 0.5]), "old files without a spawn use the safe default")
+	check_eq(back.speed_factor, 1.0, "legacy wheel speed is ignored")

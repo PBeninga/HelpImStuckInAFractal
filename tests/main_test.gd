@@ -215,17 +215,17 @@ func run() -> void:
 	check_approx(main.table().get_default(&"fold_limit"), 0.72, "loading restores the shape table")
 	await frames(1)
 	check_approx(main.params.shape().fold_limit, 0.72, "and the resolve pushes it into params")
-	check_approx(main.camera.speed_factor, 2.0, "and the camera")
+	check_approx(main.camera.speed_factor, 1.0, "loading resets player speed")
 	check(gp.status_label.text.begins_with("Loaded"), "Gameplay reports the load: %s" % gp.status_label.text)
 	main.load_level_from("user://no_such_view.json")
 	check_eq(files.current_path, tmp, "a failed load does not change the current file")
 
-	# the shape list: Add shape from the console places a tenth-size copy in
-	# front of the camera and makes it the active shape; the save carries both;
+	# the shape list: Add shape copies the previous shape and makes it
+	# the active shape; the save carries both;
 	# removing it goes back to one
 	var pane: ShapeListPane = console.shape_pane()
 	check_eq(main.shapes().count(), 1, "the scene starts with one shape")
-	var eye_before: Vector3 = main.camera.eye()
+	var previous_defaults: Dictionary = main.table().defaults()
 	var added: int = main.add_shape()
 	check_eq(added, 1, "add_shape appends a second shape")
 	check_eq(main.params.shape_count(), 2, "and params mirror the count")
@@ -233,13 +233,24 @@ func run() -> void:
 	check_eq(pane.selected(), 1, "and the console selects it")
 	check(pane.is_expanded(1), "expanded")
 	var t2: AttributeTable = main.shapes().table(1)
-	check_approx(float(t2.get_default(&"size")), 0.1, "it is a tenth the size of the first", 1e-9)
-	var centre := Vector3(t2.get_default(&"pos_x"), t2.get_default(&"pos_y"), t2.get_default(&"pos_z"))
-	var expected_centre: Vector3 = eye_before + main.camera.forward() * main.NEW_SHAPE_DISTANCE * 0.1
-	check(centre.is_equal_approx(expected_centre), "and centred in front of the camera (%s)" % centre)
+	check_eq(t2.defaults(), previous_defaults, "all geometry settings, including placement, are inherited")
 	await frames(1)
-	check_approx(main.params.shape(1).size, 0.1, "the resolve pushed its size into params", 1e-9)
+	check_approx(main.params.shape(1).size, 1.0, "the resolve pushed its size into params", 1e-9)
 	check(main.table() == t2, "table() is the active shape's table")
+	t2.set_default(&"size", 2.0)
+	main.shapes().look_table(1).set_default(&"roughness", 0.73)
+	pane.select(0)
+	main.add_shape()
+	check_approx(main.table().get_default(&"size"), 2.0, "Main adds from the last shape even when the first is selected")
+	check_approx(main.look_table().get_default(&"roughness"), 0.73, "Main inherits the last shape's look")
+	pane.remove_shape(2)
+	pane.select(0)
+	pane.add_button().pressed.emit()
+	check_approx(main.table().get_default(&"size"), 2.0, "Add button inherits the last shape even when the first is selected")
+	check_approx(main.look_table().get_default(&"roughness"), 0.73, "Add button inherits the last shape's look")
+	pane.remove_shape(2)
+	t2.set_default(&"size", 1.0)
+	pane.select(1)
 	var tmp2 := "user://main_test_two.json"
 	main.save_level_to(tmp2)
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(tmp2))
@@ -253,8 +264,8 @@ func run() -> void:
 	main.load_level_from(tmp2)
 	check_eq(main.shapes().count(), 2, "loading the save brings the second shape back")
 	check_eq(pane.entry_count(), 2, "and the console lists both")
-	check_approx(float(main.shapes().table(1).get_default(&"size")), 0.1, "with its size", 1e-9)
-	check_eq(main.params.active, 1, "and the active shape")
+	check_approx(float(main.shapes().table(1).get_default(&"size")), 1.0, "with its size", 1e-9)
+	check_eq(main.params.active, 0, "loading selects the first shape")
 	pane.remove_shape(1)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp2))
 
@@ -262,14 +273,12 @@ func run() -> void:
 	main.params.gameplay.spawn_x = 1.2345678901234
 	main.params.gameplay.spawn_y = 0.9140000000123
 	main.params.gameplay.spawn_z = 0.787
-	var saved_view: Transform3D = main.camera.transform
 	main.save_level_to(tmp)
 	main.camera.set_eye(5.0, -3.0, 2.0)
 	gp.return_button.pressed.emit()
 	check_eq(main.camera.eye64(), PackedFloat64Array([1.2345678901234, 0.9140000000123, 0.787]),
 		"Return to spawn uses the full-precision spawn independently of the saved camera")
 	check_approx(main.camera.speed_factor, 1.0, "returning resets the wheel speed factor")
-	main.camera.transform = saved_view
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 
 	# the View tab's Camera row switches mode

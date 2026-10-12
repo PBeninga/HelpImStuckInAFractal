@@ -15,17 +15,17 @@ const NUMERIC_KEYS := [&"spawn_x", &"spawn_y", &"spawn_z",
 	&"escape_ground_duration", &"escape_fractal_duration"]
 const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval"]
 
-@export var spawn_x := 0.0:
+@export var spawn_x := float(CameraState.DEFAULT_EYE.x):
 	set(v):
 		if is_finite(v) and v != spawn_x:
 			spawn_x = v
 			emit_changed()
-@export var spawn_y := 0.0:
+@export var spawn_y := float(CameraState.DEFAULT_EYE.y):
 	set(v):
 		if is_finite(v) and v != spawn_y:
 			spawn_y = v
 			emit_changed()
-@export var spawn_z := 0.0:
+@export var spawn_z := float(CameraState.DEFAULT_EYE.z):
 	set(v):
 		if is_finite(v) and v != spawn_z:
 			spawn_z = v
@@ -104,8 +104,16 @@ const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_sc
 			emit_changed()
 
 
+## Canonical spawn shared by camera resets and the gameplay boundary.
+func spawn_position() -> Array:
+	if spawn_x == 0.0 and spawn_y == 0.0 and spawn_z == 0.0:
+		return [CameraState.DEFAULT_EYE.x, CameraState.DEFAULT_EYE.y, CameraState.DEFAULT_EYE.z]
+	return [spawn_x, spawn_y, spawn_z]
+
+
 func return_to_spawn(camera: CameraState) -> void:
-	camera.set_eye(spawn_x, spawn_y, spawn_z)
+	var position := spawn_position()
+	camera.set_eye(position[0], position[1], position[2])
 	camera.speed_factor = 1.0
 
 
@@ -113,6 +121,10 @@ func to_dict() -> Dictionary:
 	var out := {"distance_scaling": distance_scaling}
 	for key in NUMERIC_KEYS:
 		out[String(key)] = get(key)
+	var position := spawn_position()
+	out["spawn_x"] = position[0]
+	out["spawn_y"] = position[1]
+	out["spawn_z"] = position[2]
 	if exit_skybox != null and not exit_skybox.resource_path.is_empty():
 		out["exit_skybox"] = exit_skybox.resource_path
 	return out
@@ -155,6 +167,10 @@ func apply_dict(raw: Variant) -> Array:
 			exit_skybox = load(value) as Texture2D
 		else:
 			warnings.append("Unknown or malformed gameplay '%s' ignored" % key)
+	var position := spawn_position()
+	spawn_x = position[0]
+	spawn_y = position[1]
+	spawn_z = position[2]
 	return warnings
 
 

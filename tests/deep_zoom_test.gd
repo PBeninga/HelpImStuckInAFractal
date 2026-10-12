@@ -57,7 +57,7 @@ func run() -> void:
 			% [back, ci, depth[0]])
 
 	# the default view: the depth-aware count is the site's 16, so the march is identical
-	var cam := CameraState.make_default()
+	var cam := SurfaceFixture.overview_camera()
 	var e := cam.eye()
 	var f := cam.forward()
 	var near0 := DistanceEstimator.estimate(e, params)

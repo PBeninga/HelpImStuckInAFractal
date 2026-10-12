@@ -27,7 +27,7 @@ func run() -> void:
 	main.set_docked(false)
 	main._reopen_console()
 	check(not main.console().visible, "a delayed undock cannot reopen escape controls")
-	check(not main.workspace_files().quick_save_enabled, "escape disables quick-save controls")
+	check(main.workspace_files().quick_save_enabled, "escape keeps quick-save enabled")
 	var eye: PackedFloat64Array = main.camera.eye64()
 	Input.action_press("move_forward")
 	Input.action_press("sprint")

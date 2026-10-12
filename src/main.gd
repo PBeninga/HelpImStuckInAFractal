@@ -20,11 +20,6 @@ const OPEN_CONSOLE_AT_START := true
 ## Seconds to let the OS finish leaving fullscreen (macOS animates it) before a
 ## native console reopens beside the main window, or Reset window measures it.
 const WINDOW_SETTLE_DELAY := 0.8
-## A new shape is a tenth of the selected one's size, centred this many of its
-## own sizes in front of the camera: far enough for its whole cube (4 × size
-## across) to fit the 40° view with a margin.
-const NEW_SHAPE_SIZE_RATIO := 0.1
-const NEW_SHAPE_DISTANCE := 7.0
 
 var params: FractalParams
 var camera: CameraState
@@ -221,27 +216,9 @@ func table() -> AttributeTable:
 	return _shapes.table(clampi(params.active, 0, _shapes.count() - 1))
 
 
-## The defaults for a shape added from the console: the active shape's knobs
-## (bindings aside) at NEW_SHAPE_SIZE_RATIO of its size, centred
-## NEW_SHAPE_DISTANCE of the new size in front of the camera, unrotated.
-func new_shape_defaults() -> Dictionary:
-	var defaults := table().defaults()
-	var size: float = float(defaults.get(&"size", 1.0)) * NEW_SHAPE_SIZE_RATIO
-	var f := camera.forward()
-	var d := NEW_SHAPE_DISTANCE * size
-	defaults[&"size"] = size
-	defaults[&"pos_x"] = camera.eye_x() + f.x * d
-	defaults[&"pos_y"] = camera.eye_y() + f.y * d
-	defaults[&"pos_z"] = camera.eye_z() + f.z * d
-	defaults[&"rot_x"] = 0.0
-	defaults[&"rot_y"] = 0.0
-	defaults[&"rot_z"] = 0.0
-	return defaults
-
-
-## Add a shape from the console's defaults and make it the active one.
+## Add a copy of the last shape's settings and make it the active one.
 func add_shape() -> int:
-	var i := _shapes.add(new_shape_defaults(), "", look_table().defaults())
+	var i := _shapes.add()
 	if i >= 0:
 		if _console != null:
 			_console.shape_pane().set_expanded(i, true)
@@ -276,7 +253,7 @@ func _build_console() -> void:
 	_console = ConsoleWindow.new()
 	_console.name = "ConsoleWindow"
 	_console.setup(_shapes, look_table(), _keymap, _clock, ShapeCatalogue.group_tooltips(),
-		func() -> float: return camera.speed_factor, new_shape_defaults)
+		func() -> float: return camera.speed_factor)
 	add_child(_console)
 	_console.shape_pane().selected_changed.connect(func(i: int): params.active = i)
 	_console.toggle_requested.connect(_on_console_toggle)
@@ -585,11 +562,16 @@ func load_level_from(path: String) -> void:
 		_report("Load failed: %s" % warnings[0])
 		return
 	_files.note_loaded(path)
+	_clock.reset()
+	fly.sprinting = false
+	fly.at_zoom_limit = false
+	_free_requested = false
 	if _console != null:
 		_console.shape_pane().select(params.active)
 	if shape_run != null:
 		_restart_shape_run()
 	_resolve_once()   # push the loaded table straight into params
+	_apply_mode()
 	var noise: Variant = result.get("noise", null)
 	if noise is Dictionary and _noise != null:
 		var noise_warnings := _noise.apply_dict(noise)
@@ -676,7 +658,6 @@ func _on_escape_changed(escaped: bool) -> void:
 		cc.hud.set_escaped(escaped)
 	fly.movement_locked = escaped
 	_axis_controller.set_process(not escaped and not preparing)
-	_files.quick_save_enabled = not escaped
 	if _marker:
 		_marker.suppressed = escaped
 	if escaped:
@@ -768,8 +749,6 @@ func return_to_game() -> void:
 ## to get the same Ctrl tap / Escape / N / screenshot / quick-save handling.
 func _on_window_key(event: InputEventKey) -> void:
 	_unhandled_input(event)
-	if _files != null and event.is_action_pressed(&"workspace_quick_save"):
-		_files.quick_save()
 
 
 func _active_camera() -> Node:
@@ -784,6 +763,11 @@ func _input(event: InputEvent) -> void:
 
 # The only mouse dispatcher: Ctrl tap -> Escape/screenshot -> noise -> marker -> camera.
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"workspace_quick_save"):
+		_files.quick_save()
+		get_viewport().set_input_as_handled()
+		return
+
 	if event.is_action_pressed(&"quit_game"):
 		get_viewport().set_input_as_handled()
 		get_tree().quit()
@@ -881,6 +865,7 @@ func _restart_shape_run(move_to_spawn := false) -> void:
 	shape_run.reset()
 	if move_to_spawn:
 		params.gameplay.return_to_spawn(camera)
+	shape_run.capture_start_speed(fly.current_speed())
 	_send_run_briefing("run_started")
 
 func _on_shape_run_changed() -> void:
@@ -908,7 +893,7 @@ func _on_run_chat_message(message: Dictionary) -> void:
 
 func _check_shape_progress() -> void:
 	if not _loading and not preparing:
-		shape_run.check_position(fly.current_speed())
+		shape_run.check_position()
 
 
 func _refresh_shape_boundary() -> void:

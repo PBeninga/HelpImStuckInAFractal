@@ -91,10 +91,8 @@ var _dock_rect := Rect2i()
 
 
 ## `shapes` owns geometry and look tables per entry. `_look` is retained for
-## compatibility with older callers; both look tabs use the expanded entry. `placement_source` returns the defaults
-## (id -> value) for a shape the Add shape button creates; Main supplies one
-## that places it in front of the camera.
-func setup(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable(), placement_source: Callable = Callable()) -> void:
+## compatibility with older callers; both look tabs use the expanded entry.
+func setup(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable()) -> void:
 	_keymap = keymap
 	title = "Console"
 	visible = false   # force_native cannot change while a window is shown
@@ -127,7 +125,7 @@ func setup(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, clock: Cloc
 	_shape_pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_shape_pane.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.add_child(_shape_pane)
-	_shape_pane.setup(shapes, group_tooltips, placement_source, _self_similar)
+	_shape_pane.setup(shapes, group_tooltips, _self_similar)
 
 	var look := shapes.look_table(0)
 	_palette = Palette.new(look)

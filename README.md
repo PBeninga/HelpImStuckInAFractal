@@ -69,9 +69,10 @@ Closing F3 stops its timers, sampling callbacks, and viewport timing queries.
 
 **F4** toggles a matching gameplay overlay with the current shape/level number
 and distance from the run origin (spawn). One gameplay world unit is the distance
-travelled in one second at the current player speed, including wheel speed,
-sprint and the speed limiter. The scale is sampled every game frame and is shared
-by the readout and level advancement, including while stationary. The overlay
+travelled in one second at the player speed when the run starts, including the
+starting wheel speed, sprint and speed limiter. The scale stays fixed through
+movement, speed changes and stage transitions, and is shared by the readout and
+level advancement. Restarting the run captures a new starting scale. The overlay
 works from child windows and text fields and does no readout work while hidden.
 Both overlays stay in the game window; their shortcuts also work from child windows.
 
@@ -205,8 +206,7 @@ structure, increase Fractal iterations to 32 and Max march steps to at least
   surface normal, the one the Julia and metal modes already use.
 - **A 64-bit eye.** The camera's position is three 64-bit numbers; the 32-bit
   transform the renderer reads is their rounding. The fly step, the centre ray,
-  the fly speed and saves use the 64-bit ones (a saved level keeps the eye to
-  within one 64-bit rounding step), and the camera's distance to the surface is
+  the fly speed use the 64-bit ones, and the camera's distance to the surface is
   measured from them, down to `1e-14`.
 - **Zoom limit.** The shader uses the direct march in 32-bit floats. Near a
   coordinate `x`, those floats land on a grid
@@ -524,13 +524,15 @@ the fades finish. The flashing support panel is the only remaining HUD and reads
 "Dimensional void traversed, Have a nice day!" Diagnostics, chat, navigation
 guidance, and the F3 performance overlay stay hidden until the flight resets.
 Escape releases the mouse and clicking the view recaptures it.
+**Cmd/Ctrl+S** still saves on the end screen; confirmation appears in the terminal.
 Returning inside, including a return to spawn, resets the effects and controls. `params.gameplay.exit_skybox` accepts an
 optional equirectangular `Texture2D` for the sphere's background; no sky picker
 is included yet. With no texture it uses the current colour mode's background.
 
-**Spawn X/Y/Z** default to `(0, 0, 0)`. **Return to spawn** moves there, preserves
-the view direction and resets the wheel speed factor to 1. Saving the camera
-never changes spawn; loading still restores the saved camera position.
+**Spawn X/Y/Z** default to the safe starting position `(0.5, 0.5, 0.5)`. **Return to spawn** moves there, preserves
+the view direction and resets the wheel speed factor to 1. Saves keep the authored
+spawn, not the live camera. Loading starts shape 1 at spawn with default facing,
+fly mode and wheel speed factor 1, including when loading older saves.
 
 **Move speed** multiplies travel, and **Shift speed multiplier** applies while
 Shift is held (default 2). **Scale speed by camera-ray distance** defaults on;
@@ -571,8 +573,8 @@ are likewise the nearest shape's, at its scale.
 **Nesting.** A shape an order of magnitude smaller than its parent fits in one
 of the parent's cavities. Fly into a cavity, **Add shape** (a tenth-size copy
 appears in front of you), tune its Position and Size, repeat. To start a run
-inside the innermost shape, save with the camera there: a loaded level puts
-the player back exactly. `saves/nestedEscape.json` is a ready-made three-level
+inside the innermost shape, set **Spawn X/Y/Z** to its starting position before
+saving; loading uses that spawn. `saves/nestedEscape.json` is a ready-made three-level
 nest (sizes 1, 0.04, 0.0016, each turned so no straight line leads out) with
 the camera in the innermost pocket.
 
@@ -594,7 +596,7 @@ ordinary scales.
 ## The level save
 
 There is one save file — the **level** — a small JSON file tagged
-`"kind": "level"`, **version 5**. (`"kind": "sequence"` is reserved for the
+`"kind": "level"`, **version 6**. (`"kind": "sequence"` is reserved for the
 level-sequence editor to come; a sequence file handed to the level loader is
 refused by name, and so is an old stand-alone keymap file.)
 
@@ -605,21 +607,19 @@ refused by name, and so is an old stand-alone keymap file.)
   could be chosen has no `shape` id and loads as a Mandelbox. Each entry also
   carries its own `look` table (`defaults` and `bindings`) for light, colour,
   material and palette settings.
-- **`active`** — the index of the console's selected shape.
+- **`active`** — always 0; loads select the first shape.
 - **`axes`** — the keymap: a list of `{id, label, speed, positive, negative,
   value}` entries. Loading a level replaces the keymap in hand with these,
   rebinding the input actions.
-- **`fractal`** — the non-shape preferences: `fast_controls`, `camera_mode`
-  (`"fly"`/`"orbit"`), `mouse_sensitivity` and the renderer options.
-- **`camera`** — the eye, forward and up vectors and the speed factor. The
-  eye is written at full precision (all the digits of the 64-bit numbers; the
-  other numbers in a save are tidied), so a camera deep in a view or inside a
-  nested shape comes back where it was, to within one 64-bit rounding step
-  (the parser can land one step off). **Return to spawn** uses the separately
-  saved gameplay spawn coordinates, independent of this camera snapshot.
-- **`gameplay`** — spawn coordinates, exit radius, movement tuning and an
+- **`fractal`** — the non-shape preferences: `fast_controls`,
+  `mouse_sensitivity` and the renderer options. Camera mode is transient.
+- **`gameplay`** — full-precision spawn coordinates, escape timing, movement tuning and an
   optional sphere sky texture resource path. Older files use gameplay defaults.
 - **`noise`** — the noise graph, when one is wired (additive; see below).
+
+Live camera position, orientation and wheel speed are not saved. Older `camera`
+snapshots and camera modes are ignored on load; the player starts at spawn on
+shape 1 with default facing, fly mode and normal wheel speed.
 
 Loading skips anything it does not recognise or cannot read, with a warning, and
 leaves values a file does not mention as they are. Older levels still load: a **version-4** file
@@ -632,7 +632,7 @@ id) applies those values onto the axes in hand and leaves the keys alone; a
 (`scale`→`box_scale`, `inner_radius`→`min_radius`,
 `outer_radius`→`fixed_radius`, `julia_enabled`→`julia_all`,
 `julia_point`→the three Constants); all without a warning. Saving always
-writes version 5. An exported build cannot write into the
+writes version 6. An exported build cannot write into the
 project, so it saves to `user://saves/` instead.
 
 **Play Game** opens the level named in `last_saved.txt` in the project root.

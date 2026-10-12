@@ -62,7 +62,7 @@ func _init() -> void:
 	_list.add_child(return_button)
 
 	_heading("MOVEMENT")
-	_number(&"move_speed", "Move speed", 0.001, 1000.0, "Travel multiplier with distance scaling on; scene-coordinate units per second with it off. Mouse-wheel speed applies on top. One gameplay world unit is one second of travel at the resulting current speed.")
+	_number(&"move_speed", "Move speed", 0.001, 1000.0, "Travel multiplier with distance scaling on; scene-coordinate units per second with it off. Mouse-wheel speed applies on top. One gameplay world unit is one second of travel at the resulting speed when the run starts; the unit stays fixed during the run.")
 	_number(&"shift_multiplier", "Shift speed multiplier", 0.001, 100.0, "Multiplies move speed while Shift is held; default 2.")
 	scaling_check = CheckBox.new()
 	scaling_check.text = "Scale speed by camera-ray distance"

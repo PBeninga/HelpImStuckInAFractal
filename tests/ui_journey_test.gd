@@ -353,7 +353,7 @@ func _save_new_and_reload() -> void:
 	check_approx(float(main.table().get_default(&"box_scale")), -1.5, "loading restores the shape (Scale -1.5)")
 	var b: Binding = main.table().binding(&"fold_limit")
 	check(b != null and b.source == &"a" and is_equal_approx(b.gain, 0.5), "and the Axis A binding at gain 0.5")
-	check(main.camera.eye().distance_to(saved_eye) < 1e-4, "and the camera")
+	check_eq(main.camera.eye64(), PackedFloat64Array([main.params.gameplay.spawn_x, main.params.gameplay.spawn_y, main.params.gameplay.spawn_z]), "loading returns the player to spawn")
 	check_eq(nw.graph().nodes.size(), saved_nodes, "and the noise graph")
 
 

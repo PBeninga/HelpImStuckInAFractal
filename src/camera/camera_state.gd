@@ -16,10 +16,14 @@ extends Resource
 ## rounded mirror everything else reads; assigning `transform` directly (the
 ## orbit camera, tests) makes its 32-bit origin the truth again.
 
-const DEFAULT_EYE := Vector3(8.175847, 3.812460, 3.283393)
+## The Kleinian's exact origin is a singular camera position.
+const DEFAULT_EYE := Vector3(0.5, 0.5, 0.5)
 
-@export var transform: Transform3D = Transform3D.IDENTITY:
+@export var transform: Transform3D = Transform3D(Basis.IDENTITY, DEFAULT_EYE):
 	set(v):
+		# Keep nonzero double positions whose float32 mirror underflows to zero.
+		if v.origin == Vector3.ZERO and Vector3(_ex, _ey, _ez) != Vector3.ZERO:
+			v.origin = DEFAULT_EYE
 		if v == transform:
 			return
 		if v.origin != Vector3(_ex, _ey, _ez):   # the mirror keeps the doubles
@@ -37,9 +41,9 @@ const DEFAULT_EYE := Vector3(8.175847, 3.812460, 3.283393)
 
 
 # The 64-bit eye; transform.origin is its 32-bit mirror.
-var _ex := 0.0
-var _ey := 0.0
-var _ez := 0.0
+var _ex := float(DEFAULT_EYE.x)
+var _ey := float(DEFAULT_EYE.y)
+var _ez := float(DEFAULT_EYE.z)
 
 
 func eye() -> Vector3:
@@ -62,6 +66,10 @@ func eye_z() -> float:
 ## Put the eye at a 64-bit position, keeping the orientation. Emits `changed`
 ## once even when the 32-bit mirror does not move.
 func set_eye(x: float, y: float, z: float) -> void:
+	if x == 0.0 and y == 0.0 and z == 0.0:
+		x = DEFAULT_EYE.x
+		y = DEFAULT_EYE.y
+		z = DEFAULT_EYE.z
 	if x == _ex and y == _ey and z == _ez:
 		return
 	_ex = x   # first, so a listener of `changed` reads the new doubles
@@ -113,7 +121,7 @@ static func facing_basis(direction: Vector3) -> Basis:
 	return Basis.looking_at(direction, up_hint)
 
 
-## The site's initial view: eye at DEFAULT_EYE, looking at the origin, +Z up.
+## Safe initial view: eye at DEFAULT_EYE, looking at the shape origin, +Z up.
 static func make_default() -> CameraState:
 	var c := CameraState.new()
 	var t := Transform3D(Basis.IDENTITY, DEFAULT_EYE)

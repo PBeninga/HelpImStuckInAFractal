@@ -4,8 +4,8 @@ extends "res://tests/test_case.gd"
 func run() -> void:
 	var c := CameraState.make_default()
 
-	# the site's default view
-	check(c.eye().is_equal_approx(Vector3(8.175847, 3.812460, 3.283393)), "default eye")
+	# the safe default view
+	check(c.eye().is_equal_approx(Vector3(0.5, 0.5, 0.5)), "default eye")
 	check(c.forward().is_equal_approx((Vector3.ZERO - c.eye()).normalized()),
 		"forward looks at the origin")
 	check_approx(c.forward().length(), 1.0, "forward is unit length")
@@ -21,7 +21,7 @@ func run() -> void:
 	c.transform = Transform3D.IDENTITY
 	c.speed_factor = 2.0
 	check_eq(fired[0], 2, "both setters emitted changed")
-	check(c.eye().is_equal_approx(Vector3.ZERO), "transform setter moved the eye")
+	check(c.eye().is_equal_approx(Vector3(0.5, 0.5, 0.5)), "zero transform uses the safe eye")
 
 	# assigning the value it already holds is not a change: stray input must not
 	# make the governor re-render a still view
@@ -34,12 +34,12 @@ func run() -> void:
 
 	# --- the 64-bit eye: sub-ulp moves accumulate, the mirror follows ---
 	var d := CameraState.make_default()
-	check(absf(d.eye_x() - 8.175847) < 1e-6 and absf(d.eye_z() - 3.283393) < 1e-6, "the 64-bit eye starts at the default")
+	check(d.eye_x() == 0.5 and d.eye_z() == 0.5, "the 64-bit eye starts at the default")
 	var moves := [0]
 	d.changed.connect(func(): moves[0] += 1)
 	var x0 := d.eye_x()
 	for i in 1000:
-		d.move_by(Vector3(1e-9, 0, 0))   # each step is below float32's resolution at 8
+		d.move_by(Vector3(1e-9, 0, 0))   # each step is below float32's resolution at 0.5
 	check(absf(d.eye_x() - (x0 + 1e-6)) < 1e-12, "1000 moves of 1e-9 accumulate to 1e-6 in 64-bit (%s)" % (d.eye_x() - x0))
 	check_eq(moves[0], 1000, "every sub-ulp move still emits changed")
 	check(absf(d.eye().x - d.eye_x()) < 1e-5, "the 32-bit mirror tracks it (%s)" % d.eye().x)

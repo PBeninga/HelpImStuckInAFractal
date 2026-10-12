@@ -6,7 +6,7 @@ extends "res://tests/test_case.gd"
 
 func run() -> void:
 	var params := FractalParams.new()
-	var cam := CameraState.make_default()   # looking at the origin, from outside the cube
+	var cam := SurfaceFixture.overview_camera()   # looking at the origin, from outside the cube
 
 	# --- a hit lands on the surface: tiny DE there, and nothing closer on the way ---
 	var r := CenterRay.march(cam.eye(), cam.forward(), params)
@@ -49,7 +49,7 @@ func run() -> void:
 	turned.basis = turned.basis.rotated(Vector3(0, 0, 1), PI)   # face away from the fractal
 	cam.transform = turned
 	check(not ray.hit() and is_inf(ray.distance()), "turning away re-marches: now a miss")
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 	check_approx(ray.distance(), t, "turning back hits again", 1e-9)
 	params.shape().box_scale = -1.5
 	var reshaped := CenterRay.march(cam.eye(), cam.forward(), params)
@@ -64,7 +64,7 @@ func run() -> void:
 	small.pos_x = 10.0; small.pos_y = 10.0; small.pos_z = 10.0
 	small.size = 0.01
 	var inner_cam := CameraState.new()
-	var inner_eye := small.to_world_v(CameraState.DEFAULT_EYE)   # the default view, shrunk into the small shape
+	var inner_eye := small.to_world_v(SurfaceFixture.OVERVIEW_EYE)   # the default view, shrunk into the small shape
 	inner_cam.set_basis(cam.transform.basis)
 	inner_cam.set_eye(inner_eye.x, inner_eye.y, inner_eye.z)
 	var nr := CenterRay.march(inner_cam.eye(), inner_cam.forward(), nested)
@@ -81,7 +81,7 @@ func run() -> void:
 	var near_turned := DistanceEstimator.estimate(cam.eye(), params)
 	check_approx(fly.base_speed(), clampf(near_turned * FlyCamera.NEAR_CAP, FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor,
 		"a miss takes the NEAR_CAP x near speed", 1e-9)
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 	fly.queue_free()
 
 	# --- the view paints the dot only while shown and hitting ---
@@ -111,7 +111,7 @@ func run() -> void:
 	check(view.center_ray().distance() < vt, "and the hit is nearer after moving in")
 	cam.transform = turned
 	check(not bool(mat.get_shader_parameter("probe_on")), "a miss hides the dot")
-	cam.transform = CameraState.make_default().transform
+	cam.transform = SurfaceFixture.overview_camera().transform
 	view.show_probe = false
 	check(not bool(mat.get_shader_parameter("probe_on")), "hiding the probe turns it off")
 	view.queue_free()
@@ -121,8 +121,8 @@ func run() -> void:
 	# 1e-8 short of the Kleinian's surface (which resolves far below that) only a
 	# 64-bit origin hits (measured while planning: t/back 1.011 from the 64-bit
 	# origin; a 32-bit origin there is about 1e-7 off, ten times the distance) ---
-	var e := CameraState.make_default().eye()
-	var f0 := CameraState.make_default().forward()
+	var e := SurfaceFixture.overview_camera().eye()
+	var f0 := SurfaceFixture.overview_camera().forward()
 	check_eq(CenterRay.march_at(e.x, e.y, e.z, f0, params), CenterRay.march(e, f0, params),
 		"march() is march_at() on the same origin")
 	var klp := FractalParams.new()
