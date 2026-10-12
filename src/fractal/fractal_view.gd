@@ -54,6 +54,7 @@ var _display: TextureRect
 var _paint_viewport: SubViewport
 var _paint_rect: TextureRect
 var _brush_material: ShaderMaterial
+var _phosphor: PhosphorScan
 var _material: ShaderMaterial
 var _pending_size := Vector2i(1280, 800)
 
@@ -88,6 +89,9 @@ func _ready() -> void:
 	_rect = $SubViewport/ColorRect
 	_display = $Display
 	_material = _rect.material as ShaderMaterial
+	# Each view owns its ray coordinates and scan uniforms.
+	_material = _material.duplicate()
+	_rect.material = _material
 	_capture_base()
 	_display.texture = _viewport.get_texture()
 	_display.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -101,7 +105,9 @@ func _ready() -> void:
 	# A content-scale change resizes the window's viewport without necessarily
 	# resizing this Control; the pixel size still has to follow.
 	get_viewport().size_changed.connect(_apply_size)
-	_update_painterly()
+	_phosphor = PhosphorScan.new()
+	add_child(_phosphor)
+	_phosphor.setup(self)
 	_apply_size()
 	# setup() may have run before _ready wired the material (e.g. a test or the
 	# screenshot pass that adds the view and calls setup() in the same frame).
@@ -127,12 +133,13 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 		_center_ray = CenterRay.new(params, camera)
 	_params = params
 	_camera = camera
+	_apply_size()
+	if _phosphor != null and _phosphor.active:
+		_phosphor.reset_history()
 	if not params.changed.is_connected(_on_params_changed):
 		params.changed.connect(_on_params_changed)
 	if not camera.changed.is_connected(_on_camera_changed):
 		camera.changed.connect(_on_camera_changed)
-	_update_painterly()
-	_apply_size()
 	_push_params()
 	_push_camera()
 	_push_probe()
@@ -229,6 +236,8 @@ func _repush_all() -> void:
 	if _material != null:
 		_material.set_shader_parameter("aspect", _aspect())
 	_push_noise()
+	if _phosphor != null and _phosphor.active:
+		_phosphor.reset_history()
 	request_frame()
 
 
@@ -251,7 +260,7 @@ func shader_uniform_names() -> Array:
 func viewport_size() -> Vector2i:
 	if _viewport == null:
 		return Vector2i.ZERO
-	return _viewport.size
+	return _pending_size
 
 
 ## The last presented frame: the full-resolution painted target when enabled,
@@ -326,7 +335,7 @@ func request_frame() -> void:
 		_depth_scan.invalidate()
 	if _viewport == null:
 		return  # setup() may run before _ready wires the SubViewport
-	if continuous:
+	if continuous or (_phosphor != null and _phosphor.active):
 		return  # never downgrade UPDATE_ALWAYS to UPDATE_ONCE mid-motion
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
@@ -336,7 +345,7 @@ func set_continuous(on: bool) -> void:
 	if _viewport == null:
 		return
 	_viewport.render_target_update_mode = \
-		SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+		SubViewport.UPDATE_ALWAYS if on or (_phosphor != null and _phosphor.active) else SubViewport.UPDATE_DISABLED
 
 
 ## Returns the window pixel of `point`, or null when it is behind the camera.
@@ -382,14 +391,20 @@ func _apply_size() -> void:
 	if _params != null and _params.painterly_enabled:
 		ray_scale = minf(ray_scale, _params.painterly_scale)
 	var s := ray_scale * _content_scale()
+	var px := Vector2i(maxi(1, int(round(size.x * s))), maxi(1, int(round(size.y * s))))
+	if _material:
+		_material.set_shader_parameter("aspect", _aspect())
+	_pending_size = px
+	if _phosphor != null and _params != null:
+		_phosphor.configure(_params.phosphor_enabled, px, _params.phosphor_bands)
+	_update_painterly()
 	if _brush_material != null:
 		_brush_material.set_shader_parameter("display_size", size)
 		var display_px := Vector2i(maxi(1, roundi(size.x * _content_scale())), maxi(1, roundi(size.y * _content_scale())))
 		_paint_viewport.size = display_px
 		_paint_rect.size = Vector2(display_px)
-	var px := Vector2i(maxi(1, int(round(size.x * s))), maxi(1, int(round(size.y * s))))
-	if _material:
-		_material.set_shader_parameter("aspect", _aspect())
+	if _phosphor != null and _phosphor.active:
+		return
 	if px == _viewport.size:
 		return
 	_viewport.size = px
@@ -409,8 +424,13 @@ func _content_scale() -> float:
 func _update_painterly() -> void:
 	if _display == null:
 		return
+	var source := _viewport.get_texture()
+	if _phosphor != null and _phosphor.active:
+		source = _phosphor.output.get_texture()
 	if _params == null or not _params.painterly_enabled:
-		_display.texture = _viewport.get_texture()
+		_display.texture = source
+		if _phosphor != null and _phosphor.output.get_parent() != _phosphor:
+			_phosphor.output.reparent(_phosphor)
 		if _paint_viewport != null:
 			_paint_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 		return
@@ -422,13 +442,16 @@ func _update_painterly() -> void:
 		_paint_viewport.disable_3d = true
 		add_child(_paint_viewport)
 		_paint_rect = TextureRect.new()
-		_paint_rect.texture = _viewport.get_texture()
 		_paint_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_paint_rect.stretch_mode = TextureRect.STRETCH_SCALE
 		_paint_viewport.add_child(_paint_rect)
 		_brush_material = ShaderMaterial.new()
 		_brush_material.shader = preload("res://src/fractal/painterly.gdshader")
-		_brush_material.set_shader_parameter("ray_texture", _viewport.get_texture())
+	# Finish reconstruction before painting; never stretch a single scan strip.
+	if _phosphor != null and _phosphor.output.get_parent() != _paint_viewport:
+		_phosphor.output.reparent(_paint_viewport)
+	_paint_rect.texture = source
+	_brush_material.set_shader_parameter("ray_texture", source)
 	_brush_material.set_shader_parameter("brush_size", _params.painterly_brush_size)
 	_paint_rect.material = _brush_material
 	_display.texture = _paint_viewport.get_texture()
@@ -436,7 +459,6 @@ func _update_painterly() -> void:
 
 
 func _on_params_changed() -> void:
-	_update_painterly()
 	_apply_size()
 	_push_params()
 	_push_probe()

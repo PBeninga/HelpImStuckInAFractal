@@ -62,6 +62,9 @@ func _capture() -> void:
 	_rect.size = Vector2(width, height)
 	var material := _source.duplicate() as ShaderMaterial
 	material.set_shader_parameter("depth_scan", true)
+	# Navigation always observes the full screen, even when display rays scan a strip.
+	material.set_shader_parameter("scan_y_offset", 0.0)
+	material.set_shader_parameter("scan_y_scale", 1.0)
 	_rect.material = material
 	_pending = {"available": true, "frame_id": frame, "captured_at_ms": Time.get_ticks_msec(),
 		"revision": _revision, "width": width, "height": height, "units": "world",

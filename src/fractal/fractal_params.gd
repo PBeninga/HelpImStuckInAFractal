@@ -235,6 +235,17 @@ func set_shape_count(n: int) -> void:
 	set(v): palette_d_b = v; _emit()
 
 # --- preferences (edited directly, not resolved) ---
+## Scan one short band per frame; old rows decay with intentional motion trails.
+@export var phosphor_enabled: bool = false:
+	set(v): phosphor_enabled = v; emit_changed()
+@export var phosphor_bands: int = 8:
+	set(v): phosphor_bands = clampi(v, 2, 32); emit_changed()
+## Seconds for unrefreshed history to decay to 37% brightness.
+@export var phosphor_decay: float = 0.6:
+	set(v): phosphor_decay = clampf(v, 0.05, 3.0); emit_changed()
+@export var phosphor_glow: float = 0.5:
+	set(v): phosphor_glow = clampf(v, 0.0, 2.0); emit_changed()
+
 @export var fast_controls: bool = true:
 	set(v): fast_controls = v; emit_changed()
 @export var camera_mode: CameraMode = CameraMode.FLY:

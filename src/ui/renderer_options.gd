@@ -15,6 +15,10 @@ var min_scale_slider: HSlider
 var painterly_check: CheckBox
 var painterly_scale_slider: HSlider
 var painterly_brush_slider: HSlider
+var phosphor_check: CheckBox
+var phosphor_bands_slider: HSlider
+var phosphor_decay_slider: HSlider
+var phosphor_glow_slider: HSlider
 var reset_button: Button
 
 var _params: FractalParams
@@ -61,6 +65,23 @@ func _init() -> void:
 	fast_check.focus_mode = Control.FOCUS_NONE
 	add_child(fast_check)
 
+
+	phosphor_bands_slider = _slider(grid, "Scan bands", 2, 32, 1, false,
+		"Scanning phosphor only: march about 1/N of the rows per frame. More bands use fewer rays and take longer to rebuild the image.")
+	phosphor_decay_slider = _slider(grid, "Phosphor persistence", 0.05, 3.0, 0.05, false,
+		"Seconds for old rows to fade to 37% brightness. Longer persistence leaves stronger motion trails.")
+	phosphor_glow_slider = _slider(grid, "Phosphor glow", 0.0, 2.0, 0.05, false,
+		"Glow around reconstructed rows. Scanning continues while the camera is still.")
+	phosphor_check = CheckBox.new()
+	phosphor_check.text = "Scanning phosphor"
+	phosphor_check.tooltip_text = "Rebuild the image a strip at a time with fewer camera rays, fading history and intentional movement trails."
+	phosphor_check.focus_mode = Control.FOCUS_NONE
+	add_child(phosphor_check)
+	phosphor_check.toggled.connect(func(on): _write(func(): _params.phosphor_enabled = on))
+	phosphor_bands_slider.value_changed.connect(func(v): _write(func(): _params.phosphor_bands = int(v)))
+	phosphor_decay_slider.value_changed.connect(func(v): _write(func(): _params.phosphor_decay = v))
+	phosphor_glow_slider.value_changed.connect(func(v): _write(func(): _params.phosphor_glow = v))
+
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
 	add_child(buttons)
@@ -105,6 +126,10 @@ func reset_defaults() -> void:
 	_params.painterly_enabled = d.painterly_enabled
 	_params.painterly_scale = d.painterly_scale
 	_params.painterly_brush_size = d.painterly_brush_size
+	_params.phosphor_enabled = d.phosphor_enabled
+	_params.phosphor_bands = d.phosphor_bands
+	_params.phosphor_decay = d.phosphor_decay
+	_params.phosphor_glow = d.phosphor_glow
 
 
 func _write(action: Callable) -> void:
@@ -138,7 +163,20 @@ func _refresh() -> void:
 	_values[painterly_brush_slider].text = "%d px" % roundi(_params.painterly_brush_size)
 	painterly_scale_slider.editable = _params.painterly_enabled
 	painterly_brush_slider.editable = _params.painterly_enabled
+	_phosphor_refresh()
 	_syncing = false
+
+
+func _phosphor_refresh() -> void:
+	phosphor_check.set_pressed_no_signal(_params.phosphor_enabled)
+	phosphor_bands_slider.set_value_no_signal(_params.phosphor_bands)
+	phosphor_decay_slider.set_value_no_signal(_params.phosphor_decay)
+	phosphor_glow_slider.set_value_no_signal(_params.phosphor_glow)
+	_values[phosphor_bands_slider].text = "1/%d" % _params.phosphor_bands
+	_values[phosphor_decay_slider].text = "%.2fs" % _params.phosphor_decay
+	_values[phosphor_glow_slider].text = "%.2f" % _params.phosphor_glow
+	for slider in [phosphor_bands_slider, phosphor_decay_slider, phosphor_glow_slider]:
+		slider.editable = _params.phosphor_enabled
 
 
 func _slider(grid: GridContainer, label: String, lo: float, hi: float, step: float,

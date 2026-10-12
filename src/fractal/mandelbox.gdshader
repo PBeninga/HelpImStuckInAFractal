@@ -620,8 +620,13 @@ vec4 encode_scan_depth(float distance, float status) {
 	return vec4(floor(value / 256.0) / 255.0, mod(value, 256.0) / 255.0, status / 255.0, 1.0);
 }
 
+// Identity in normal mode; the short scan target covers only these full-frame rows.
+uniform float scan_y_offset = 0.0;
+uniform float scan_y_scale = 1.0;
+
 void fragment() {
-	vec2 ndc = (UV - 0.5) * 2.0;
+	vec2 ray_uv = vec2(UV.x, scan_y_offset + UV.y * scan_y_scale);
+	vec2 ndc = (ray_uv - 0.5) * 2.0;
 	ndc.y = -ndc.y;  // +y up
 	vec3 dir = normalize(cam_forward
 		+ ndc.x * aspect * tan_half_fov * cam_right

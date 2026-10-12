@@ -124,6 +124,32 @@ A ray stops once the distance estimate falls below
 `precision / detail × t × max(1, t / (range × d₀))^falloff`, where `t` is the
 distance along the ray and `d₀` the camera's distance to the nearest surface.
 
+### Scanning phosphor
+
+Enable **Scanning phosphor** in **Console → View → Renderer** for a progressively
+reconstructed hologram with cyan phosphor, glow, scan lines and a moving scan
+band. **Scan bands** selects the ray budget: the default 8 marches roughly 1/8
+of the full target's camera rays per frame and rebuilds the image over 8 rendered
+frames. More bands save rays but reconstruct more slowly. Strip heights round up
+to whole pixels with a two-row minimum, so tiny targets use a larger fraction.
+
+**Phosphor persistence** controls how long old rows remain visible (default 0.6
+seconds to decay to 37% brightness); **Phosphor glow** controls the halo (default
+0.5). Movement and parameter edits deliberately leave trails until the scan
+revisits each row. Scanning continues with a stationary camera, even after Fast
+Controls settles to full resolution. Resize, render-scale changes, enabling the
+mode, setup and shader replacement restart reconstruction from black. Switching
+the mode off restores normal rendering. These options save with the level; old
+levels and **Reset renderer defaults** leave the mode off.
+
+The march runs in a short viewport; other rows do no camera-ray marching that
+frame. A retained canvas target decays old pixels through alpha blending and
+replaces the current strip. A separate presentation pass adds the style and is
+also used by image capture. Neither pass samples its own render target. These
+full-screen compositing passes have a cost, so the ray reduction is not a promise
+of an equivalent frame-rate increase. Unlike normal idle rendering, this effect
+keeps drawing while stationary.
+
 ### Deep zoom
 
 The default renderer uses 16 iterations and 96 march steps. For deeper
@@ -637,6 +663,7 @@ site reports at `(x, y, z)` is `(2x, 2y, 2z)` here.
 ```bash
 tests/run_all.sh      # every headless SceneTree test
 python3 tests/fog_render_test.py  # fog cutoff/shadows/pixels in headless Chrome
+python3 tests/phosphor_render_test.py  # phosphor shader and retained blending in headless Chrome
 tests/screenshots.sh  # windowed render check (writes PNGs to screenshots/)
 ```
 
@@ -654,6 +681,13 @@ the default), a `lighting_raked` frame (the light swung and broadened, also
 required to differ) and the `nested_escape` level (required to differ from its
 outer shape alone), and writes the results plus a `PASS`/`FAIL` log to
 `tests/out/screenshots.txt`.
+
+The phosphor tests check scan coverage and budgets, stationary animation setup,
+resize/toggle resets, persistence, UI controls and styled capture routing. The
+headless Chrome test renders the production phosphor shader and checks retained
+alpha decay, strip replacement, tint, band and glow. Godot's headless renderer
+has no pixels: the final appearance and retained-viewport scheduling still need
+a windowed Godot visual check, which must be explicitly authorized before launch.
 
 The UI suites drive the real widgets the way a player does, still headless.
 `tests/ui_driver.gd` (`UiDriver`) turns the 64x64 headless root into a
