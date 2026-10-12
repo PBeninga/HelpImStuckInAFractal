@@ -45,6 +45,7 @@ const FRACTAL_KEYS: Array[String] = [
 	"fast_controls", "camera_mode", "mouse_sensitivity",
 	"detail", "detail_range", "detail_falloff", "max_steps", "min_render_scale",
 	"fractal_iterations", "painterly_enabled", "painterly_scale", "painterly_brush_size",
+	"kifs_bailout_margin", "mandelbulb_bailout_margin",
 	"phosphor_enabled", "phosphor_bands", "phosphor_decay", "phosphor_glow",
 ]
 const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
@@ -144,10 +145,11 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 	else:
 		warnings.append("Malformed axes section ignored")
 
-	# Old levels predate the opt-in scanner and must not inherit it from the
-	# previously open level. Reset these preferences before applying saved keys.
+	# Old levels must not inherit opt-in rendering or more expensive bailout
+	# margins from the previously open level. Reset before applying saved keys.
 	var renderer_defaults := FractalParams.new()
-	for key in ["phosphor_enabled", "phosphor_bands", "phosphor_decay", "phosphor_glow"]:
+	for key in ["phosphor_enabled", "phosphor_bands", "phosphor_decay", "phosphor_glow",
+			"kifs_bailout_margin", "mandelbulb_bailout_margin"]:
 		params.set(key, renderer_defaults.get(key))
 	var fractal: Variant = data.get("fractal", {})
 	if fractal is Dictionary:

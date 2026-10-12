@@ -120,7 +120,8 @@ func _matches_scene(params: FractalParams) -> bool:
 		for key in ShapeParams.RESOLVED_KEYS:
 			if _params.shapes[i].get(key) != params.shapes[i].get(key):
 				return false
-	for key in ["detail", "detail_range", "detail_falloff", "fractal_iterations"]:
+	for key in ["detail", "detail_range", "detail_falloff", "fractal_iterations",
+			"kifs_bailout_margin", "mandelbulb_bailout_margin"]:
 		if _params.get(key) != params.get(key):
 			return false
 	return true

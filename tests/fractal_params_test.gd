@@ -30,8 +30,8 @@ func run() -> void:
 	check_approx(s.c_3, 0.0, "c_3 default")
 	check_approx(s.iter_rot_xy, 0.0, "iter_rot_xy default")
 	check_approx(s.iter_rot_zw, 0.0, "iter_rot_zw default")
-	check_eq(p.color_mode, 1, "color_mode default is Ice Fractal")
-	check_approx(s.precision, 0.000025, "precision default", 1e-9)
+	check_eq(p.color_mode, 0, "color_mode defaults to cheap Grayscale")
+	check_approx(s.precision, 0.001, "precision default", 1e-9)
 	check_eq(p.fast_controls, true, "fast_controls on by default")
 	check_eq(p.camera_mode, FractalParams.CameraMode.FLY, "camera starts in fly mode")
 	check_approx(p.mouse_sensitivity, 0.1, "mouse_sensitivity default")
@@ -39,8 +39,8 @@ func run() -> void:
 	check_approx(p.detail_range, 10.0, "detail_range default")
 	check_approx(p.detail_falloff, 0.0, "detail falloff is off by default")
 	check_approx(p.min_render_scale, 0.1, "min_render_scale default")
-	check_eq(p.max_steps, 96, "max_steps default")
-	check_eq([p.coarse_steps(), p.fine_steps()], [72, 24], "the performance budget splits 72 + 24")
+	check_eq(p.max_steps, 32, "max_steps default")
+	check_eq([p.coarse_steps(), p.fine_steps()], [24, 8], "the cheap budget splits 24 + 8")
 
 	# the helpers (the params' answer for the active shape)
 	check(s.julia_point().is_equal_approx(Vector3(-0.23, 1.512, 1.892)), "julia_point() is (c_0, c_1, c_2)")
@@ -193,15 +193,15 @@ func run() -> void:
 	# hit_epsilon: the plain cone by default, coarsened past the range; the
 	# precision is the hit shape's (the active one's unless given)
 	var e := FractalParams.new()
-	check_approx(e.hit_epsilon(4.0, 0.5), 0.000025 * 4.0, "defaults give precision * t", 1e-12)
+	check_approx(e.hit_epsilon(4.0, 0.5), 0.001 * 4.0, "defaults give precision * t", 1e-12)
 	check_approx(e.hit_epsilon(1.0, 0.5, 1e-4), 1e-4, "another shape's precision is used as given", 1e-12)
 	e.detail = 2.0
-	check_approx(e.hit_epsilon(4.0, 0.5), 0.000025 * 2.0, "detail 2 halves it", 1e-12)
+	check_approx(e.hit_epsilon(4.0, 0.5), 0.001 * 2.0, "detail 2 halves it", 1e-12)
 	e.detail = 1.0
 	e.detail_falloff = 2.0
 	e.detail_range = 4.0          # start = 4 * 0.5 = 2
-	check_approx(e.hit_epsilon(1.5, 0.5), 0.000025 * 1.5, "inside the range: unchanged", 1e-12)
-	check_approx(e.hit_epsilon(6.0, 0.5), 0.000025 * 6.0 * 9.0, "past it: x (t / start)^falloff", 1e-12)
+	check_approx(e.hit_epsilon(1.5, 0.5), 0.001 * 1.5, "inside the range: unchanged", 1e-12)
+	check_approx(e.hit_epsilon(6.0, 0.5), 0.001 * 6.0 * 9.0, "past it: x (t / start)^falloff", 1e-12)
 	check(e.hit_epsilon(6.0, 0.0) > 0.0 and is_finite(e.hit_epsilon(6.0, 0.0)),
 		"a camera on the surface stays finite")
 
@@ -222,6 +222,7 @@ func run() -> void:
 	# coarse_iters: the march's coarse pass takes enough iterations that its
 	# smoother surface sits within its own hit threshold of the real one
 	var ci := FractalParams.new()
+	ci.shape().precision = 0.000025  # optional fine-detail fixture
 	ci.fractal_iterations = 32
 	check_eq(ci.coarse_iters(6.5655845), 16, "the default view (near ~6.57) keeps the site's 16")
 	check_eq(ci.coarse_iters(1000.0), 16, "far away never drops below 16")
@@ -229,6 +230,7 @@ func run() -> void:
 	check_eq(ci.coarse_iters(1e-6), 32, "1e-6 takes all 32")
 	check_eq(ci.coarse_iters(0.0), 32, "a camera on the surface stays at 32")
 	var ci_fine := FractalParams.new()
+	ci_fine.shape().precision = 0.000025  # optional fine-detail fixture
 	ci_fine.fractal_iterations = 32
 	ci_fine.detail = 10.0
 	check(ci_fine.coarse_iters(1e-2) > ci.coarse_iters(1e-2),
@@ -240,6 +242,7 @@ func run() -> void:
 	check_eq(ci.coarse_iters(6.5), 32, "nor does a scale inside 1: 32")
 	# a smaller shape reaches the same count at a proportionally smaller distance
 	var small := FractalParams.new()
+	small.shape().precision = 0.000025  # optional fine-detail fixture
 	small.fractal_iterations = 32
 	small.shape().size = 0.01
 	check_eq(small.coarse_iters(1e-5), full_count,
@@ -266,8 +269,8 @@ func run() -> void:
 	# floor32: the direct march's 32-bit precision floor
 	var zf := FractalParams.new()
 	var near_box := PackedFloat64Array([1.96, 0.914, 0.787])   # the default view's surface point
-	check(absf(zf.floor32(near_box) - 1e-4) <= 0.2e-4,
-		"near the box at the default precision the 32-bit floor is about 1e-4 (%s)" % zf.floor32(near_box))
+	check(absf(zf.floor32(near_box) - 2.384185791015625e-6) <= 1e-12,
+		"near the box at the default precision the 32-bit floor is about 2.38e-6 (%s)" % zf.floor32(near_box))
 	check_eq(zf.floor32(PackedFloat64Array([-1.96, -0.914, -0.787])), zf.floor32(near_box), "it uses the largest |coordinate|")
 	var zf10 := FractalParams.new()
 	zf10.detail = 10.0

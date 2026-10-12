@@ -56,7 +56,8 @@ static func nearest_at(px: float, py: float, pz: float, params: FractalParams,
 		var bound := cube_distance(q[0], q[1], q[2], s.bound_half()) * s.size
 		if bound >= best:
 			continue
-		var d := estimate_at(q[0], q[1], q[2], s, iters) * s.size
+		var d := estimate_at(q[0], q[1], q[2], s, iters,
+			params.kifs_bailout_margin, params.mandelbulb_bailout_margin) * s.size
 		if d < best:
 			best = d
 			which = i
@@ -152,15 +153,17 @@ static func march(ex: float, ey: float, ez: float, dir: Vector3, params: Fractal
 
 ## The distance of one shape at a point in ITS OWN frame, in local units.
 ## `iters` is clamped to [0, ITERATIONS]; the default is the shader's `de(i, p, 32)`.
+## Scene callers supply their view's margins; standalone estimates keep 1x.
 static func estimate_at(px: float, py: float, pz: float, shape: ShapeParams,
-		iters: int = ITERATIONS) -> float:
+		iters: int = ITERATIONS, kifs_bailout_margin: float = 1.0,
+		mandelbulb_bailout_margin: float = 1.0) -> float:
 	match shape.shape:
 		FractalParams.Shape.KIFS:
-			return KifsEstimator.estimate_at(px, py, pz, shape, iters)
+			return KifsEstimator.estimate_at(px, py, pz, shape, iters, kifs_bailout_margin)
 		FractalParams.Shape.KLEINIAN:
 			return KleinianEstimator.estimate_at(px, py, pz, shape, iters)
 		FractalParams.Shape.MANDELBULB:
-			return MandelbulbEstimator.estimate_at(px, py, pz, shape, iters)
+			return MandelbulbEstimator.estimate_at(px, py, pz, shape, iters, mandelbulb_bailout_margin)
 	return mandelbox_at(px, py, pz, shape, iters)
 
 

@@ -15,6 +15,7 @@ const RENDERER_UNIFORMS := ["depth_scan", "eye", "cam_right", "cam_up", "cam_for
 	"exit_radius", "exit_has_skybox", "exit_skybox", "exit_sky_alpha", "escape_fog_clear", "scan_y_offset", "scan_y_scale",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
 	"fractal_iterations", "surface_detail", "coarse_steps", "coarse_iters", "nf_weight", "fine_steps", "fog_dist", "fog_color",
+	"kifs_bailout_radius_squared", "mandelbulb_bailout_margin",
 	"fog_clear", "probe_on", "probe_point", "probe_radius", "shadow_steps", "view_limit",
 	"shape_count", "local_eye", "frame_x", "frame_y", "frame_z", "shape_size"]
 

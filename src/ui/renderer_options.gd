@@ -10,6 +10,8 @@ var range_slider: HSlider
 var falloff_slider: HSlider
 var steps_slider: HSlider
 var iterations_slider: HSlider
+var kifs_bailout_slider: HSlider
+var mandelbulb_bailout_slider: HSlider
 var fast_check: CheckBox
 var min_scale_slider: HSlider
 var painterly_check: CheckBox
@@ -46,6 +48,10 @@ func _init() -> void:
 		"The step budget per ray (three quarters coarse, a quarter fine). Rays that run out render as the darkest shade.")
 	iterations_slider = _slider(grid, "Fractal iterations", FractalParams.FRACTAL_ITERATIONS_MIN, FractalParams.FRACTAL_ITERATIONS_MAX, 1, false,
 		"Work per distance estimate across all shapes, including nested shapes. Lower is faster and resolves less deep structure; 32 restores full detail.")
+	kifs_bailout_slider = _slider(grid, "KIFS bailout margin", 1.0, FractalParams.BAILOUT_MARGIN_MAX, 0.25, true,
+		"Multiplies the KIFS escape radius (1000 at 1x). Higher delays early exits and can refine distance estimates at greater cost, up to Fractal iterations. Applies to all KIFS shapes, including camera collision and picking.")
+	mandelbulb_bailout_slider = _slider(grid, "Mandelbulb bailout margin", 1.0, FractalParams.BAILOUT_MARGIN_MAX, 0.25, true,
+		"Multiplies the Mandelbulb's power- and Julia-dependent escape radius. 1x keeps the original threshold. Higher delays early exits and can refine distance estimates at greater cost, up to Fractal iterations. Applies to all bulbs, including camera collision and picking.")
 	min_scale_slider = _slider(grid, "Min resolution", FractalParams.RENDER_SCALE_FLOOR, 1.0, 0.05, false,
 		"With Fast Controls on, the lowest render scale used while moving to target 60 fps.")
 
@@ -96,6 +102,8 @@ func _init() -> void:
 	steps_slider.value_changed.connect(func(v): _write(func(): _params.max_steps = int(v)))
 	min_scale_slider.value_changed.connect(func(v): _write(func(): _params.min_render_scale = v))
 	iterations_slider.value_changed.connect(func(v): _write(func(): _params.fractal_iterations = int(v)))
+	kifs_bailout_slider.value_changed.connect(func(v): _write(func(): _params.kifs_bailout_margin = v))
+	mandelbulb_bailout_slider.value_changed.connect(func(v): _write(func(): _params.mandelbulb_bailout_margin = v))
 	fast_check.toggled.connect(func(on): _write(func(): _params.fast_controls = on))
 	painterly_check.toggled.connect(func(on): _write(func(): _params.painterly_enabled = on))
 	painterly_scale_slider.value_changed.connect(func(v): _write(func(): _params.painterly_scale = v))
@@ -117,6 +125,8 @@ func reset_defaults() -> void:
 		return
 	var d := FractalParams.new()
 	_params.fractal_iterations = d.fractal_iterations
+	_params.kifs_bailout_margin = d.kifs_bailout_margin
+	_params.mandelbulb_bailout_margin = d.mandelbulb_bailout_margin
 	_params.detail = d.detail
 	_params.detail_range = d.detail_range
 	_params.detail_falloff = d.detail_falloff
@@ -144,6 +154,10 @@ func _refresh() -> void:
 	_syncing = true
 	iterations_slider.set_value_no_signal(_params.fractal_iterations)
 	_values[iterations_slider].text = str(_params.fractal_iterations)
+	kifs_bailout_slider.set_value_no_signal(_params.kifs_bailout_margin)
+	mandelbulb_bailout_slider.set_value_no_signal(_params.mandelbulb_bailout_margin)
+	_values[kifs_bailout_slider].text = "%.2fx" % _params.kifs_bailout_margin
+	_values[mandelbulb_bailout_slider].text = "%.2fx" % _params.mandelbulb_bailout_margin
 	detail_slider.set_value_no_signal(_params.detail)
 	range_slider.set_value_no_signal(_params.detail_range)
 	falloff_slider.set_value_no_signal(_params.detail_falloff)
@@ -164,7 +178,23 @@ func _refresh() -> void:
 	painterly_scale_slider.editable = _params.painterly_enabled
 	painterly_brush_slider.editable = _params.painterly_enabled
 	_phosphor_refresh()
+	_refresh_costs()
 	_syncing = false
+
+
+func _refresh_costs() -> void:
+	steps_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.max_steps, 32, 512))
+	iterations_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.fractal_iterations, 8, 32))
+	kifs_bailout_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.kifs_bailout_margin, 1.0, FractalParams.BAILOUT_MARGIN_MAX, true))
+	mandelbulb_bailout_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.mandelbulb_bailout_margin, 1.0, FractalParams.BAILOUT_MARGIN_MAX, true))
+	detail_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.detail, FractalParams.DETAIL_MIN, FractalParams.DETAIL_MAX, true))
+	range_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.detail_range, FractalParams.DETAIL_RANGE_MIN, FractalParams.DETAIL_RANGE_MAX, true) if _params.detail_falloff > 0.0 else 0.0)
+	falloff_slider.modulate = RenderCost.tint(1.0 - RenderCost.ramp(_params.detail_falloff, 0.0, FractalParams.DETAIL_FALLOFF_MAX))
+	min_scale_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.min_render_scale * _params.min_render_scale, 0.01, 1.0) if _params.fast_controls else 0.0)
+	painterly_scale_slider.modulate = RenderCost.tint(RenderCost.ramp(_params.painterly_scale * _params.painterly_scale, 0.01, 0.5625) if _params.painterly_enabled else 0.0)
+	phosphor_bands_slider.modulate = RenderCost.tint(RenderCost.ramp(1.0 / _params.phosphor_bands, 1.0 / 32.0, 0.5) if _params.phosphor_enabled else 0.0)
+	for slider in [painterly_brush_slider, phosphor_decay_slider, phosphor_glow_slider]:
+		slider.modulate = RenderCost.GREEN
 
 
 func _phosphor_refresh() -> void:
@@ -190,7 +220,7 @@ func _slider(grid: GridContainer, label: String, lo: float, hi: float, step: flo
 	s.max_value = hi
 	s.step = step
 	s.exp_edit = exponential
-	s.tooltip_text = tip
+	s.tooltip_text = tip + "\n\n" + RenderCost.LEGEND
 	s.focus_mode = Control.FOCUS_NONE
 	s.custom_minimum_size = Vector2(240, 0)
 	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER

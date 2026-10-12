@@ -32,6 +32,7 @@ const INT_IDS: Array[StringName] = [
 ## A noise rebuild failed to compile, or recovered. "" means all clear. The panel
 ## shows the message on its status line; the console gets it too.
 signal noise_status(text: String)
+signal escape_changed(escaped: bool)
 
 var render_scale := 1.0
 ## Paint the centre-ray probe's dot on the surface (see CenterRay).
@@ -554,6 +555,9 @@ func _push_params_impl() -> void:
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
+	_material.set_shader_parameter("kifs_bailout_radius_squared",
+		KifsEstimator.BAILOUT2 * _params.kifs_bailout_margin * _params.kifs_bailout_margin)
+	_material.set_shader_parameter("mandelbulb_bailout_margin", _params.mandelbulb_bailout_margin)
 	_sync_escape()
 	_push_shed()
 	_push_near()
@@ -591,7 +595,12 @@ func _sync_escape() -> void:
 	if outside != _escaped:
 		_escaped = outside
 		_escape_elapsed = 0.0
+		escape_changed.emit(_escaped)
 	_push_escape()
+
+
+func is_escaped() -> bool:
+	return _escaped
 
 
 func _escape_progress(duration: float) -> float:

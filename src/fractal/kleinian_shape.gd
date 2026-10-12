@@ -48,10 +48,10 @@ static func specs() -> Array[AttributeSpec]:
 	}))
 	out.append(AttributeSpec.make({
 		"id": "kleinian_view_distance", "label": "View distance", "type": F,
-		"default": 10.0, "min": 1.0, "max": 100.0, "step": 0.1, "log": true,
+		"default": 1.0, "min": 1.0, "max": 100.0, "step": 0.1, "log": true,
 		"hard_min": 0.5, "hard_max": 1000.0, "group": "Kleinian",
 		"tooltip": "How far a ray goes from the camera before it stops. The Kleinian fills space, so without a limit every ray would march on through it.",
-		"effects": "10 shows a few cells in every direction. The last third fades into the background, a soft horizon. Raising it shows more of the lattice at more cost per frame; lowering it is the cheapest way to speed up a slow view. The slider is logarithmic.",
+		"effects": "1 is the cheap starting horizon; raise it to 10 to see a few cells in every direction. The last third fades into the background, a soft horizon. Raising it shows more of the lattice at more cost per frame; lowering it is the cheapest way to speed up a slow view. The slider is logarithmic.",
 	}))
 	return out
 

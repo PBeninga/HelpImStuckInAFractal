@@ -5,6 +5,8 @@
 // catalogue ids (src/fractal/kifs_shape.gd), one array entry per shape.
 
 uniform float kifs_scale[MAX_SHAPES];
+// Renderer-owned: (1000 * margin)^2, precomputed once when settings change.
+uniform float kifs_bailout_radius_squared = 1000000.0;
 uniform int kifs_fold[MAX_SHAPES];        // 0 coordinate, 1 diagonal, 2 polyfold
 uniform float kifs_poly_k[MAX_SHAPES];
 uniform float kifs_twist[MAX_SHAPES];     // degrees per iteration, in xy
@@ -106,7 +108,7 @@ void kifs_orbit(int s, inout vec4 p, inout int n, int iters) {
 			if (p.z < -0.5 * t) { p.z += t; }
 		}
 		n = i + 1;
-		if (dot(p, p) > 1.0e6) { break; }
+		if (dot(p, p) > kifs_bailout_radius_squared) { break; }
 	}
 }
 

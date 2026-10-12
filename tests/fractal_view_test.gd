@@ -82,7 +82,7 @@ func run() -> void:
 	var l3 := LoadShedder.settings(3)
 	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "level 3 pushes its fog distance")
 	check_approx(_slot0(mat, "precision"), base_prec / l3["detail"],
-		"level 3 coarsens the precision by its detail factor", 1e-10)
+		"level 3 coarsens the precision by its detail factor", 1e-9)
 	check(int(mat.get_shader_parameter("coarse_steps")) < base_coarse, "level 3 shrinks the step budget")
 	check(Vector3(mat.get_shader_parameter("fog_color")).is_equal_approx(params.fog_color()),
 		"the fog takes the colour mode's tint")
@@ -112,7 +112,7 @@ func run() -> void:
 	check(float(_slot0(mat, "precision")) < mid_prec, "and the detail climbed further")
 	await frames(FractalView.RESTORE_FRAMES)
 	check_approx(mat.get_shader_parameter("fog_dist"), l2["fog"], "it lands on level 2's fog")
-	check_approx(_slot0(mat, "precision"), l2_prec, "and level 2's detail", 1e-12)
+	check_approx(_slot0(mat, "precision"), l2_prec, "and level 2's detail", 1e-9)
 	var l2_budget: int = maxi(FractalParams.MAX_STEPS_MIN, int(round(params.max_steps * l2["steps"])))
 	check_eq(int(mat.get_shader_parameter("coarse_steps")), params.coarse_steps(l2_budget),
 		"and level 2's step budget")

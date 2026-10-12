@@ -66,7 +66,7 @@ func run() -> void:
 	check_eq(color.type, AttributeSpec.Type.ENUM, "color_mode is an enum")
 	check(not color.bindable, "color_mode is not bindable")
 	check_eq(color.enum_values, FractalParams.COLOR_MODE_IDS, "color_mode enum_values are the site ids")
-	check_eq(table.get_default(&"color_mode"), 1, "color_mode default is Ice Fractal")
+	check_eq(table.get_default(&"color_mode"), 0, "color_mode defaults to cheap Grayscale")
 
 	# --- the console's tabs split the groups between them ---
 	for s in specs:

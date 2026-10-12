@@ -459,7 +459,7 @@ func run() -> void:
 	main.params.detail = 3.0
 	check_approx(ro.detail_slider.value, 3.0, "and it follows outside changes")
 	ro.reset_button.pressed.emit()
-	check(main.params.detail == 1.0 and main.params.detail_falloff == 0.0 and main.params.max_steps == 96 and main.params.fractal_iterations == 16,
+	check(main.params.detail == 1.0 and main.params.detail_falloff == 0.0 and main.params.max_steps == 32 and main.params.fractal_iterations == 8,
 		"Reset puts the renderer defaults back")
 
 	# the load shedder's top level caps the Fly speed and shows in the console

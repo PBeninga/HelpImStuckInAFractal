@@ -155,10 +155,10 @@ static func shape_specs() -> Array[AttributeSpec]:
 	# --- Render ---
 	out.append(AttributeSpec.make({
 		"id": "precision", "label": "Precision", "type": F,
-		"default": 0.000025, "min": 1e-6, "max": 1e-3, "step": 1e-6, "log": true,
+		"default": 0.001, "min": 1e-6, "max": 1e-3, "step": 1e-6, "log": true,
 		"group": "Render",
 		"tooltip": "The surface threshold: the ray stops when the distance estimate drops below precision times the distance travelled.",
-		"effects": "Smaller values resolve finer detail at the cost of more steps (and a slower frame); larger values are faster but rounder and noisier near the surface. The default (2.5e-5) is the site's. The slider is logarithmic.",
+		"effects": "Smaller values resolve finer detail at the cost of more steps (and a slower frame); larger values are faster but rounder and noisier near the surface. The default (0.001) is the cheapest end of the slider; lower it to restore fine detail. The slider is logarithmic.",
 	}))
 	return out
 
@@ -176,10 +176,10 @@ static func scene_specs() -> Array[AttributeSpec]:
 		mode_labels.append(FractalParams.COLOR_MODE_NAMES[i])
 	out.append(AttributeSpec.make({
 		"id": "color_mode", "label": "Colour", "type": ENUM,
-		"default": 1, "enum_labels": mode_labels, "enum_values": mode_values,
+		"default": 0, "enum_labels": mode_labels, "enum_values": mode_values,
 		"group": "Colour",
 		"tooltip": "How the surface is coloured. Thirteen modes are the site's looks, keyed off the step count, the surface normal and the camera; Palette paints with your own cosine palette from the Colour window.",
-		"effects": "Ice Fractal is the default blue-white look and uses the field normal for modes 1 through 9 on the Mandelbox outside Julia mode (the true surface normal everywhere else). Grayscale is the cheapest (no normal, no lighting). Rainbow and Ice Box modes map the orbit or the normal through a hue ramp. Palette runs the step count, the radius or the normal through the palette above.",
+		"effects": "Ice Fractal is the blue-white look and uses the field normal for modes 1 through 9 on the Mandelbox outside Julia mode (the true surface normal everywhere else). Grayscale is the default and cheapest (no normal, no lighting). Rainbow and Ice Box modes map the orbit or the normal through a hue ramp. Palette runs the step count, the radius or the normal through the palette above.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "palette_source", "label": "Palette input", "type": ENUM,
@@ -347,14 +347,14 @@ static func scene_specs() -> Array[AttributeSpec]:
 	# --- Texture ---
 	out.append(AttributeSpec.make({
 		"id": "texture_strength", "label": "Texture", "type": F,
-		"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,
+		"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,
 		"group": "Texture",
 		"tooltip": "How much the noise editor's Texture output recolours the surface. 0 leaves the colour alone.",
 		"effects": "The surface colour is multiplied by a blend from white toward the Texture colour by this amount. 1 uses the Texture output in full; nothing wired means nothing changes whatever this is.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "bump_strength", "label": "Bump", "type": F,
-		"default": 1.0, "min": 0.0, "max": 4.0, "step": 0.01, "hard_max": 64.0,
+		"default": 0.0, "min": 0.0, "max": 4.0, "step": 0.01, "hard_max": 64.0,
 		"group": "Texture",
 		"tooltip": "How much the noise editor's Bump output tilts the surface normal (a fake relief; the surface does not actually move).",
 		"effects": "0 is flat. Larger values deepen the apparent bumps and grooves. Nothing wired means nothing changes; press N to open the editor.",

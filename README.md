@@ -102,11 +102,20 @@ rendered, and are saved with the view.
 | **Detail falloff** | how quickly detail coarsens past that range; 0 (the default) keeps detail matched to the pixel at every distance |
 | **Max march steps** | the step budget per ray (default 96: 72 coarse + 24 fine) |
 | **Fractal iterations** | work per distance estimate (default 16; 32 for deeper structure) |
+| **KIFS bailout margin** | multiplies the orbit escape radius of 1000; 1×–16×, default 1× |
+| **Mandelbulb bailout margin** | multiplies the power- and Julia-dependent orbit escape radius; 1×–16×, default 1× |
 | **Min resolution** | the lowest render scale Fast Controls may drop to while moving (default 10%) |
 | **Fast Controls** | target 60 fps while anything moves, then restore resolution up to the painting ceiling when enabled |
 | **Painterly brushstrokes** | opt into gradient-oriented brush dabs over a smaller ray-marched image |
 | **Painting ray resolution** | persistent resolution ceiling, including at rest (default 30% per dimension, about 9% of the primary rays) |
 | **Brush size** | stroke size in logical screen pixels, independent of ray resolution (default 12 px) |
+
+Higher bailout margins delay escape checks for more refined distance estimates,
+at the cost of additional orbit iterations. They still obey **Fractal iterations**,
+apply to all shapes of that family (including CPU camera collision and picking),
+and do not enlarge the shape's spatial bounds. Both reset to 1× with renderer
+defaults or when loading older levels that do not contain these settings.
+They do not guarantee a mathematically conservative distance estimate.
 
 Painting is off by default. Enable **Painterly brushstrokes** in the console's
 **View → Renderer** options. The low-resolution pass does the actual camera

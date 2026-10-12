@@ -198,7 +198,7 @@ var _suppress := false
 	set(v): kleinian_shift_3 = v; _emit()
 @export var kleinian_thickness: float = 0.01:
 	set(v): kleinian_thickness = v; _emit()
-@export var kleinian_view_distance: float = 10.0:
+@export var kleinian_view_distance: float = 1.0:
 	set(v): kleinian_view_distance = v; _emit()
 
 # --- Mandelbulb (see MandelbulbShape) ---
@@ -218,7 +218,7 @@ var _suppress := false
 	set(v): mandelbulb_c_2 = v; _emit()
 
 # --- Render ---
-@export var precision: float = 0.000025:
+@export var precision: float = 0.001:
 	set(v): precision = v; _emit()
 
 

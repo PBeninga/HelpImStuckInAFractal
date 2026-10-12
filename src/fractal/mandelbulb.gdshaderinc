@@ -4,6 +4,8 @@
 // (src/fractal/mandelbulb_shape.gd), one array entry per shape.
 
 uniform float mandelbulb_power[MAX_SHAPES];
+// Renderer-owned; changes the orbit threshold, not the shape's spatial bound.
+uniform float mandelbulb_bailout_margin = 1.0;
 uniform float mandelbulb_phase_theta[MAX_SHAPES];   // degrees
 uniform float mandelbulb_phase_phi[MAX_SHAPES];     // degrees
 uniform int mandelbulb_julia[MAX_SHAPES];           // 0 off, 1 on
@@ -29,19 +31,31 @@ float mandelbulb_de(int s, vec3 p, int iters) {
 	float add = julia ? 0.0 : 1.0;
 	float a = radians(mandelbulb_phase_theta[s]);
 	float b = radians(mandelbulb_phase_phi[s]);
-	float bail = mandelbulb_bailout(s);
+	float bail = mandelbulb_bailout(s) * mandelbulb_bailout_margin;
+	float escape_inverse = mandelbulb_bailout_margin > 1.0 ? 1.0 / (bail + length(c)) : 0.0;
 	vec3 z = p;
 	float dr = 1.0;
 	float r = length(z);
 	for (int i = 0; i < 32; i++) {
 		if (i >= iters || r > bail) { break; }
-		dr = n * pow(r, n - 1.0) * dr + add;
 		float theta = acos(clamp(z.z / max(r, 1e-30), -1.0, 1.0)) * n + a;
 		// atan(0, 0) is undefined in GLSL; the CPU's atan2 gives 0 there.
 		float phi = (z.x == 0.0 && z.y == 0.0) ? 0.0 : atan(z.y, z.x);
 		phi = phi * n + b;
 		float st = sin(theta);
-		z = pow(r, n) * vec3(st * cos(phi), st * sin(phi), cos(theta)) + c;
+		vec3 direction = vec3(st * cos(phi), st * sin(phi), cos(theta));
+		if (mandelbulb_bailout_margin > 1.0 && r > 1.0) {
+			float inv_rn = pow(r, -n);
+			if (inv_rn < escape_inverse) {
+				// r^n - |c| > bail: this step must escape. Evaluate its
+				// SAME final DE with r^n cancelled, so large margins/powers
+				// cannot overflow the last point, length or derivative.
+				float q = length(direction + c * inv_rn);
+				return 0.5 * (n * log(r) + log(q)) * q / ((n / r) * dr + add * inv_rn);
+			}
+		}
+		dr = n * pow(r, n - 1.0) * dr + add;
+		z = pow(r, n) * direction + c;
 		r = length(z);
 	}
 	r = max(r, 1e-30);

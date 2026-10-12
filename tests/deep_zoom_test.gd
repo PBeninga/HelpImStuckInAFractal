@@ -37,6 +37,7 @@ func _march(o: Array, dir: Array, params: FractalParams, coarse: int) -> Array:
 
 func run() -> void:
 	var params := FractalParams.new()
+	params.shape().precision = 0.000025  # original deep-detail regression
 	params.fractal_iterations = 32  # this regression exercises optional deep detail
 	var s := SurfaceFixture.default_surface(params)
 	var dir := [s[3], s[4], s[5]]

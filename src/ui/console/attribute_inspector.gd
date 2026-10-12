@@ -23,6 +23,7 @@ var _groups: Array = []
 var _header: Control
 var _scrolling := true
 var _built := false
+var _last_cost_values: Dictionary = {}
 
 
 ## Show the shape table, with the group heading tooltips: only the specs in
@@ -66,6 +67,7 @@ func _build() -> void:
 
 
 func _populate() -> void:
+	_last_cost_values.clear()
 	if _table == null:
 		return
 	_rows.clear()
@@ -99,6 +101,7 @@ func _populate() -> void:
 
 
 func _on_table_changed(_id: StringName) -> void:
+	_last_cost_values.clear()
 	_refresh_headings()
 
 
@@ -123,14 +126,21 @@ func heading(group: String) -> Label:
 
 ## The axes available as binding sources: Array of {id, label}.
 func set_sources(axis_list: Array) -> void:
+	_last_cost_values.clear()
 	for id in _rows:
 		(_rows[id] as AttributeRow).set_sources(axis_list)
 
 
 ## Feed one frame of resolved values (id -> value) to the rows.
 func set_resolved(values: Dictionary) -> void:
+	var cost_changed := is_visible_in_tree() and values != _last_cost_values
+	if cost_changed:
+		_last_cost_values = values.duplicate()
 	for id in _rows:
-		(_rows[id] as AttributeRow).set_resolved(values.get(id))
+		var row := _rows[id] as AttributeRow
+		row.set_resolved(values.get(id))
+		if cost_changed and row.is_visible_in_tree():
+			row.refresh_cost(values)
 
 
 func row_count() -> int:

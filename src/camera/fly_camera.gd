@@ -23,6 +23,8 @@ const SPRINT_MULTIPLIER := 2.0
 const SPEED_FLOOR := 1e-14
 
 var enabled := false
+## Escape keeps look enabled while holding the full-precision eye still.
+var movement_locked := false
 ## The load shedder's cap on travel speed: 1.0 normally, lower at its top level.
 var speed_limit := 1.0
 ## Whether Shift was held on the last physics tick.
@@ -64,7 +66,7 @@ func handle_event(event: InputEvent) -> bool:
 		# ignores it, so a still view stays still.
 		apply_look(event.relative.x, event.relative.y)
 		return true
-	if event is InputEventMouseButton and event.pressed:
+	if event is InputEventMouseButton and event.pressed and not movement_locked:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			scroll(true)
 			return true
@@ -81,8 +83,9 @@ func _physics_process(delta: float) -> void:
 
 
 func _step_movement(delta: float) -> void:
-	if not enabled:
+	if not enabled or movement_locked:
 		at_zoom_limit = false
+		sprinting = false
 		return
 	var dir := move_direction()
 	sprinting = Input.is_action_pressed("sprint")
@@ -141,6 +144,8 @@ func apply_look(dx: float, dy: float) -> void:
 ## Nothing while Cmd or Ctrl is held: Cmd+S saves, a Ctrl tap toggles the panel,
 ## and S alone is move_back.
 func move_direction() -> Vector3:
+	if movement_locked:
+		return Vector3.ZERO
 	if Input.is_key_pressed(KEY_META) or Input.is_key_pressed(KEY_CTRL):
 		return Vector3.ZERO
 	if TextFocus.any(_text_viewports):

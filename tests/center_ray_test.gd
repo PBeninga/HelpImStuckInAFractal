@@ -28,6 +28,7 @@ func run() -> void:
 	kcam.transform = Transform3D(Basis.IDENTITY, Vector3(3.2, 2.4, 1.9)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
 	check(CenterRay.march(kcam.eye(), kcam.forward(), kifs)[1], "the centre ray hits the Menger sponge")
 	var kl := FractalParams.new(); kl.shape().shape = FractalParams.Shape.KLEINIAN
+	kl.shape().kleinian_view_distance = 10.0  # fixture sees several cells
 	var lcam := CameraState.new()
 	lcam.transform = Transform3D(Basis.IDENTITY, Vector3(2.5, 1.6, 1.2)).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
 	var kr := CenterRay.march(lcam.eye(), lcam.forward(), kl)

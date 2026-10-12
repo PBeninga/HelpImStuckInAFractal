@@ -10,7 +10,7 @@ extends Resource
 ## Setters emit Resource's built-in `changed`; apply_resolved batches a frame's
 ## writes into at most one emit, and any shape's `changed` is relayed as this
 ## resource's, so one signal still means "re-render". Shape and look defaults
-## match the site; renderer budgets favor performance
+## favor performance, with coarse precision and unlit Grayscale
 ## (the level-of-detail defaults reproduce its plain pixel cone). A new
 ## FractalParams holds one default shape at the identity placement, which is
 ## exactly the single-shape viewer.
@@ -144,7 +144,7 @@ func set_shape_count(n: int) -> void:
 
 
 # --- Colour ---
-@export var color_mode: int = 1:
+@export var color_mode: int = 0:
 	set(v): color_mode = v; _emit()
 @export var palette_source: int = 0:
 	set(v): palette_source = v; _emit()
@@ -203,9 +203,9 @@ func set_shape_count(n: int) -> void:
 
 # --- Texture (the noise editor's Texture and Bump outputs scale by these;
 #     1 is "full strength", but nothing wired means nothing changes) ---
-@export var texture_strength := 1.0:
+@export var texture_strength := 0.0:
 	set(v): texture_strength = v; _emit()
-@export var bump_strength := 1.0:
+@export var bump_strength := 0.0:
 	set(v): bump_strength = v; _emit()
 
 # --- Palette: A + B cos(2π (C t + D)), per channel (see Palette) ---
@@ -290,7 +290,7 @@ const FOG_COLORS := {
 const RENDER_SCALE_FLOOR := 0.1
 
 ## The march's step budget: three quarters coarse and the rest fine. Defaults
-## use 72 + 24 steps and 16 fractal iterations for responsive navigation. Raise
+## use 24 + 8 steps and 8 fractal iterations: the lowest supported budgets. Raise
 ## iterations to 32 and steps to 128 for the original full-detail budget. The
 ## shader loops are bounded for MAX_STEPS_MAX.
 const MAX_STEPS_MIN := 32
@@ -306,8 +306,20 @@ const SHADOW_STEPS := 48
 ## and picking keep the saved budget so shedding does not change gameplay.
 const FRACTAL_ITERATIONS_MIN := 8
 const FRACTAL_ITERATIONS_MAX := 32
-@export var fractal_iterations: int = 16:
+@export var fractal_iterations: int = 8:
 	set(v): fractal_iterations = clampi(v, FRACTAL_ITERATIONS_MIN, FRACTAL_ITERATIONS_MAX); emit_changed()
+
+## Radius multipliers for orbit escape only; geometry bounds stay unchanged.
+## Larger margins delay early exits but never exceed the iteration budget.
+const BAILOUT_MARGIN_MAX := 16.0
+@export var kifs_bailout_margin: float = 1.0:
+	set(v):
+		kifs_bailout_margin = clampf(v, 1.0, BAILOUT_MARGIN_MAX) if is_finite(v) else 1.0
+		emit_changed()
+@export var mandelbulb_bailout_margin: float = 1.0:
+	set(v):
+		mandelbulb_bailout_margin = clampf(v, 1.0, BAILOUT_MARGIN_MAX) if is_finite(v) else 1.0
+		emit_changed()
 
 
 @export var detail: float = 1.0:
@@ -331,7 +343,7 @@ const PAINTERLY_BRUSH_MAX := 40.0
 	set(v): painterly_brush_size = clampf(v, PAINTERLY_BRUSH_MIN, PAINTERLY_BRUSH_MAX); emit_changed()
 
 
-@export var max_steps: int = 96:
+@export var max_steps: int = 32:
 	set(v): max_steps = clampi(v, MAX_STEPS_MIN, MAX_STEPS_MAX); emit_changed()
 
 

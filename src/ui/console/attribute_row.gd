@@ -44,6 +44,8 @@ var _wave: OptionButton
 var _period: DecimalSpinBox
 var _updating := false
 var _flash: Tween
+var _cost_score := -1.0
+var _slider_tip := ""
 ## Array of {id: StringName, label: String} for the source dropdown's axes.
 var _axis_list: Array = []
 
@@ -98,6 +100,7 @@ func refresh() -> void:
 			if not b.is_active():
 				_readout.visible = false
 	_updating = false
+	refresh_cost(values)
 
 
 ## Show the value actually used this frame, for a row whose binding is active.
@@ -110,6 +113,23 @@ func set_resolved(value: Variant) -> void:
 		return
 	_readout.visible = true
 	_readout.text = "→ %s" % _format(value)
+
+
+## The full resolved dictionary lets one control react to another (shadow yaw).
+## The inspector feeds existing resolved values; there is no new process loop.
+func refresh_cost(values: Dictionary) -> void:
+	if _slider == null:
+		return
+	var value := float(values.get(spec.id, _table.get_default(spec.id)))
+	var cost := RenderCost.score(spec.id, value, values)
+	if cost == _cost_score:
+		return
+	_cost_score = cost
+	_slider.modulate = RenderCost.tint(cost)
+	if _slider_tip.is_empty():
+		_slider_tip = _slider.tooltip_text
+	var level := "Low" if cost == 0.0 else ("High" if cost >= 0.75 else "Moderate")
+	_slider.tooltip_text = _slider_tip + "\n\n" + level + " estimated cost. " + RenderCost.explanation(spec.id) + "\n" + RenderCost.LEGEND
 
 
 func value_control() -> Control:

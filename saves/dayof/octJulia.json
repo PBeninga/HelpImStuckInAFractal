@@ -11,7 +11,13 @@
 		"shift_multiplier": 2.0,
 		"distance_power": 1.0,
 		"near_cap": 10.0,
-		"max_distance_speed": 20.0
+		"max_distance_speed": 20.0,
+		"surrounding_ray_count": 12,
+		"depth_scan_width": 32,
+		"depth_scan_interval": 2,
+		"escape_sky_duration": 3.0,
+		"escape_fog_duration": 3.0,
+		"exit_skybox": "res://Assets/sky_82_2k.png"
 	},
 	"shapes": [
 		{
@@ -23,7 +29,7 @@
 				"rot_y": 0.0,
 				"rot_z": 0.0,
 				"size": 1.0,
-				"shape": 0,
+				"shape": 2,
 				"w": 0.0,
 				"box_scale": -2.09,
 				"fold_limit": 1.0,
@@ -114,6 +120,13 @@
 			"light_ambient": 0.1,
 			"light_diffuse": 0.5,
 			"shadows": 0.0,
+			"fog_distance": 0.0,
+			"fog_start": 0.35,
+			"fog_tint": [
+				0.20000000298023224,
+				0.20000000298023224,
+				0.20000000298023224
+			],
 			"scatter_density": 0.0,
 			"scatter_glow": 0.0,
 			"scatter_brightness": 1.0,
@@ -164,23 +177,30 @@
 		"detail_falloff": 0.0,
 		"max_steps": 128,
 		"min_render_scale": 0.25,
-		"fractal_iterations": 32
+		"fractal_iterations": 32,
+		"painterly_enabled": false,
+		"painterly_scale": 0.3,
+		"painterly_brush_size": 12.0,
+		"phosphor_enabled": false,
+		"phosphor_bands": 8,
+		"phosphor_decay": 0.6,
+		"phosphor_glow": 0.5
 	},
 	"camera": {
 		"eye": [
-			0.7727708895588421,
-			-0.5177404938252721,
-			0.5237784656078617
+			0.4855039520959963,
+			-0.8763673131282985,
+			0.5489289812126259
 		],
 		"forward": [
-			-0.2145304,
-			0.9757426,
-			-0.0436244
+			-0.9999726,
+			0.00523641,
+			0.005239794
 		],
 		"up": [
-			-0.009367678,
-			0.04260674,
-			0.9990481
+			0.005239722,
+			-2.743808e-05,
+			0.9999863
 		],
 		"speed_factor": 1.0
 	},

@@ -3,7 +3,7 @@ extends RefCounted
 ## CPU copy of kifs.gdshaderinc's kifs_de at N = 32, in 64-bit scalars (see
 ## DistanceEstimator for why). Ported from Fractacular's kifs.gdshader: rotate
 ## (R1), apply the fold set, rotate (R2), twist, scale toward the offset, repeat
-## until the orbit leaves BAILOUT. The distance is the orbit's distance to the
+## until the orbit leaves the bailout radius times its margin. The distance is the orbit's distance to the
 ## base cell, shrunk by the scale once per iteration: the box [-1, 1]^4 for the
 ## coordinate fold (crisp Menger edges), the origin otherwise.
 ##
@@ -30,7 +30,8 @@ const ROT_IDS := [
 
 ## `iters` is clamped to [0, ITERATIONS], as DistanceEstimator's.
 static func estimate_at(px: float, py: float, pz: float, params: ShapeParams,
-		iters: int = ITERATIONS) -> float:
+		iters: int = ITERATIONS, bailout_margin: float = 1.0) -> float:
+	var bailout2 := BAILOUT2 * bailout_margin * bailout_margin
 	var s := params.kifs_scale
 	var fold_set := params.kifs_fold
 	var sector := TAU / float(maxi(int(floor(params.kifs_poly_k + 0.5)), 2))
@@ -69,7 +70,7 @@ static func estimate_at(px: float, py: float, pz: float, params: ShapeParams,
 			if p[2] < -0.5 * t:
 				p[2] += t
 		n = i + 1
-		if p[0] * p[0] + p[1] * p[1] + p[2] * p[2] + p[3] * p[3] > BAILOUT2:
+		if p[0] * p[0] + p[1] * p[1] + p[2] * p[2] + p[3] * p[3] > bailout2:
 			break
 	var d := 0.0
 	if fold_set == FoldSet.COORDINATE:

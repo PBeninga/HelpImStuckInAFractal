@@ -66,6 +66,8 @@ var _docked := false
 ## Whether the main window was fullscreen when last looked at; a change docks
 ## or undocks the console.
 var _was_fullscreen := false
+var _escape_active := false
+var _escape_ui := {}
 
 
 func _ready() -> void:
@@ -109,6 +111,8 @@ func _ready() -> void:
 	_build_gameplay()
 	_build_noise_window()
 	_build_chat()
+	view.escape_changed.connect(_on_escape_changed)
+	_on_escape_changed(view.is_escaped())
 
 	# The sensitivity is the player's, not the view's: Settings owns it.
 	params.mouse_sensitivity = Settings.mouse_sensitivity
@@ -286,6 +290,8 @@ func _build_chat() -> void:
 
 
 func _toggle_noise() -> void:
+	if _escape_active:
+		return
 	_noise.toggle()
 	_update_mouse()
 
@@ -316,12 +322,16 @@ func _build_gameplay() -> void:
 ## Show the console beside the main window, then hand focus back to the main
 ## window so flying starts as it would with the console closed.
 func _open_console_at_start() -> void:
+	if _escape_active:
+		return
 	_console.open()
 	get_window().grab_focus()
 
 
 ## The View tab's Noise editor button: open it (the mouse is already free).
 func _open_noise() -> void:
+	if _escape_active:
+		return
 	_noise.open()
 	_update_mouse()
 
@@ -433,7 +443,7 @@ func back_to_menu() -> void:
 func _on_settings_changed() -> void:
 	params.mouse_sensitivity = Settings.mouse_sensitivity
 	_view_pane.set_sensitivity(Settings.mouse_sensitivity)
-	view.show_probe = Settings.show_center_ray
+	view.show_probe = Settings.show_center_ray and not _escape_active
 
 
 func _sync_sensitivity_to_settings() -> void:
@@ -593,8 +603,38 @@ func _on_prompting() -> void:
 
 # ------------------------------------------------------------- mouse / mode
 
+func _on_escape_changed(escaped: bool) -> void:
+	if escaped == _escape_active:
+		return
+	_escape_active = escaped
+	fly.movement_locked = escaped
+	_axis_controller.set_process(not escaped)
+	if escaped:
+		_escape_ui = {"console": _console.visible, "chat": _chat.visible,
+			"marker": _marker.visible if _marker else false}
+		_drop_side_focus()
+		_chat.input.release_focus()
+		_console.hide_console()
+		_noise.close()
+		_chat.hide()
+		_chat.process_mode = Node.PROCESS_MODE_DISABLED
+		view.show_probe = false
+		if _marker:
+			_marker.end_drag()
+			_marker.hide()
+		_free_requested = false
+	else:
+		_chat.visible = _escape_ui.get("chat", true)
+		_chat.process_mode = Node.PROCESS_MODE_INHERIT
+		if _marker:
+			_marker.visible = _escape_ui.get("marker", true)
+		view.show_probe = Settings.show_center_ray
+		if _escape_ui.get("console", false):
+			_console.open()
+	_apply_mode()
+
 func _apply_mode() -> void:
-	var is_fly := params.camera_mode == FractalParams.CameraMode.FLY
+	var is_fly := _escape_active or params.camera_mode == FractalParams.CameraMode.FLY
 	fly.enabled = is_fly
 	if _orbit:
 		_orbit.enabled = not is_fly
@@ -605,7 +645,7 @@ func _apply_mode() -> void:
 
 
 func _update_mouse() -> void:
-	_captured = params.camera_mode == FractalParams.CameraMode.FLY \
+	_captured = (_escape_active or params.camera_mode == FractalParams.CameraMode.FLY) \
 			and not _free_requested \
 			and not (_noise != null and _noise.visible)
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED if _captured else Input.MOUSE_MODE_VISIBLE)
@@ -621,6 +661,8 @@ func is_mouse_captured() -> bool:
 ## mouse and make sure the console is open. Free: toggle the console, and when
 ## that closes it, allow the mouse to recapture.
 func _on_console_toggle() -> void:
+	if _escape_active:
+		return
 	if _captured:
 		_free_requested = true
 		if not _console.visible:
@@ -677,6 +719,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"quit_game"):
 		get_viewport().set_input_as_handled()
 		get_tree().quit()
+		return
+
+	if _escape_active:
+		if event.is_action_pressed("cancel"):
+			_free_requested = true
+			_update_mouse()
+		elif event.is_action_pressed("copy_screenshot"):
+			copy_screenshot()
+		elif event is InputEventMouseMotion and _captured:
+			fly.apply_look(event.relative.x, event.relative.y)
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_free_requested = false
+			_update_mouse()
+		get_viewport().set_input_as_handled()
 		return
 
 	# 1. A Ctrl tap (down then up with no other key between) toggles the console.

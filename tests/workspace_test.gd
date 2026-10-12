@@ -221,7 +221,7 @@ func run() -> void:
 		"detail_falloff": -2.0, "max_steps": "lots", "detail": 0.0, "detail_range": 25,
 	}}, _table(), _look(), _keymap(), p6, CameraState.make_default())
 	check_approx(p6.detail_falloff, 0.0, "a negative falloff is ignored")
-	check_eq(p6.max_steps, 96, "a non-number step budget is ignored")
+	check_eq(p6.max_steps, 32, "a non-number step budget is ignored")
 	check_approx(p6.detail, 1.0, "a non-positive detail is ignored")
 	check_approx(p6.detail_range, 25.0, "an integer range restores")
 	check_eq(w6.size(), 3, "one warning each for the three bad ones: %s" % [w6])

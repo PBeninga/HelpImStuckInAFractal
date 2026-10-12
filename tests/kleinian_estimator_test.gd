@@ -38,7 +38,7 @@ func run() -> void:
 		check(absf(KleinianEstimator.estimate_at(0.6, 0.2, 0.9, c) - base) > 1e-6, "'%s' changes the distance" % knob[0])
 
 	# --- the view distance: only the Kleinian has one ---
-	check_approx(k.view_distance(), 10.0, "the Kleinian's rays stop at 10 by default")
+	check_approx(k.view_distance(), 1.0, "the Kleinian starts with a cheap one-unit horizon")
 	check_approx(ShapeParams.new().view_distance(), 0.0, "the Mandelbox's do not stop early")
 	check_eq(k.bound_half(), FractalParams.KLEINIAN_BOUND, "the Kleinian has no real bounding cube")
 	check(not k.julia_enabled(), "no Julia marker off the Mandelbox")

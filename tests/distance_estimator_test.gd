@@ -226,6 +226,7 @@ func run() -> void:
 
 	# the march: from the default eye toward the origin the ray hits the box
 	# (as the orbit camera's click does), and a ray away from everything misses
+	d.shape().precision = 0.000025  # test a fine surface pick explicitly
 	var eye := CameraState.DEFAULT_EYE
 	var hit: Variant = DistanceEstimator.march(eye.x, eye.y, eye.z, (-eye).normalized(), d)
 	check(hit != null, "a march toward the origin hits the Mandelbox")

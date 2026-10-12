@@ -81,7 +81,7 @@ uniform float box_half[MAX_SHAPES];    // the cube the march is bounded to (Shap
 // nears the surface, so the smoother surface it marches toward stays within
 // its hit threshold of the real one (ShapeParams.coarse_iters). 16 at the
 // default view.
-uniform int fractal_iterations = 16;
+uniform int fractal_iterations = 8;
 // Maximum shedding skips cosmetic surface noise; displacement stays active.
 uniform bool surface_detail = true;
 uniform int coarse_iters[MAX_SHAPES];
@@ -151,8 +151,8 @@ uniform vec3 surface_color = vec3(1.0, 1.0, 1.0);
 uniform float roughness = 0.111111111111;
 uniform float light_specular = 1.0;
 // Texture: the noise editor's Texture and Bump outputs scale by these.
-uniform float texture_strength = 1.0;
-uniform float bump_strength = 1.0;
+uniform float texture_strength = 0.0;
+uniform float bump_strength = 0.0;
 
 // The Palette mode's cosine palette A + B cos(2pi (C t + D)), one float per
 // vector and channel so each is a catalogue id of its own.

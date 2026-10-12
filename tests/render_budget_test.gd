@@ -26,7 +26,7 @@ func run() -> void:
 	check(result.is_empty(), "legacy perturbation settings do not prevent loading")
 	check_eq(restored.fractal_iterations, 12, "fractal work budget survives save/load")
 	var eye := [1.96, 0.914, 0.787]
-	check_approx(restored.zoom_floor(eye), 9.5367431640625e-5,
+	check_approx(restored.zoom_floor(eye), 2.384185791015625e-6,
 		"legacy save keeps the direct 32-bit zoom floor", 1e-12)
 	var recaptured := Workspace.capture(shapes, look, keys, restored, camera)
 	check(not recaptured["fractal"].has("perturbation_enabled") and not recaptured["fractal"].has("perturbation_iterations"),
@@ -60,5 +60,5 @@ func run() -> void:
 		"settled full quality restores the user's march budget")
 	view.free()
 	ui.reset_defaults()
-	check_eq(p.fractal_iterations, 16, "reset restores the performant fractal work budget")
+	check_eq(p.fractal_iterations, 8, "reset restores the performant fractal work budget")
 	ui.free()

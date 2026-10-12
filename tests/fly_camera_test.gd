@@ -2,6 +2,10 @@ extends "res://tests/test_case.gd"
 
 func _fresh() -> Array:
 	var params := FractalParams.new()
+	# Navigation fixtures exercise the original detailed surfaces and horizon.
+	params.fractal_iterations = 16
+	params.shape().precision = 0.000025
+	params.shape().kleinian_view_distance = 10.0
 	var cam := CameraState.make_default()
 	var fly := FlyCamera.new()
 	root.add_child(fly)
@@ -264,6 +268,10 @@ func _zoom_floor_guard(fold_shape: int = MandelboxShape.FoldShape.BOX) -> void:
 ## first surface and slows as it goes, and it never stalls far out.
 func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
 	var params := FractalParams.new()
+	# Navigation fixtures exercise the original detailed surfaces and horizon.
+	params.fractal_iterations = 16
+	params.shape().precision = 0.000025
+	params.shape().kleinian_view_distance = 10.0
 	params.shape().apply_resolved(knobs)
 	var cam := CameraState.new()
 	cam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
