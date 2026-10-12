@@ -38,9 +38,9 @@ func run() -> void:
 	check_approx(p.detail, 1.0, "detail default")
 	check_approx(p.detail_range, 10.0, "detail_range default")
 	check_approx(p.detail_falloff, 0.0, "detail falloff is off by default")
-	check_approx(p.min_render_scale, 0.25, "min_render_scale default")
-	check_eq(p.max_steps, 128, "max_steps default")
-	check_eq([p.coarse_steps(), p.fine_steps()], [96, 32], "the default budget is the original 96 + 32")
+	check_approx(p.min_render_scale, 0.1, "min_render_scale default")
+	check_eq(p.max_steps, 96, "max_steps default")
+	check_eq([p.coarse_steps(), p.fine_steps()], [72, 24], "the performance budget splits 72 + 24")
 
 	# the helpers (the params' answer for the active shape)
 	check(s.julia_point().is_equal_approx(Vector3(-0.23, 1.512, 1.892)), "julia_point() is (c_0, c_1, c_2)")
@@ -222,23 +222,27 @@ func run() -> void:
 	# coarse_iters: the march's coarse pass takes enough iterations that its
 	# smoother surface sits within its own hit threshold of the real one
 	var ci := FractalParams.new()
+	ci.fractal_iterations = 32
 	check_eq(ci.coarse_iters(6.5655845), 16, "the default view (near ~6.57) keeps the site's 16")
 	check_eq(ci.coarse_iters(1000.0), 16, "far away never drops below 16")
 	check_eq(ci.coarse_iters(1e-3), 24, "1e-3 from the surface takes 24")
 	check_eq(ci.coarse_iters(1e-6), 32, "1e-6 takes all 32")
 	check_eq(ci.coarse_iters(0.0), 32, "a camera on the surface stays at 32")
 	var ci_fine := FractalParams.new()
+	ci_fine.fractal_iterations = 32
 	ci_fine.detail = 10.0
 	check(ci_fine.coarse_iters(1e-2) > ci.coarse_iters(1e-2),
 		"Detail 10 raises the count at a given distance (%d over %d)" % [ci_fine.coarse_iters(1e-2), ci.coarse_iters(1e-2)])
+	var full_count := ci.coarse_iters(1e-3)
 	ci.shape().box_scale = 1.0
 	check_eq(ci.coarse_iters(6.5), 32, "|box_scale| = 1 has no shrinking detail: 32")
 	ci.shape().box_scale = -0.8
 	check_eq(ci.coarse_iters(6.5), 32, "nor does a scale inside 1: 32")
 	# a smaller shape reaches the same count at a proportionally smaller distance
 	var small := FractalParams.new()
+	small.fractal_iterations = 32
 	small.shape().size = 0.01
-	check_eq(small.coarse_iters(1e-5), FractalParams.new().coarse_iters(1e-3),
+	check_eq(small.coarse_iters(1e-5), full_count,
 		"a shape a hundredth the size takes at 1e-5 what the unit one takes at 1e-3")
 
 	# nf_weight: the Ice Fractal shading crossfades to the true normal up close

@@ -79,7 +79,9 @@ uniform float box_half[MAX_SHAPES];    // the cube the march is bounded to (Shap
 // nears the surface, so the smoother surface it marches toward stays within
 // its hit threshold of the real one (ShapeParams.coarse_iters). 16 at the
 // default view.
-uniform int fractal_iterations = 32;
+uniform int fractal_iterations = 16;
+// Maximum shedding skips cosmetic surface noise; displacement stays active.
+uniform bool surface_detail = true;
 uniform int coarse_iters[MAX_SHAPES];
 
 // --- per-shape uniforms (names == catalogue ids, one entry per shape) ---
@@ -453,8 +455,8 @@ float de_scene(vec3 off, bool coarse, out int which) {
 	return best;
 }
 
-// The "Ice Fractal" field of shape s: a 16-iteration Mandelbox orbit from z=0,
-// c=(q, w), no derivative, offset by -8. Not a true distance; its gradient
+// The "Ice Fractal" field of shape s: up to 16 Mandelbox iterations from z=0,
+// capped by the render budget, c=(q, w), offset by -8. Its gradient
 // gives the look.
 float field(int s, vec3 q) {
 	vec4 z = vec4(0.0);
@@ -462,6 +464,7 @@ float field(int s, vec3 q) {
 	float dz = 1.0;
 	bool rotating = mb_rotating(s);
 	for (int i = 0; i < 16; i++) {
+		if (i >= fractal_iterations) { break; }
 		mb_step(s, z, dz, c, rotating, i);
 	}
 	return length(z) - 8.0 + noise_displace(q);
@@ -778,7 +781,7 @@ void fragment() {
 				// Bump: tilt the normal by the across-surface part of noise_bump's
 				// gradient (a fake relief; the surface does not move). A result with
 				// no length (a NaN) keeps the old normal.
-				if (noise_bump_on && bump_strength != 0.0) {
+				if (surface_detail && noise_bump_on && bump_strength != 0.0) {
 					vec2 e2 = vec2(delta, 0.0);
 					vec3 g = vec3(
 						noise_bump(v + e2.xyy) - noise_bump(v - e2.xyy),
@@ -860,7 +863,7 @@ void fragment() {
 					col = vec3(inv);
 				}
 				// Texture: recolour the surface by the Texture output (white = no change).
-				if (noise_texture_on) { col *= mix(vec3(1.0), noise_texture(v), texture_strength); }
+				if (surface_detail && noise_texture_on) { col *= mix(vec3(1.0), noise_texture(v), texture_strength); }
 				// Surface and light colour, each guarded so white stays bit-for-bit.
 				if (surface_color != vec3(1.0)) { col *= surface_color; }
 				if (light_color != vec3(1.0)) { col *= light_color; }

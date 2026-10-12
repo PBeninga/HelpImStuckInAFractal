@@ -4,7 +4,7 @@ extends RefCounted
 ## owns one and feeds it the smoothed frame time while the view is moving; it
 ## only sheds once the render scale is already at its floor (`can_shed`), so
 ## the scale stays the first lever. Thresholds are sticky: shedding needs 0.5 s
-## below 24 fps, restoring needs 2 s above 40 fps, nothing happens in between,
+## below 58 fps, restoring needs 2 s above 59.5 fps, nothing happens in between,
 ## and a shed soon after a restore makes the next restore wait twice as long
 ## (until a restore sticks for 10 s).
 
@@ -12,17 +12,22 @@ extends RefCounted
 ## surface, 0 = no fog), multipliers on detail, the step budget and the Fly
 ## speed, and the shadow-march factor (× FractalParams.SHADOW_STEPS: shadows cost
 ## one extra ray, so they halve at level 1 and drop out from level 2). Fog and
-## detail go long before the speed cap, which is a last resort.
+## detail go long before the speed cap, which is a last resort. Iteration and
+## absolute step caps also bound expensive user settings; the top level skips
+## surface texture/bump work (displacement still defines the geometry).
 const LEVELS: Array[Dictionary] = [
-	{"fog": 0.0, "detail": 1.0, "steps": 1.0, "speed": 1.0, "shadow": 1.0},
-	{"fog": 400.0, "detail": 0.75, "steps": 1.0, "speed": 1.0, "shadow": 0.5},
-	{"fog": 150.0, "detail": 0.55, "steps": 0.75, "speed": 1.0, "shadow": 0.0},
-	{"fog": 60.0, "detail": 0.4, "steps": 0.5, "speed": 1.0, "shadow": 0.0},
-	{"fog": 40.0, "detail": 0.35, "steps": 0.5, "speed": 0.4, "shadow": 0.0},
+	{"fog": 0.0, "detail": 1.0, "steps": 1.0, "speed": 1.0, "shadow": 1.0, "iterations": 32, "step_cap": 512},
+	{"fog": 400.0, "detail": 0.75, "steps": 1.0, "speed": 1.0, "shadow": 0.5, "iterations": 24, "step_cap": 384},
+	{"fog": 150.0, "detail": 0.55, "steps": 0.75, "speed": 1.0, "shadow": 0.0, "iterations": 16, "step_cap": 256},
+	{"fog": 60.0, "detail": 0.4, "steps": 0.5, "speed": 1.0, "shadow": 0.0, "iterations": 12, "step_cap": 96},
+	{"fog": 40.0, "detail": 0.35, "steps": 0.25, "speed": 0.4, "shadow": 0.0, "iterations": 8, "step_cap": 32},
 ]
 
-const SHED_FPS := 24.0
-const RESTORE_FPS := 40.0
+const TARGET_FPS := 60.0
+const SHED_FPS := 58.0
+# A 60 Hz paced display must be able to restore; demanding >60 would lock it
+# into low quality forever. Dwell and anti-flap backoff protect this narrow band.
+const RESTORE_FPS := 59.5
 const SHED_DWELL := 0.5          # seconds below SHED_FPS before a shed
 const SHED_COOLDOWN := 1.0       # seconds after any level change before the next shed
 const RESTORE_DWELL := 2.0       # seconds above RESTORE_FPS before a restore

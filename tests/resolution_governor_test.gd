@@ -1,14 +1,26 @@
 extends "res://tests/test_case.gd"
-## Pure step() logic on fabricated frame times. Target is 1/30 s.
+## Pure step() logic on fabricated frame times. Target is 1/60 s.
 
 
 func run() -> void:
-	var slow := 0.1       # 100 ms  >> 1.2 * (1/30) = 40 ms
-	var fast := 0.001     # 1 ms    <  0.6 * (1/30) = 20 ms
+	# A smooth-looking 45 fps is still too slow for our 60 fps target.
+	var target := ResolutionGovernor.new()
+	for i in 120: target.step(1.0 / 45.0, true)
+	check(target.scale < 1.0, "45 fps reduces resolution toward the 60 fps target")
+	target.min_scale = 0.1
+	target.cooldown = 0.0
+	for i in 600: target.step(1.0 / 45.0, true)
+	check_eq(target.shedder.level, 4, "45 fps continues shedding all the way to the top")
+	check_approx(target.scale, 0.1, "maximum shedding can use the 10 percent floor", 1e-6)
+	target.free()
+
+	var slow := 0.1       # 100 ms  >> 1.2 * (1/60) = 20 ms
+	var fast := 0.001     # 1 ms    <  0.6 * (1/60) = 10 ms
 
 	# --- slow frames lower the scale, but at most once per 0.5 s ---
 	var g := ResolutionGovernor.new()
 	g.fast_controls = true
+	g.min_scale = 0.25
 	g.step(slow, true)                       # first slow frame: adjusts
 	check_eq(g.mode, ResolutionGovernor.Mode.CONTINUOUS, "changing => CONTINUOUS")
 	check(g.scale < 1.0, "a slow frame lowered the scale")
@@ -103,6 +115,7 @@ func run() -> void:
 	# --- renders at level 0 and full scale ---
 	var p := ResolutionGovernor.new()
 	p.fast_controls = true
+	p.min_scale = 0.25
 	p.cooldown = 0.0
 	p.settle = 0.0
 	for i in 20: p.step(slow, true)

@@ -7,6 +7,8 @@ extends "res://tests/test_case.gd"
 
 func run() -> void:
 	var params := FractalParams.new()
+	params.fractal_iterations = 32
+	params.max_steps = 128  # full-detail fixtures below exercise the opt-in budget
 	var cam := CameraState.make_default()
 	var view: FractalView = load("res://src/fractal/fractal_view.tscn").instantiate()
 	root.add_child(view)

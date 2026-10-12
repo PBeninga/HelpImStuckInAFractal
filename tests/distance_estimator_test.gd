@@ -17,6 +17,7 @@ func _de(px: float, py: float, pz: float, params: FractalParams, expected: float
 func run() -> void:
 	# --- defaults: box_scale -2.09, min 0.7, fold 1, fixed 1, no Julia, w 0 ---
 	var d := FractalParams.new()
+	d.fractal_iterations = 32  # compare scene and core at the same budget
 	_de(0, 0, 0, d, 0.0, "def (0,0,0)")
 	_de(0.5, 0.5, 0.5, d, 1.67e-15, "def (0.5,0.5,0.5)")
 	_de(1.2, -0.3, 0.8, d, 4.536385e-5, "def (1.2,-0.3,0.8)")
@@ -141,6 +142,7 @@ func run() -> void:
 			"the %s changes the distance" % pair[1])
 	# the hybrid's period only matters while the mix is on
 	var every3 := FractalParams.new(); every3.shape().hybrid_every = 3
+	every3.fractal_iterations = 32
 	check_eq(DistanceEstimator.estimate(Vector3(1.2, -0.3, 0.8), every3), base,
 		"Hybrid every alone (mix 0) changes nothing")
 	# the folds keep the box fold's symmetry D(p) == D(-p)
@@ -170,6 +172,7 @@ func run() -> void:
 	# A placed shape: the world distance is the local distance times the size,
 	# evaluated at the point mapped into the shape's frame (64-bit).
 	var placed := FractalParams.new()
+	placed.fractal_iterations = 32  # compare scene and core at the same budget
 	var sh := placed.shape()
 	sh.pos_x = 4.0; sh.pos_y = -1.0; sh.pos_z = 2.5
 	sh.rot_z = 90.0
@@ -197,6 +200,7 @@ func run() -> void:
 	# two shapes: the scene is their union (the smaller distance), and
 	# nearest_at names the one it came from
 	var two := FractalParams.new()
+	two.fractal_iterations = 32  # compare scene and core at the same budget
 	var inner := two.add_shape()
 	inner.pos_x = 0.0; inner.pos_y = 0.0; inner.pos_z = 0.0
 	inner.size = 0.1

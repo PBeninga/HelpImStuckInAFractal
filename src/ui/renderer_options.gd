@@ -40,11 +40,11 @@ func _init() -> void:
 	iterations_slider = _slider(grid, "Fractal iterations", FractalParams.FRACTAL_ITERATIONS_MIN, FractalParams.FRACTAL_ITERATIONS_MAX, 1, false,
 		"Work per distance estimate across all shapes, including nested shapes. Lower is faster and resolves less deep structure; 32 restores full detail.")
 	min_scale_slider = _slider(grid, "Min resolution", FractalParams.RENDER_SCALE_FLOOR, 1.0, 0.05, false,
-		"With Fast Controls on, the lowest render scale used while moving to hold 30 fps.")
+		"With Fast Controls on, the lowest render scale used while moving to target 60 fps.")
 
 	fast_check = CheckBox.new()
 	fast_check.text = "Fast Controls"
-	fast_check.tooltip_text = "Lower the resolution while moving to hold 30 fps; render one full frame when still."
+	fast_check.tooltip_text = "Lower the resolution while moving to target 60 fps; render one full frame when still."
 	fast_check.focus_mode = Control.FOCUS_NONE
 	add_child(fast_check)
 

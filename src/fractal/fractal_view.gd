@@ -448,7 +448,6 @@ func _push_params() -> void:
 	_material.set_shader_parameter("shape_count", _params.shapes.size())
 	_material.set_shader_parameter("view_limit", _params.scene_view_distance())
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
-	_material.set_shader_parameter("fractal_iterations", _params.fractal_iterations)
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
 	_push_shed()
@@ -465,7 +464,11 @@ func _push_shed() -> void:
 	for i in _params.shapes.size():
 		precisions[i] = _params.shapes[i].precision / (_params.detail * _detail)
 	_material.set_shader_parameter("precision", precisions)
-	var budget := maxi(FractalParams.MAX_STEPS_MIN, int(round(_params.max_steps * _steps)))
+	var iterations := mini(_params.fractal_iterations, int(_shed["iterations"]))
+	_material.set_shader_parameter("fractal_iterations", iterations)
+	_material.set_shader_parameter("surface_detail", load_level < LoadShedder.top())
+	var budget := clampi(int(round(_params.max_steps * _steps)),
+		FractalParams.MAX_STEPS_MIN, int(_shed["step_cap"]))
 	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
 	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
 	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 else 0.0)

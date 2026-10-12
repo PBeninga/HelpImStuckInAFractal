@@ -89,9 +89,10 @@ rendered, and are saved with the view.
 | **Detail** | scales the precision everywhere (higher = finer structure, more steps) |
 | **Full-detail range** | how far full detail reaches, in multiples of the camera's distance to the nearest surface, so it means the same at any zoom depth |
 | **Detail falloff** | how quickly detail coarsens past that range; 0 (the default) keeps detail matched to the pixel at every distance |
-| **Max march steps** | the step budget per ray (default 128: 96 coarse + 32 fine) |
-| **Min resolution** | the lowest render scale Fast Controls may drop to while moving (default 25%) |
-| **Fast Controls** | drop the render scale while anything moves, then snap back to full resolution when it stops |
+| **Max march steps** | the step budget per ray (default 96: 72 coarse + 24 fine) |
+| **Fractal iterations** | work per distance estimate (default 16; 32 for deeper structure) |
+| **Min resolution** | the lowest render scale Fast Controls may drop to while moving (default 10%) |
+| **Fast Controls** | target 60 fps while anything moves, then return to full resolution when it stops |
 
 A ray stops once the distance estimate falls below
 `precision / detail × t × max(1, t / (range × d₀))^falloff`, where `t` is the
@@ -99,13 +100,13 @@ distance along the ray and `d₀` the camera's distance to the nearest surface.
 
 ### Deep zoom
 
-Several things adjust themselves as you fly close to the fractal. None has a
-setting, and none changes a saved level; at the default view the new ones are
-off, so the picture there is exactly the site's.
+The default renderer uses 16 iterations and 96 march steps. For deeper
+structure, increase Fractal iterations to 32 and Max march steps to at least
+128. The following adjustments operate within that selected work budget:
 
 - **Coarse pass iterations.** Each ray marches in two phases: a cheap coarse
-  pass, then 32 fine steps at full precision. The coarse pass normally runs 16
-  Mandelbox iterations, which describe a slightly smoother surface than the
+  pass, then a fine pass using the selected iteration budget. The coarse pass
+  normally runs 16 Mandelbox iterations, which describe a slightly smoother surface than the
   real one (each iteration adds detail about 2× finer, so 16 of them leave the
   surface rough by about 2 / 2.09¹⁶ ≈ 1e-5). Once you are within about 0.3 of
   the surface the hit threshold gets finer than that gap, and the coarse pass
@@ -117,7 +118,7 @@ off, so the picture there is exactly the site's.
   KIFS runs the same rule on its own Scale and the Mandelbulb on its Power (an
   iteration near its surface stretches by about the power); the Kleinian,
   which has no steady magnification per iteration, always marches its coarse
-  pass at 32.
+  pass at the selected iteration budget.
 - **Lighting.** The Ice Fractal colour modes (1 to 9, on the Mandelbox outside Julia mode) light
   the surface with their own normal, which samples the formula 0.01 units from
   the hit point. Up close 0.01 spans far more than a pixel and that shading
@@ -143,32 +144,74 @@ off, so the picture there is exactly the site's.
 
 ### Load shedding
 
-With Fast Controls on, the render scale is the first thing to give while you
-move. Once it is at **Min resolution** and the frame rate is still under 24 fps,
-the governor sheds quality a level at a time:
+With Fast Controls on, the governor targets **60 fps** (16.67 ms per frame).
+Resolution drops first, down to **Min resolution** (default 10% per dimension,
+which draws 1% as many pixels). At that floor, sustained rates below 58 fps
+shed quality a level at a time. The opening level uses these same defaults;
+other saved levels retain their explicitly saved renderer settings. Older
+levels without an iteration setting inherit the current iteration budget.
 
-| level | distance fog (× d₀) | detail | step budget | shadow march | Fly speed |
-|---|---|---|---|---|---|
-| 0 | none | 100% | 100% | 48 steps | — |
-| 1 | 400 | 75% | 100% | 24 steps | — |
-| 2 | 150 | 55% | 75% | off | — |
-| 3 | 60 | 40% | 50% | off | — |
-| 4 | 40 | 35% | 50% | off | capped at 40% |
+- Level 0 uses the view's chosen budgets, with no performance fog.
+- Level 1 limits iterations to 24, halves shadows, and adds fog at 400× d₀.
+- Level 2 limits iterations to 16, uses 75% of the march budget, removes
+  shadows, and brings fog to 150× d₀.
+- Level 3 limits iterations to 12 and the march to 50% (at most 96 steps),
+  with fog at 60× d₀.
+- Level 4 limits iterations to 8 and the march to 25% (at most 32 steps),
+  with fog at 40× d₀, no surface texture/bump, and Fly speed at 40%.
 
-The shadow march (when Shadows is on) halves at level 1 and drops out from
-level 2; scattering and bump cost no extra marches and stay at every level.
+Every limit only lowers the user's budget. Displacement remains active because
+it defines the geometry. CPU collision and picking retain the view's saved
+iteration budget. Lower rendering budgets can smooth or omit fine structure;
+raise iterations and steps when inspecting deep detail.
 
-Rays stop at the fog distance, and the view fades into a tint of the current
-colour mode on the way there. The thresholds are sticky: a shed needs 0.5 s
-under 24 fps (and 1 s since the last change), a restore needs 2 s over 40 fps,
-nothing changes in between, and a shed soon after a restore doubles the next
-restore's wait (up to 16 s). A level coming off eases in over 18 frames
-instead of snapping to full quality: the fog recedes, and when it is going
-entirely it also thins, with the march no longer stopping at it, so the far
-geometry fades in; the detail and step budget climb back alongside it. A level
-going on snaps straight in. The level is kept while you are still, but the
-still frame always renders at full quality (eased in over its first frames). The console's Movement pane shows
-`load shed N/4` while a level is active.
+Rays stop at the performance fog distance. Shedding needs 0.5 s below 58 fps,
+with 1 s between changes; restoration needs 2 s above 59.5 fps, so a display
+paced to 60 Hz can recover quality. A quick relapse doubles the restoration
+wait, up to 16 s. Fog, detail and march multipliers ease back over 18 frames;
+iteration caps, absolute march caps and surface effects change with the level.
+When movement stops, a full-resolution frame uses the saved view quality and
+then freezes. The moving scale and shed level are remembered for the next move.
+The console's Movement pane shows `load shed N/4`.
+
+These controls target 60 fps; headless tests verify their behavior, not GPU
+frame time. Hardware, screen size, shape parameters and noise graphs still
+need a rendered benchmark to establish an actual frame-rate guarantee.
+
+### Rendering cost by shape
+
+Frame cost is roughly pixels × march steps × distance-estimator work, plus
+surface shading. A scene estimate tries each shape that cannot be rejected by
+its cheap bounding cube, so nested and overlapping bounds can multiply work.
+
+- **Mandelbox:** each iteration uses folds, a sphere inversion, scaling and
+  addition. The plain box with no iteration rotation is relatively cheap.
+  Cylinder/octahedral folds and 4D iteration rotations add work; Julia and
+  hybrid settings can enlarge bounds and make more rays march further.
+- **KIFS:** coordinate and diagonal folds use mostly comparisons and simple
+  arithmetic; escaped orbits stop early. Polyfold uses angle/trigonometric
+  functions each iteration. Twist and either set of iteration rotations add
+  more work. A larger symmetry count does not itself add a loop per sector.
+- **Kleinian:** each iteration is comparatively simple (box fold and sphere
+  inversion) and can stop when the point settles. Its geometry fills space,
+  so bounds reject little; long corridors, a distant horizon and thin features
+  can demand many ray steps despite the simple formula.
+- **Mandelbulb:** each active iteration evaluates powers, acos, atan and several
+  sin/cos functions, making it expensive per iteration. Escaping points can
+  stop early and its finite bounds reject empty space. Power changes geometry
+  and escape behavior rather than directly multiplying the loop count.
+
+Lower resolution is the broadest saving: half the width and height means a
+quarter of the pixel work. Shorter view/fog distances and coarser precision can
+end rays sooner. Lower iteration limits reduce work per estimate but change
+fine geometry; lower march limits cap work but can leave dark unresolved rays.
+Normals add six distance estimates per lit hit; Ice Fractal shading uses four
+field samples, or both sets during its crossfade. Grayscale skips normals.
+Shadows add another march (up to 48 steps at level 0), bump adds six noise
+samples, and displacement adds noise to every distance estimate and may force
+smaller march steps. Simple colour arithmetic and post-hit haze are generally
+cheaper than those repeated geometric queries. Flight-speed reduction does
+not reduce a fixed frame's shader work; it slows traversal at maximum shedding.
 
 ### Fly camera (default)
 

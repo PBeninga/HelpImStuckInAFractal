@@ -4,9 +4,9 @@ extends "res://tests/test_case.gd"
 ## anti-flap backoff.
 
 const DT := 0.05
-const SLOW := 0.1          # 10 fps  < 24
-const FAST := 1.0 / 60.0   # 60 fps  > 40
-const MID := 1.0 / 30.0    # 30 fps, inside the dead band
+const SLOW := 0.1          # 10 fps  < 58
+const FAST := 1.0 / 120.0  # 120 fps > 59.5
+const MID := 1.0 / 59.0    # 59 fps, inside the dead band
 
 
 ## Step `s` for `seconds` at a fixed smoothed frame time; returns the number of
@@ -78,7 +78,7 @@ func run() -> void:
 	var d := LoadShedder.new()
 	_run_for(d, 0.5, SLOW)
 	check_eq(d.level, 1, "shed to 1")
-	check_eq(_run_for(d, 30.0, MID), 0, "30 fps (between 24 and 40) holds the level")
+	check_eq(_run_for(d, 30.0, MID), 0, "59 fps holds the level within the hysteresis band")
 
 	# --- restore one level after 2 s of sustained fast frames ---
 	_run_for(d, 1.95, FAST)
@@ -114,6 +114,13 @@ func run() -> void:
 	check_approx(e.restore_dwell, LoadShedder.RESTORE_DWELL_MAX, "9.5 s after the restore it still waits 16 s")
 	_run_for(e, 0.5, MID)
 	check_approx(e.restore_dwell, LoadShedder.RESTORE_DWELL, "10 s after it, the backoff resets")
+
+	# 60 fps can restore quality even on a display paced to 60 Hz.
+	var paced := LoadShedder.new()
+	_run_for(paced, 4.0, 1.0 / 45.0)
+	check_eq(paced.level, 4, "45 fps is under target and reaches maximum shedding")
+	_run_for(paced, 2.0, 1.0 / 60.0)
+	check_eq(paced.level, 3, "sustained 60 fps restores one level on a paced display")
 
 	# --- reset() returns to full quality ---
 	e.reset()

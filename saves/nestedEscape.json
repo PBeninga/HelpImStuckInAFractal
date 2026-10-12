@@ -310,8 +310,9 @@
 		"detail": 1.0,
 		"detail_range": 10.0,
 		"detail_falloff": 0.0,
-		"max_steps": 128,
-		"min_render_scale": 0.25
+		"fractal_iterations": 16,
+		"max_steps": 96,
+		"min_render_scale": 0.1
 	},
 	"camera": {
 		"eye": [

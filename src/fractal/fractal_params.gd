@@ -6,11 +6,12 @@ extends Resource
 ## RESOLVED colour, light and material knobs, named by catalogue id and written
 ## once per frame by apply_resolved() from the look table) and the preference
 ## and renderer fields (fast_controls, camera_mode, mouse_sensitivity, the level
-## of detail, step budget and minimum render scale), which are edited directly.
+## of detail, step and iteration budgets and minimum render scale), edited directly.
 ## Setters emit Resource's built-in `changed`; apply_resolved batches a frame's
 ## writes into at most one emit, and any shape's `changed` is relayed as this
-## resource's, so one signal still means "re-render". Defaults match the site
-## (the level-of-detail defaults reproduce its plain pixel cone): a new
+## resource's, so one signal still means "re-render". Shape and look defaults
+## match the site; renderer budgets favor performance
+## (the level-of-detail defaults reproduce its plain pixel cone). A new
 ## FractalParams holds one default shape at the identity placement, which is
 ## exactly the single-shape viewer.
 
@@ -277,10 +278,10 @@ const FOG_COLORS := {
 ## The resolution governor never drops below min_render_scale while moving.
 const RENDER_SCALE_FLOOR := 0.1
 
-## The march's step budget: three quarters coarse (N = coarse_iters(), 16 at
-## the default view) and the rest fine (N=32), so the default 128 is the
-## original 96 + 32. The shader's loops are
-## bounded for MAX_STEPS_MAX.
+## The march's step budget: three quarters coarse and the rest fine. Defaults
+## use 72 + 24 steps and 16 fractal iterations for responsive navigation. Raise
+## iterations to 32 and steps to 128 for the original full-detail budget. The
+## shader loops are bounded for MAX_STEPS_MAX.
 const MAX_STEPS_MIN := 32
 const MAX_STEPS_MAX := 512
 
@@ -290,9 +291,11 @@ const MAX_STEPS_MAX := 512
 const SHADOW_STEPS := 48
 
 ## Work budgets shared by the CPU distance estimates, camera and shader.
+## The shader may use a lower iteration cap while load shedding; CPU collision
+## and picking keep the saved budget so shedding does not change gameplay.
 const FRACTAL_ITERATIONS_MIN := 8
 const FRACTAL_ITERATIONS_MAX := 32
-@export var fractal_iterations: int = 32:
+@export var fractal_iterations: int = 16:
 	set(v): fractal_iterations = clampi(v, FRACTAL_ITERATIONS_MIN, FRACTAL_ITERATIONS_MAX); emit_changed()
 
 
@@ -302,9 +305,9 @@ const FRACTAL_ITERATIONS_MAX := 32
 	set(v): detail_range = clampf(v, DETAIL_RANGE_MIN, DETAIL_RANGE_MAX); emit_changed()
 @export var detail_falloff: float = 0.0:
 	set(v): detail_falloff = clampf(v, 0.0, DETAIL_FALLOFF_MAX); emit_changed()
-@export var min_render_scale: float = 0.25:
+@export var min_render_scale: float = 0.1:
 	set(v): min_render_scale = clampf(v, RENDER_SCALE_FLOOR, 1.0); emit_changed()
-@export var max_steps: int = 128:
+@export var max_steps: int = 96:
 	set(v): max_steps = clampi(v, MAX_STEPS_MIN, MAX_STEPS_MAX); emit_changed()
 
 

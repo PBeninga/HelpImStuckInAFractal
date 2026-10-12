@@ -37,6 +37,7 @@ func _march(o: Array, dir: Array, params: FractalParams, coarse: int) -> Array:
 
 func run() -> void:
 	var params := FractalParams.new()
+	params.fractal_iterations = 32  # this regression exercises optional deep detail
 	var s := SurfaceFixture.default_surface(params)
 	var dir := [s[3], s[4], s[5]]
 	check(DistanceEstimator.scene_estimate_at(s[0], s[1], s[2], params) < 1e-10, "the fixture point is on the surface")

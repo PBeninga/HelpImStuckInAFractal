@@ -38,7 +38,27 @@ func run() -> void:
 	check_eq(int(view._material.get_shader_parameter("fractal_iterations")), 12, "GPU receives the fractal work budget")
 	var perturbation_uniforms := view.shader_uniform_names().filter(func(u): return String(u).begins_with("pert_"))
 	check(perturbation_uniforms.is_empty(), "shader has no perturbation uniforms")
+	# Worst user budgets must still be cheap at maximum load shedding.
+	restored.max_steps = 512
+	restored.fractal_iterations = 32
+	view.set_load_level(4)
+	check_eq(view._material.get_shader_parameter("surface_detail"), false,
+		"maximum shedding skips surface texture and bump")
+	check_eq(int(view._material.get_shader_parameter("fractal_iterations")), 8,
+		"maximum shedding caps every GPU estimator at eight iterations")
+	check_eq(int(view._material.get_shader_parameter("coarse_steps")), 24,
+		"maximum shedding caps the coarse march at 24 steps")
+	check_eq(int(view._material.get_shader_parameter("fine_steps")), 8,
+		"maximum shedding caps the fine march at eight steps")
+	view.set_load_level(0)
+	check_eq(view._material.get_shader_parameter("surface_detail"), true,
+		"restoring quality enables surface texture and bump")
+	await frames(FractalView.RESTORE_FRAMES + 1)
+	check_eq(int(view._material.get_shader_parameter("fractal_iterations")), 32,
+		"settled full quality restores the user's iteration budget")
+	check_eq(int(view._material.get_shader_parameter("coarse_steps")), 384,
+		"settled full quality restores the user's march budget")
 	view.free()
 	ui.reset_defaults()
-	check_eq(p.fractal_iterations, 32, "reset restores the full fractal work budget")
+	check_eq(p.fractal_iterations, 16, "reset restores the performant fractal work budget")
 	ui.free()

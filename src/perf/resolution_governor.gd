@@ -1,7 +1,7 @@
 class_name ResolutionGovernor
 extends Node
 ## Owns FractalView.render_scale, its update mode and its load-shed level. While
-## the view is changing it adapts the scale to hold ~30 fps, never below the
+## the view is changing it adapts the scale to target 60 fps, never below the
 ## view's min_render_scale; once the scale is at that floor its LoadShedder
 ## brings in fog and cheaper detail, and at the last resort caps Fly speed.
 ## When changes stop it waits `settle` seconds of quiet, renders one full-scale,
@@ -14,14 +14,14 @@ signal shed_level_changed(level: int)
 
 enum Mode { CONTINUOUS, SETTLING, FINAL_FRAME, IDLE }
 
-const TARGET := 1.0 / 30.0
+const TARGET := 1.0 / LoadShedder.TARGET_FPS
 const EMA_ALPHA := 0.2
 const STEP := 0.8               # scale multiplier per adjustment
 
 var scale := 1.0
 var mode := Mode.IDLE
 var fast_controls := true
-var min_scale := 0.25           # follows FractalParams.min_render_scale
+var min_scale := 0.1            # follows FractalParams.min_render_scale
 var cooldown := 0.5             # seconds between scale changes; tests may lower it
 ## Seconds of quiet before the full-scale final frame. Without it, the stray
 ## zero-length mouse motion a captured mouse produces while resting bought a
@@ -105,10 +105,10 @@ func step(frame_time: float, changing: bool) -> void:
 		if fast_controls:
 			_ema = _ema * (1.0 - EMA_ALPHA) + frame_time * EMA_ALPHA
 			if _since_change >= cooldown:
-				if _ema > 1.2 * TARGET and scale > min_scale:
+				if _ema > 1.0 / LoadShedder.SHED_FPS and scale > min_scale:
 					scale = clampf(scale * STEP, min_scale, 1.0)
 					_since_change = 0.0
-				elif _ema < 0.6 * TARGET and scale < 1.0 and shedder.level == 0:
+				elif _ema < 1.0 / LoadShedder.RESTORE_FPS and scale < 1.0 and shedder.level == 0:
 					# shed levels come off before the scale climbs
 					scale = clampf(scale / STEP, min_scale, 1.0)
 					_since_change = 0.0
