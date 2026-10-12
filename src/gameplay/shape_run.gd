@@ -132,6 +132,8 @@ func step(delta: float) -> void:
 		return
 	if _phase == 1:
 		_phase = 2
+		# Hide the return to origin under opaque fog before revealing the next shape.
+		_camera.set_eye(_params.run_origin[0], _params.run_origin[1], _params.run_origin[2])
 		_activate(_params.gameplay_active + 1)
 	else:
 		_phase = 0
@@ -150,7 +152,7 @@ func briefing() -> Dictionary:
 	return {"run_id": run_id(), "active_shape": index, "stages": stages,
 		"command_index": command_index, "human_turn": human_turn, "next_command": commands[command_index] if command_index < commands.size() else "",
 		"origin": _params.run_origin.duplicate(), "transitioning": transitioning(), "escaped": escaped,
-		"instructions": "These commands are required in order to escape each shape. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never change shapes on startup, timers, stage changes or movement completion. Commands affect only the active shape. After its commands, fly beyond its cumulative next_level_threshold from origin. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
+		"instructions": "These commands are required in order to escape each shape. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never change shapes on startup, timers, stage changes or movement completion. Commands affect only the active shape. After its commands, fly beyond its absolute next_level_threshold from origin. Advancing returns the player to origin under a screen fade before revealing the next shape. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
 
 
 func apply_request(args: Dictionary) -> Dictionary:

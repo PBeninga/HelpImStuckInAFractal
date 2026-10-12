@@ -496,14 +496,17 @@ The View tab holds **Camera** mode (Fly / Orbit), **mouse sensitivity**, the
 ### Gameplay tab (console)
 
 **Save level…** / **Load level…** live here, with the current file and status.
-**Next level distance** in each shape’s level settings adds to the distances of
-all previous shapes (0 contributes the default 20 world units). Subtext beneath
-the field shows the cumulative distance tested from the run origin (spawn):
-for example, 10, 15 and 20 advance at 10, 25 and 45 units. These gameplay
+**Next level distance** in each shape’s level settings is its absolute distance
+from the run origin (spawn); 0 uses the default 20 world units. Subtext beneath
+the field shows that shape’s threshold: for example, 10, 15 and 20 advance at
+10, 15 and 20 units from spawn. These gameplay
 thresholds are independent of shader bailout distances and the rendering-only
 clipping sphere. Old saves still load their legacy distance fields; new saves
 use `next_level_distance`. Complete each shape’s commands and cross
-its cumulative boundary to advance; leaving the last shape’s boundary starts the escape animation:
+its boundary to advance. The screen fades out, the player returns to the run
+origin with their view direction preserved while the next shape loads under
+fully opaque fog, then the screen fades back in. Leaving the last shape’s
+boundary starts the escape animation:
 the sky and wind-blown grass fade in beneath the player, distance fog clears,
 and the fractal dissolves with ordered dithering. **Escape Animation** sets each
 transition’s duration independently (default 3 seconds; 0 is instant). Controls

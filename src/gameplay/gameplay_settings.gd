@@ -1,7 +1,7 @@
 class_name GameplaySettings
 extends Resource
 ## Level-owned spawn, flight tuning and escape animation settings.
-## ShapeList owns cumulative gameplay thresholds; escape reveals a sky around the camera.
+## ShapeList owns per-shape absolute gameplay thresholds; escape reveals a sky around the camera.
 ## Spawn and escape detection use doubles, never the camera's Vector3 mirror.
 
 const DEFAULT_SKYBOX := preload("res://Assets/sky_82_2k.png")

@@ -25,7 +25,7 @@ class Entry:
 	var label: String
 	var table: AttributeTable
 	var look := AttributeTable.new(ShapeCatalogue.scene_specs())
-	## Zero contributes the default 20 world units to the cumulative gameplay threshold.
+	## Absolute distance from the run origin; zero uses the default 20 world units.
 	var next_level_distance := 0.0
 	var commands: Array[String] = []
 
@@ -58,10 +58,7 @@ func next_level_distance(i: int) -> float:
 
 ## Absolute distance from the run origin needed to finish this stage.
 func next_level_threshold(i: int) -> float:
-	var total := 0.0
-	for index in range(i + 1):
-		total += next_level_distance(index)
-	return total
+	return next_level_distance(i)
 
 
 func table(i: int) -> AttributeTable:
