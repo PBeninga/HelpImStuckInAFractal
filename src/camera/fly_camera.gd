@@ -5,9 +5,10 @@ extends Node
 ## follows how far away the surface straight ahead is (the CenterRay), capped
 ## by the distance to the nearest surface (of any shape) in any direction, so
 ## inside a small nested shape it crawls at that shape's scale. Holding Shift
-## doubles the speed. A move that would take the camera below the 32-bit zoom
-## floor of the nearest shape (FractalParams.zoom_floor) is refused. Reads and
-## writes a shared CameraState, moving its eye in 64-bit.
+## doubles the speed. A move that would take the camera below the zoom floor of
+## the nearest shape (FractalParams.zoom_floor: where the perturbed march or 32
+## iterations run out, or the 32-bit floor for shapes that are not perturbed)
+## is refused. Reads and writes a shared CameraState, moving its eye in 64-bit.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
@@ -17,6 +18,10 @@ const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg of
 const NEAR_CAP := 10.0
 ## Sprint ("sprint", Shift) multiplies the speed by this while held.
 const SPRINT_MULTIPLIER := 2.0
+## base_speed()'s lowest value. The speed is about the distance to the surface,
+## so it must be able to fall below any zoom floor or the camera would outrun its
+## own stop.
+const SPEED_FLOOR := 1e-14
 
 var enabled := false
 ## The load shedder's cap on travel speed: 1.0 normally, lower at its top level.
@@ -88,21 +93,23 @@ func _physics_process(delta: float) -> void:
 	_camera.move_by(step)   # accumulated in 64-bit
 
 
-## Whether the camera may move from `from` to `to`: yes when `to` is at least
-## the zoom floor from the surface, or no closer than `from` is (backing away
-## is always allowed, so a camera already past the floor, say from a loaded
-## save, can leave). The speed already shrinks with the distance, so the last
-## accepted step before the floor is tiny and the stop does not pop.
-func move_allowed(from: Vector3, to: Vector3) -> bool:
-	return move_allowed_at([from.x, from.y, from.z], [to.x, to.y, to.z])
+## Whether the camera may move from `from` to `to` (Vector3s, or 64-bit
+## [x, y, z] / PackedFloat64Array eyes): yes when `to` is at least the zoom
+## floor from the surface, or no closer than `from` is (backing away is always
+## allowed, so a camera already past the floor, say from a loaded save, can
+## leave). The speed already shrinks with the distance, so the last accepted
+## step before the floor is tiny and the stop does not pop.
+func move_allowed(from, to) -> bool:
+	return move_allowed_at([from[0], from[1], from[2]], [to[0], to[1], to[2]])
 
 
-## move_allowed() on 64-bit points ([x, y, z] each).
+## move_allowed() on 64-bit points ([x, y, z] each). One ReferenceOrbit at `to`
+## gives both its distance and its floor.
 func move_allowed_at(from: Array, to: Array) -> bool:
-	var d_to := DistanceEstimator.scene_estimate_at(to[0], to[1], to[2], _params)
-	if d_to >= _params.zoom_floor_at(to[0], to[1], to[2]):
+	var orbit := ReferenceOrbit.build(_params, to[0], to[1], to[2])
+	if orbit.distance >= _params.zoom_floor_for(orbit):
 		return true
-	return d_to >= DistanceEstimator.scene_estimate_at(from[0], from[1], from[2], _params)
+	return orbit.distance >= DistanceEstimator.scene_estimate_at(from[0], from[1], from[2], _params)
 
 
 ## Rotate the view by a mouse delta (pixels). Yaw turns the heading about world
@@ -153,7 +160,7 @@ func current_speed() -> float:
 func base_speed() -> float:
 	var near := DistanceEstimator.scene_estimate_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _params)
 	var d := minf(_ray.distance(), near * NEAR_CAP)
-	return clampf(d, 1e-6, 20.0) * _camera.speed_factor * speed_limit
+	return clampf(d, SPEED_FLOOR, 20.0) * _camera.speed_factor * speed_limit
 
 
 func scroll(up: bool) -> void:
