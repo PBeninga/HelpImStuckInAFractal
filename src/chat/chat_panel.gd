@@ -14,7 +14,6 @@ const FONT_SIZE := 15
 const FrostedGlass := preload("res://src/ui/frosted_glass.gd")
 
 const BG := Color(0.025, 0.14, 0.06, 0.68)
-const PANEL_EDGE := Color(0.22, 0.82, 0.38, 0.68)
 const HUMAN_BG := Color(0.08, 0.34, 0.15, 0.46)
 const AGENT_BG := Color(0.04, 0.18, 0.09, 0.50)
 const NAME_HUMAN := Color(0.65, 0.95, 0.70)
@@ -72,7 +71,7 @@ func _build() -> void:
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	panel.add_theme_stylebox_override("panel", _box(BG, 12, 12, PANEL_EDGE))
+	panel.add_theme_stylebox_override("panel", _box(BG, 12, 12))
 	FrostedGlass.apply(panel)
 	add_child(panel)
 
@@ -121,9 +120,9 @@ func _build() -> void:
 	input.add_theme_font_size_override("font_size", FONT_SIZE)
 	input.add_theme_font_override("font", mono)
 	input.add_theme_stylebox_override(
-		"normal", _box(Color(0.01, 0.08, 0.035, 0.72), 8, 8, Color(0.18, 0.52, 0.25, 0.5)))
+		"normal", _box(Color(0.01, 0.08, 0.035, 0.72), 8, 8))
 	input.add_theme_stylebox_override(
-		"focus", _box(Color(0.015, 0.11, 0.045, 0.84), 8, 8, Color(0.42, 1.0, 0.52, 0.9)))
+		"focus", _box(Color(0.015, 0.11, 0.045, 0.84), 8, 8, Color(1.0, 1.0, 1.0, 0.45)))
 	input.text_submitted.connect(_on_submit)
 	input.gui_input.connect(_on_input_key)
 	col.add_child(input)

@@ -11,8 +11,8 @@ const FrostedGlass := preload("res://src/ui/frosted_glass.gd")
 
 const LAYER := 4
 const PANEL_BG := Color(0.025, 0.14, 0.06, 0.68)
-const PANEL_BORDER := Color(0.22, 0.82, 0.38, 0.68)
-const FLASH_BORDER := Color(0.62, 1.0, 0.28, 1.0)
+const PANEL_BORDER := Color.TRANSPARENT
+const FLASH_BORDER := Color(0.9, 0.95, 1.0, 1.0)
 const AMBER := Color(1.0, 0.85, 0.4)
 const STYLE_COLORS := {
 	"error": "#ff7b7b", "ok": "#7dffa8", "fail": "#ff4d4d", "pilot": "#ffd166",
@@ -108,7 +108,7 @@ func _panel(element: String, anchor_preset: int, at: Vector2, panel_size: Vector
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = PANEL_BG
 	sb.border_color = PANEL_BORDER
-	sb.set_border_width_all(1)
+	sb.set_border_width_all(0)
 	sb.set_corner_radius_all(4)
 	sb.set_content_margin_all(10)
 	p.add_theme_stylebox_override("panel", sb)
@@ -204,7 +204,7 @@ func _build_banner() -> void:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = PANEL_BG
 	sb.border_color = PANEL_BORDER
-	sb.set_border_width_all(2)
+	sb.set_border_width_all(0)
 	sb.set_corner_radius_all(6)
 	sb.set_content_margin_all(24)
 	banner.add_theme_stylebox_override("panel", sb)
@@ -358,7 +358,7 @@ func flash(element: String, label: String = "") -> void:
 	for i in 4:
 		tw.tween_callback(_set_border.bind(sb, FLASH_BORDER, 3))
 		tw.tween_interval(0.35)
-		tw.tween_callback(_set_border.bind(sb, PANEL_BORDER, 1))
+		tw.tween_callback(_set_border.bind(sb, PANEL_BORDER, 0))
 		tw.tween_interval(0.25)
 
 
