@@ -439,9 +439,11 @@ func _build_workspace_files() -> void:
 func _process(_delta: float) -> void:
 	_resolve_once()
 	# The fly camera's zoom limit reaches the Movement pane the way the shed
-	# level does, polled since it can change on any physics tick.
+	# level does, polled since it can change on any physics tick; so does the
+	# view's perturbed iteration count.
 	if _console != null:
 		_console.show_zoom_limit(fly.at_zoom_limit)
+		_console.show_deep(view.pert_iters())
 
 
 ## Resolve every shape's table (into its ShapeParams) and the look table (into

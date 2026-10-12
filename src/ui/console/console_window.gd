@@ -232,6 +232,11 @@ func show_zoom_limit(on: bool) -> void:
 	_movement.show_zoom_limit(on)
 
 
+## The perturbed march's k, shown in the Movement pane while above 0.
+func show_deep(n: int) -> void:
+	_movement.show_deep(n)
+
+
 ## Feed one frame of resolved values — one Dictionary per shape, and the
 ## scene's look — to the panels' readouts and the palette's curves and strip.
 func set_resolved(shape_values: Array, look_values: Dictionary = {}) -> void:
@@ -241,8 +246,6 @@ func set_resolved(shape_values: Array, look_values: Dictionary = {}) -> void:
 		_light_inspector.set_resolved(look_values)
 	if _material_inspector != null:
 		_material_inspector.set_resolved(look_values)
-	if _palette_window != null:
-		_palette_window.set_resolved(look_values)
 
 
 func open() -> void:
