@@ -293,7 +293,8 @@ func set_resolved(shape_values: Array, look_values: Dictionary = {}, rendered_sh
 		_rendered_shape = rendered_shape
 		_update_look_labels()
 	var index := _shape_pane.expanded_index()
-	if index < 0:
+	# Main may resolve during a list-change signal before the pane rebuilds.
+	if index < 0 or index >= _shape_pane.shapes().count():
 		return
 	if rendered_shape >= 0 and index != rendered_shape:
 		look_values = _shape_pane.shapes().look_table(index).defaults()

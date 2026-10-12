@@ -245,7 +245,7 @@ func run() -> void:
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(tmp2))
 	check_eq(int(saved["version"]), Workspace.VERSION, "the save is version %d" % Workspace.VERSION)
 	check_eq((saved["shapes"] as Array).size(), 2, "and carries both shapes")
-	check(saved.has("look"), "and the look")
+	check(saved["shapes"][0].has("look") and saved["shapes"][1].has("look"), "and each shape's look")
 	pane.remove_shape(1)
 	check_eq(main.shapes().count(), 1, "the pane's remove drops the shape")
 	check_eq(main.params.shape_count(), 1, "and params follow")
