@@ -135,6 +135,9 @@ func _ready() -> void:
 	_apply_mode()
 	# After follow_size's handler, so a resize has refitted the scale first.
 	get_window().size_changed.connect(_on_window_resized)
+	# Keys now come to the main window, so a field left focused in the console
+	# would only silence WASD.
+	get_window().focus_entered.connect(_drop_side_focus)
 	_was_fullscreen = _is_fullscreen()
 	if _was_fullscreen:
 		set_docked(true)
@@ -614,6 +617,16 @@ func _on_console_toggle() -> void:
 	_update_mouse()
 
 
+## Back to the game: let go of any text field the console or the noise window
+## still holds. A spin box keeps its focus after Enter, and a focused field in
+## any window silences WASD (TextFocus), so without this flying stays dead
+## after a console edit. A spin box applies what was typed as it lets go.
+func _drop_side_focus() -> void:
+	for w: Window in [_console, _noise]:
+		if w != null:
+			w.gui_release_focus()
+
+
 ## WASD pressed in the console or the noise window: give the main window
 ## keyboard focus and, as a click in the view would, close the noise editor and
 ## recapture the mouse, so the key that asked flies.
@@ -696,14 +709,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 
 	# 3. click in the view in FLY mode while free: recapture, close the noise
-	# editor, and LEAVE the console open, so its readouts stay in sight while
-	# flying. (A click on the console or noise window is that window's; it never
-	# gets here.)
+	# editor, drop any text focus left in the console, and LEAVE the console
+	# open, so its readouts stay in sight while flying. (A click on the console
+	# or noise window is that window's; it never gets here.)
 	if event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT \
 			and params.camera_mode == FractalParams.CameraMode.FLY \
 			and not _captured:
 		_free_requested = false
+		_drop_side_focus()
 		if _noise != null:
 			_noise.close()
 		_update_mouse()

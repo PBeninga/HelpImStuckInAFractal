@@ -315,6 +315,36 @@ func run() -> void:
 	check(fly.move_direction().is_zero_approx(), "WASD is silenced while a console text field has focus")
 	Input.action_release(&"move_forward")
 	label_edit.release_focus()
+
+	# A spin box keeps its focus after Enter, so going back to the game by a
+	# click in the view must drop it, or WASD stays silenced while flying.
+	# (ui_console_test checks a spin box commits what was typed as it lets go.)
+	var scale_edit: LineEdit = console.shape_pane().active_inspector().row(&"box_scale").spin_box().get_line_edit()
+	scale_edit.grab_focus()
+	main._free_requested = true
+	main._update_mouse()
+	await frames(1)
+	var vclick := InputEventMouseButton.new()
+	vclick.button_index = MOUSE_BUTTON_LEFT
+	vclick.pressed = true
+	vclick.position = Vector2(400, 300)
+	main._unhandled_input(vclick)
+	await frames(1)
+	check(main.is_mouse_captured(), "a click in the view recaptures")
+	check(console.gui_get_focus_owner() == null, "and drops the console's text focus")
+	Input.action_press(&"move_forward")
+	check(not fly.move_direction().is_zero_approx(), "so WASD flies again")
+	Input.action_release(&"move_forward")
+
+	# The same when the main window takes OS focus back (a click on it while
+	# the mouse is free, or the OS handing focus over).
+	scale_edit.grab_focus()
+	await frames(1)
+	main.get_window().focus_entered.emit()
+	check(console.gui_get_focus_owner() == null, "the main window gaining focus drops the console's text focus")
+	Input.action_press(&"move_forward")
+	check(not fly.move_direction().is_zero_approx(), "and WASD flies")
+	Input.action_release(&"move_forward")
 	console.hide_console()
 	main._free_requested = false
 	main._update_mouse()
