@@ -299,8 +299,17 @@ yaw** / **Light pitch** (swing the headlight about the view's up and right
 axes), **Light size** (a point light at 0, a broad soft source above it),
 **Ambient** / **Diffuse**, and **Shadows** (0 is off and casts no shadow ray;
 only visible with the light swung off the headlight). Then **Scattering** —
-**Density**, **Glow** and **Brightness** of a light-tinted distance haze
-(analytic, no extra rays). Then **Picture** — **Exposure** and **Saturation**
+**Fog distance** sets a persistent, fully opaque wall in multiples of the
+camera's distance to the nearest surface (0 disables it). Both primary march
+phases stop at the wall, skipping distant surface shading; shadow rays stop at
+the same camera-centred sphere. **Fog fade start** is the fraction of that
+distance where the fade begins (0.35 leaves the first 35% clear); **Fog colour**
+sets the wall's tint. This fog works at full quality and while still, independently
+of the governor. Shorter distances can save more rendering work; they do not
+change the CPU's camera, collision or probe calculations.
+**Density**, **Glow** and **Brightness** add a light-tinted distance haze
+(analytic, no extra rays). That haze alone does not shorten the march.
+Then **Picture** — **Exposure** and **Saturation**
 on the final colour of every mode but Grayscale. The defaults are the site's,
 so the picture is unchanged until one is moved.
 
@@ -557,6 +566,7 @@ site reports at `(x, y, z)` is `(2x, 2y, 2z)` here.
 
 ```bash
 tests/run_all.sh      # every headless SceneTree test
+python3 tests/fog_render_test.py  # fog cutoff/shadows/pixels in headless Chrome
 tests/screenshots.sh  # windowed render check (writes PNGs to screenshots/)
 ```
 

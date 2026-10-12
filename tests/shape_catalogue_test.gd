@@ -1,6 +1,6 @@
 extends "res://tests/test_case.gd"
 ## The shape catalogue: every spec has tooltip and effects, defaults in range,
-## ids unique, every group has a heading, and the id set is the expected 106
+## ids unique, every group has a heading, and the id set is the expected
 ## catalogue ids (the seven Placement ids first); the lighting defaults are the site's constants; the Palette
 ## mode's rows show only in that mode; each shape's rows show only while that
 ## shape is drawn; the console's two tabs between them show every group
@@ -26,7 +26,8 @@ const EXPECTED_IDS := [
 	&"mandelbulb_c_1", &"mandelbulb_c_2", &"precision", &"color_mode",
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
 	&"light_color", &"light_yaw", &"light_pitch", &"light_size", &"light_ambient",
-	&"light_diffuse", &"shadows", &"scatter_density", &"scatter_glow", &"scatter_brightness",
+	&"light_diffuse", &"shadows", &"fog_distance", &"fog_start", &"fog_tint",
+	&"scatter_density", &"scatter_glow", &"scatter_brightness",
 	&"exposure", &"saturation", &"surface_color", &"roughness", &"light_specular",
 	&"texture_strength", &"bump_strength", &"palette_a_r", &"palette_a_g", &"palette_a_b",
 	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
@@ -38,7 +39,7 @@ func run() -> void:
 	var specs := ShapeCatalogue.specs()
 	var tips := ShapeCatalogue.group_tooltips()
 
-	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids are the expected 106, in order")
+	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids match the expected list, in order")
 
 	var seen := {}
 	for s in specs:

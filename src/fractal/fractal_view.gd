@@ -403,7 +403,7 @@ func _push_params() -> void:
 	_material.set_shader_parameter("exit_has_skybox", _params.gameplay.exit_skybox != null)
 	_material.set_shader_parameter("exit_skybox", _params.gameplay.exit_skybox)
 	# Every scene id is a scalar uniform of the same name, pushed as it is; the
-	# two COLOR keys go as a vec3 (the shader's colour uniforms).
+	# COLOR keys go as a vec3 (the shader's colour uniforms).
 	for key in FractalParams.RESOLVED_KEYS:
 		if FractalParams.COLOR_KEYS.has(key):
 			var c: Color = _params.get(key)

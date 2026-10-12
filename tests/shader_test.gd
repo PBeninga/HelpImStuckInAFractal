@@ -94,11 +94,12 @@ func run() -> void:
 			continue   # (there are no other defaulted vec3 uniforms today)
 		check_eq(table.spec(id).type, AttributeSpec.Type.COLOR, "the defaulted vec3 '%s' is a COLOR id" % id)
 		var c := table.get_default(id) as Color
-		check_approx(m.get_string(2).to_float(), c.r, "vec3 '%s' red matches the COLOR default" % id, 1e-9)
-		check_approx(m.get_string(3).to_float(), c.g, "vec3 '%s' green" % id, 1e-9)
-		check_approx(m.get_string(4).to_float(), c.b, "vec3 '%s' blue" % id, 1e-9)
+		# Color components are float32; decimal literals parse as float64 here.
+		check_approx(m.get_string(2).to_float(), c.r, "vec3 '%s' red matches the COLOR default" % id, 1e-7)
+		check_approx(m.get_string(3).to_float(), c.g, "vec3 '%s' green" % id, 1e-7)
+		check_approx(m.get_string(4).to_float(), c.b, "vec3 '%s' blue" % id, 1e-7)
 		colour_defaults += 1
-	check_eq(colour_defaults, FractalParams.COLOR_KEYS.size(), "both COLOR uniforms declare a vec3 default")
+	check_eq(colour_defaults, FractalParams.COLOR_KEYS.size(), "all COLOR uniforms declare a vec3 default")
 
 	# the specular exponent is floored at 0: a matte surface (roughness 1) under a
 	# wide light (light_size > 0) gives r_eff2 > 1, so an unclamped 2/r_eff2 - 2

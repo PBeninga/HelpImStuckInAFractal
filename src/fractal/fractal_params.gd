@@ -36,7 +36,8 @@ const RESOLVED_KEYS: Array[StringName] = [
 	&"color_mode",
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
 	&"light_color", &"light_yaw", &"light_pitch", &"light_size", &"light_ambient",
-	&"light_diffuse", &"shadows", &"scatter_density", &"scatter_glow", &"scatter_brightness",
+	&"light_diffuse", &"shadows", &"fog_distance", &"fog_start", &"fog_tint",
+	&"scatter_density", &"scatter_glow", &"scatter_brightness",
 	&"exposure", &"saturation", &"surface_color", &"roughness", &"light_specular",
 	&"texture_strength", &"bump_strength", &"palette_a_r", &"palette_a_g", &"palette_a_b",
 	&"palette_b_r", &"palette_b_g", &"palette_b_b", &"palette_c_r", &"palette_c_g",
@@ -61,17 +62,17 @@ var active: int = 0:
 		active = v
 		emit_changed()
 
-## The two COLOR fields after color_mode: pushed to the shader as a `Vector3`,
-## not as the plain value. Kept out of LOOK_KEYS so every look key is a scalar.
-const COLOR_KEYS: Array[StringName] = [&"light_color", &"surface_color"]
+## COLOR fields: pushed to the shader as a `Vector3`, not as the plain value.
+## Kept out of LOOK_KEYS so every look key is a scalar.
+const COLOR_KEYS: Array[StringName] = [&"light_color", &"fog_tint", &"surface_color"]
 
 ## The scalar colour, lighting and palette fields after color_mode (every
-## resolved key past color_mode except the two COLOR_KEYS): each is pushed to the
+## resolved key past color_mode except the COLOR_KEYS): each is pushed to the
 ## shader uniform of the same name as it is.
 const LOOK_KEYS: Array[StringName] = [
 	&"palette_source", &"palette_frequency", &"palette_offset", &"palette_occlusion",
 	&"light_yaw", &"light_pitch", &"light_size", &"light_ambient", &"light_diffuse",
-	&"shadows", &"scatter_density", &"scatter_glow", &"scatter_brightness",
+	&"shadows", &"fog_distance", &"fog_start", &"scatter_density", &"scatter_glow", &"scatter_brightness",
 	&"exposure", &"saturation", &"roughness", &"light_specular",
 	&"texture_strength", &"bump_strength",
 	&"palette_a_r", &"palette_a_g", &"palette_a_b", &"palette_b_r", &"palette_b_g", &"palette_b_b",
@@ -171,6 +172,12 @@ func set_shape_count(n: int) -> void:
 	set(v): shadows = v; _emit()
 
 # --- Scattering (off at density 0, so the default is untouched) ---
+@export var fog_distance := 0.0:
+	set(v): fog_distance = maxf(v, 0.0); _emit()
+@export var fog_start := 0.35:
+	set(v): fog_start = clampf(v, 0.0, 0.99); _emit()
+@export var fog_tint := Color(0.2, 0.2, 0.2):
+	set(v): fog_tint = v; _emit()
 @export var scatter_density := 0.0:
 	set(v): scatter_density = v; _emit()
 @export var scatter_glow := 0.0:

@@ -265,6 +265,26 @@ static func scene_specs() -> Array[AttributeSpec]:
 
 	# --- Scattering ---
 	out.append(AttributeSpec.make({
+		"id": "fog_distance", "label": "Fog distance", "type": F,
+		"default": 0.0, "min": 0.0, "max": 400.0, "step": 0.1, "hard_max": 1000000.0,
+		"group": "Scattering",
+		"tooltip": "Distance from the camera where fog becomes fully opaque and rays stop. 0 is off.",
+		"effects": "In multiples of the camera's distance to the nearest surface, so it follows your zoom. Shorter distances skip more distant geometry and its shading. Also clips shadow rays to the same fog sphere. Stays active when still, independently of Density and the performance governor.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "fog_start", "label": "Fog fade start", "type": F,
+		"default": 0.35, "min": 0.0, "max": 0.99, "step": 0.01,
+		"group": "Scattering",
+		"tooltip": "Where fog starts fading in, as a fraction of Fog distance.",
+		"effects": "0 fades from the camera; 0.35 leaves the first 35% clear; near 1 makes a narrow fog wall. Fog always reaches full opacity at Fog distance. Has no effect when Fog distance is 0.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "fog_tint", "label": "Fog colour", "type": COLOR,
+		"default": Color(0.2, 0.2, 0.2), "group": "Scattering",
+		"tooltip": "The solid colour at and beyond the fog wall.",
+		"effects": "Distant surfaces and the background fade into this colour, concealing the ray cutoff. Independent of the light-tinted Density haze. Has no effect when Fog distance is 0.",
+	}))
+	out.append(AttributeSpec.make({
 		"id": "scatter_density", "label": "Density", "type": F,
 		"default": 0.0, "min": 0.0, "max": 0.5, "step": 0.001, "hard_max": 10.0,
 		"group": "Scattering",
@@ -368,7 +388,7 @@ static func group_tooltips() -> Dictionary:
 		"Render": "Render: how finely the ray march resolves the surface. A look-and-cost knob, not a shape knob.",
 		"Colour": "Colour: which colouring mode paints the surface and, for the Palette mode, what runs it along the palette.",
 		"Light": "Light: the one lamp every lit colour mode shares, a headlight following the camera by default. Each value's default is the site's, so the default picture is unchanged until you move one.",
-		"Scattering": "Scattering: haze in the space the camera flies through — analytic, no extra rays. Off until you raise the Density.",
+		"Scattering": "Scattering: a persistent fog wall that stops rays at Fog distance (0 is off), plus light-tinted haze controlled by Density (0 is off).",
 		"Picture": "Picture: adjustments on the final colour of every mode but Grayscale.",
 		"Surface": "Surface: what the surface is made of — its colour, how rough it is, and how strong the glints are.",
 		"Texture": "Texture: the noise editor's Texture and Bump outputs drive these. Nothing wired, nothing changes; press N to open the editor.",

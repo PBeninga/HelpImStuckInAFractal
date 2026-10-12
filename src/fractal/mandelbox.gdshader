@@ -132,6 +132,11 @@ uniform float light_ambient = 0.1;
 uniform float light_diffuse = 0.5;
 uniform float shadows = 0.0;        // 0 off (no shadow ray), toward 1 darker
 // Scattering: light-tinted distance haze, off at density 0.
+// Persistent camera-relative fog wall, independent of the load shedder.
+// Distance is in near_dist units; 0 disables both the fade and the cutoff.
+uniform float fog_distance = 0.0;
+uniform float fog_start = 0.35;
+uniform vec3 fog_tint = vec3(0.2, 0.2, 0.2);
 uniform float scatter_density = 0.0;
 uniform float scatter_glow = 0.0;
 uniform float scatter_brightness = 1.0;
@@ -189,6 +194,17 @@ float fog_amount(float t) {
 	if (fog_dist <= 0.0) { return 0.0; }
 	float t_fog = fog_dist * near_dist;
 	return (1.0 - fog_clear) * smoothstep(0.35 * t_fog, t_fog, t);
+}
+
+float fog_wall_distance() {
+	return fog_distance * near_dist;
+}
+
+vec3 fog_wall_color(vec3 col, float t) {
+	if (fog_distance <= 0.0) { return col; }
+	float wall = fog_wall_distance();
+	float a = smoothstep(clamp(fog_start, 0.0, 0.99) * wall, wall, t);
+	return mix(col, fog_tint, a);
 }
 
 // The probe dot over a surface colour at hit point v: a white disc of radius
@@ -554,12 +570,21 @@ float soft_shadow(int s, vec3 n_world, vec3 dir, vec3 ldir, float total) {
 	vec3 lift = dir * total + n_world * 4.0 * eps0;
 	vec3 ro_local = local_offset_point(s, lift);
 	float far = box_intersect(ro_local, local_dir(s, ldir), box_half[s]).y * shape_size[s];
+	if (fog_distance > 0.0) {
+		// Shadow origins are offsets from the eye. Intersect this ray with
+		// the SAME camera-centred sphere, not a new radius from the hit.
+		float wall = fog_wall_distance();
+		float c = dot(lift, lift) - wall * wall;
+		if (c >= 0.0) { return 1.0; }
+		float b = dot(lift, ldir);
+		far = min(far, -b + sqrt(max(b * b - c, 0.0)));
+	}
 	float k = 1.0 / tan(max(radians(light_size), radians(0.5)));
 	float res = 1.0;
 	float t = eps0;
 	int which = 0;
 	for (int i = 0; i < 64; i++) {
-		if (i >= shadow_steps) { break; }
+		if (i >= shadow_steps || t >= far) { break; }
 		float d = de_scene(lift + ldir * t, true, which);
 		if (d < eps0) { return 0.0; }
 		res = min(res, k * d / t);
@@ -567,6 +592,21 @@ float soft_shadow(int s, vec3 n_world, vec3 dir, vec3 ldir, float total) {
 		if (t > far) { break; }
 	}
 	return clamp(res, 0.0, 1.0);
+}
+
+// With a manual wall, the performance fog is in front of it. Its opaque
+// colour includes the manual fade at the shed distance, so hits and the sky
+// meet there and both ease towards the manual wall as the shed fog clears.
+vec3 finish_surface(vec3 col, float t, vec3 dir, vec3 bg, vec3 sky) {
+	if (fog_distance <= 0.0) {
+		return mix(probe_dot(mix(col, fog_color, fog_amount(t)), eye + dir * t), bg, view_fade(t));
+	}
+	col = fog_wall_color(probe_dot(col, eye + dir * t), t);
+	if (fog_dist > 0.0) {
+		vec3 shed_tint = fog_wall_color(fog_color, fog_dist * near_dist);
+		col = mix(col, shed_tint, fog_amount(t));
+	}
+	return mix(col, sky, view_fade(t));
 }
 
 void fragment() {
@@ -593,7 +633,8 @@ void fragment() {
 		sphere_start = max(0.0, -sphere_b - root);
 		sphere_end = -sphere_b + root;
 	}
-	if (exit_has_skybox && sphere_end > 0.0) {
+	if (exit_has_skybox && sphere_end > 0.0
+			&& (fog_distance <= 0.0 || sphere_end < fog_wall_distance())) {
 		vec3 normal = normalize(eye + dir * sphere_end);
 		vec2 sky_uv = vec2(atan(normal.y, normal.x) / (2.0 * PI) + 0.5,
 			acos(clamp(normal.z, -1.0, 1.0)) / PI);
@@ -601,7 +642,22 @@ void fragment() {
 	}
 	// A miss is infinitely far, so under fog the sky is the fog: far surfaces fade
 	// into it without a seam.
+	vec3 base_bg = bg;
 	if (fog_dist > 0.0) { bg = mix(fog_color, bg, fog_clear); }
+	float bg_distance = sphere_end > 0.0 ? sphere_end : fog_wall_distance();
+	if (view_limit > 0.0) { bg_distance = min(bg_distance, view_limit); }
+	vec3 sky = bg;
+	if (fog_distance > 0.0) {
+		vec3 far_color = base_bg;
+		if (bg_distance < fog_wall_distance()) {
+			far_color = scatter(base_bg, bg_distance, dir, sky_ldir);
+		}
+		sky = fog_wall_color(far_color, bg_distance);
+		if (fog_dist > 0.0) {
+			vec3 shed_tint = fog_wall_color(fog_color, min(bg_distance, fog_dist * near_dist));
+			sky = mix(sky, shed_tint, 1.0 - fog_clear);
+		}
+	}
 
 	// The march covers the union of the shapes' cubes, each met in its own
 	// frame (so a rotated shape's cube is oriented) and mapped back to world
@@ -621,8 +677,11 @@ void fragment() {
 	// geometry behind it does not hide the sky, including while outside.
 	t_start = max(t_start, sphere_start);
 	t_exit = min(t_exit, sphere_end);
+	if (fog_distance > 0.0) {
+		t_exit = min(t_exit, fog_wall_distance());
+	}
 	if (t_exit < 0.0 || t_start > t_exit) {
-		COLOR = vec4(bg, 1.0);
+		COLOR = vec4(sky, 1.0);
 	} else {
 		if (fog_dist > 0.0 && fog_clear <= 0.0) {
 			t_exit = min(t_exit, fog_dist * near_dist);  // nothing past the fog is marched
@@ -631,7 +690,7 @@ void fragment() {
 			t_exit = min(t_exit, view_limit);  // nor past the view distance
 		}
 		float total = t_start;
-		bool left_cube = total > t_exit;
+		bool left_cube = total >= t_exit;
 		int which = 0;
 
 		// Phase 1: low precision (N = each shape's coarse_iters, 16 at the
@@ -642,7 +701,7 @@ void fragment() {
 			float d = de_scene(dir * total, true, which);
 			if (d < hit_eps(total, precision[which]) * 2.0) { n1 = i; break; }
 			total += d * noise_step_scale();
-			if (total > t_exit) { left_cube = true; break; }
+			if (total >= t_exit) { left_cube = true; break; }
 		}
 
 		// Phase 2: high precision (N=32), up to fine_steps (<= 128) steps,
@@ -654,7 +713,7 @@ void fragment() {
 				float d = de_scene(dir * total, false, which);
 				if (d < hit_eps(total, precision[which])) { n2 = i; break; }
 				total += d * noise_step_scale();
-				if (total > t_exit) { left_cube = true; break; }
+				if (total >= t_exit) { left_cube = true; break; }
 			}
 		}
 
@@ -662,7 +721,11 @@ void fragment() {
 			// The only misses: leaving every cube, the fog or the view distance.
 			// The haze fills the space the ray marched, to its exit (default: no haze).
 			float t_scat = min(t_exit, total);
-			COLOR = vec4(scatter(bg, t_scat, dir, sky_ldir), 1.0);
+			if (fog_distance > 0.0) {
+				COLOR = vec4(sky, 1.0);  // same background as a ray that missed every cube
+			} else {
+				COLOR = vec4(scatter(bg, t_scat, dir, sky_ldir), 1.0);
+			}
 		} else {
 			// Step-count shading stays on the original 128-step scale whatever the
 			// budget, so a ray that hits looks the same; one that ran out is 1.
@@ -675,8 +738,7 @@ void fragment() {
 					sldir = rotate_about(rotate_about(sldir, cam_up, light_yaw), cam_right, light_pitch);
 				}
 				vec3 gcol = scatter(vec3(inv), total, dir, sldir);
-				COLOR = vec4(mix(probe_dot(mix(gcol, fog_color, fog_amount(total)), eye + dir * total),
-					bg, view_fade(total)), 1.0);
+				COLOR = vec4(finish_surface(gcol, total, dir, bg, sky), 1.0);
 			} else {
 				// Everything below is in the hit shape's own frame: the point, the
 				// eye, the normal and the light, so one shape at the identity
@@ -810,8 +872,7 @@ void fragment() {
 				}
 				vec3 shaded = noise_tint(col, v);
 				shaded = scatter(shaded, total, dir, ldir_world);
-				shaded = mix(shaded, fog_color, fog_amount(total));
-				COLOR = vec4(mix(probe_dot(shaded, eye + dir * total), bg, view_fade(total)), 1.0);
+				COLOR = vec4(finish_surface(shaded, total, dir, bg, sky), 1.0);
 			}
 		}
 	}
