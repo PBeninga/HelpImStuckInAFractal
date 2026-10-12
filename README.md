@@ -701,12 +701,15 @@ bridge socket with `chat_post {text, source: "voice"}` for a finished utterance
 (shown tagged "(voice)") and `chat_draft {text}` for the live transcript, which
 fills the input box as you speak.
 
-**Phone.** `server/` takes this to a phone call: a Twilio number, a server on
-Railway, and a link on your machine. The call is answered either by the call
-centre's OpenAI Realtime voice agent (`VOICE_AGENT=openai`, which flies the
-ship with the call centre's tools) or by ConversationRelay into the pilot chat
-(the link posts the caller's words with `chat_post` and speaks the agent's
-replies, following the chat with `chat_watch`). See `server/README.md`.
+**Phone.** `server/` takes this to a phone call: a Twilio number and a server
+on Railway. The game dials out to the server itself when it starts
+(`ServerLink`, `src/mcp/server_link.gd`), given `FRACTAL_SERVER_URL` and
+`GAME_LINK_TOKEN` in the environment or in `server/.env`; `-- --no-link` keeps
+it offline. The call is answered either by the call centre's OpenAI Realtime
+voice agent (`VOICE_AGENT=openai`, which flies the ship with the call centre's
+tools) or by ConversationRelay into the pilot chat (the link posts the
+caller's words with `chat_post` and speaks the agent's replies). See
+`server/README.md`.
 
 **The call centre.** `call_center/` is the help line's in-game half, apart from
 the game: the crash report and self-resolving diagnostics log, the support

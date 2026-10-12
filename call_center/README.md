@@ -16,10 +16,9 @@ socket.
 ```
  phone ─► Twilio ─(audio)─► server/ (Railway) ─► OpenAI Realtime voice agent
                                  ▲   │ tool calls, ship events, transcripts
-                    wss /game/link   ▼
-                         link (server/link, your machine)
-                                 │ tcp :9077
-                         McpBridge (src/mcp) ── pilot chat (src/chat): the conversation
+                    wss /game/link   ▼   (the game dials out when it starts)
+                         McpBridge (src/mcp) + its ServerLink
+                                 │        ── pilot chat (src/chat): the conversation
                                  │ ship_tools · ship_tool · ship_events · call_center
                      ┌──────── call_center/ ────────────────────────────────┐
                      │ call_center.gd      the node at /root/CallCenter       │
@@ -65,7 +64,9 @@ This plays a complete support call through the real server, link and bridge,
 with a fake Twilio caller and a scripted voice agent in place of OpenAI's
 model. It flies the ship from the crash report to the exit. See
 [`server/README.md`](../server/README.md) for the real phone line: Railway,
-Twilio, `OPENAI_API_KEY`, and `npm run link`.
+Twilio and `OPENAI_API_KEY`. The game links itself to the server when it
+starts, given `FRACTAL_SERVER_URL` and `GAME_LINK_TOKEN` (in the environment
+or `server/.env`).
 
 ## What the pilot sees
 
