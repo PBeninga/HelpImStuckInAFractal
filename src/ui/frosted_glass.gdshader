@@ -9,7 +9,7 @@ void fragment() {
 	vec3 behind = textureLod(screen_texture, SCREEN_UV, blur_lod).rgb;
 	float tint_strength = clamp(COLOR.a, 0.0, 1.0);
 	vec3 glass = mix(behind, COLOR.rgb, tint_strength);
-	float scanline = step(0.66, fract(SCREEN_UV.y * VIEWPORT_SIZE.y / scanline_spacing));
+	float scanline = step(0.66, fract(FRAGCOORD.y / scanline_spacing));
 	glass *= 1.0 - scanline * scanline_strength;
 	COLOR = vec4(glass, 1.0);
 }
