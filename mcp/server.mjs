@@ -155,7 +155,7 @@ server.registerTool(
       call_center: z
         .enum(["off", "on", "demo"])
         .optional()
-        .describe("Start the call centre (call_center/) too: its HUD, diagnostics log and ship tools; 'demo' adds its sample escape route (default off)"),
+        .describe("Start the call centre (call_center/) too: its HUD, diagnostics log and ship tools; 'demo' is a compatibility alias (default off)"),
     },
   },
   async ({ foreground = false, call_center = "off" } = {}) => {
@@ -202,10 +202,23 @@ const COORDS =
 relay(
   "get_camera",
   "get_camera",
-  "The camera: eye, forward/up/right unit vectors, speed factor, and surface_distance (the distance " +
-    "estimate at the eye: how far the nearest fractal surface is). " +
+	"The camera: eye, forward/up/right unit vectors, speed factor, surface_distance, facing direction, and " +
+	"a low-fidelity multidirectional estimate of nearby geometry (ray count is tunable in Gameplay). " +
     COORDS,
   {},
+);
+
+relay(
+  "get_depth_scan",
+  "get_depth_scan",
+  "Read the cached screen depth scan. Compact summary by default; set include_grid for a bounded 2D " +
+    "distance array and status mask. Local capture runs every few frames, but agent delivery is request-only, " +
+    "rate-limited to once per two seconds. Use after_frame to avoid repeats. Respect captured pose, age and censored cells.",
+  {
+    include_grid: z.boolean().optional(),
+    after_frame: z.number().int().nonnegative().optional(),
+    max_columns: z.number().int().min(8).max(64).optional(),
+  },
 );
 
 relay(
@@ -228,10 +241,10 @@ relay(
 relay(
   "move",
   "move",
-  "Move the camera in its own frame. By default distances are in 'surface' units: multiples of the " +
+	"Move the camera in its own frame, ignoring geometry and movement bounds by default. By default distances are in 'surface' units: multiples of the " +
     "current distance to the nearest surface, so forward: 0.5 always closes half the gap whatever the " +
-    "zoom depth. This is how to travel deeper into the fractal. With safe (default true) the move stops " +
-    "short of any surface in its path; the result says whether it was clamped.",
+    "zoom depth. This is how to travel deeper into the fractal. Set safe: true only when you want a " +
+    "raycast to stop short of surfaces along the path.",
   {
     forward: z.number().optional(),
     right: z.number().optional(),
@@ -424,8 +437,8 @@ server.registerTool(
     description:
       "The call centre's ship tools (when the game runs with it: launch_game {call_center: 'on'}): " +
       "high-level controls built for a support agent, each with its JSON input schema: get_ship_status, " +
-      "scan_surroundings (named Mandelbrought characteristics with bearings), highlight, turn_ship, thrust, " +
-      "fly_to_feature (a collision-checked autopilot), resolve_issue (answer a diagnostics question with " +
+      "scan_surroundings (multidirectional geometry), get_depth_scan (on-demand cached screen depth), plan_escape, turn_ship, thrust, " +
+      "fly_to_point (coordinate navigation at Gameplay speed), resolve_issue (answer a diagnostics question with " +
       "the person's words), post_to_log, and any the game adds. Run one with `ship`.",
     inputSchema: {},
   },
@@ -441,7 +454,7 @@ server.registerTool(
 server.registerTool(
   "ship",
   {
-    description: "Run one of the call centre's ship tools (see ship_tools), e.g. {name: 'fly_to_feature', arguments: {feature_id: '#2312'}}.",
+    description: "Run one of the call centre's ship tools (see ship_tools), e.g. {name: 'fly_to_point', arguments: {point: [12, 3, 2]}}.",
     inputSchema: {
       name: z.string(),
       arguments: z.record(z.string(), z.any()).optional(),

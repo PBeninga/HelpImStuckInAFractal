@@ -5,7 +5,9 @@ extends Resource
 ## Spawn and escape detection use doubles, never the camera's Vector3 mirror.
 
 const NUMERIC_KEYS := [&"exit_radius", &"spawn_x", &"spawn_y", &"spawn_z",
-	&"move_speed", &"shift_multiplier", &"distance_power", &"near_cap", &"max_distance_speed"]
+	&"move_speed", &"shift_multiplier", &"distance_power", &"near_cap", &"max_distance_speed",
+	&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval"]
+const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval"]
 
 @export var exit_radius := 20.0:
 	set(v):
@@ -57,6 +59,22 @@ const NUMERIC_KEYS := [&"exit_radius", &"spawn_x", &"spawn_y", &"spawn_z",
 		if _positive(v) and v != max_distance_speed:
 			max_distance_speed = v
 			emit_changed()
+## Number of rays in the agent's low-fidelity surrounding geometry sweep.
+@export var surrounding_ray_count := 12:
+	set(v):
+		if v >= 4 and v <= 64 and v != surrounding_ray_count:
+			surrounding_ray_count = v
+			emit_changed()
+@export var depth_scan_width := 32:
+	set(v):
+		if v >= 8 and v <= 128 and v != depth_scan_width:
+			depth_scan_width = v
+			emit_changed()
+@export var depth_scan_interval := 2:
+	set(v):
+		if v >= 1 and v <= 30 and v != depth_scan_interval:
+			depth_scan_interval = v
+			emit_changed()
 @export var exit_skybox: Texture2D:
 	set(v):
 		if v != exit_skybox:
@@ -105,8 +123,11 @@ func apply_dict(raw: Variant) -> Array:
 				valid = valid and float(value) > 0.0
 			if key == "distance_power":
 				valid = valid and float(value) <= 4.0
+			if valid and INTEGER_KEYS.has(StringName(key)):
+				var limits: Array = {"surrounding_ray_count": [4, 64], "depth_scan_width": [8, 128], "depth_scan_interval": [1, 30]}[String(key)]
+				valid = float(value) == floor(float(value)) and float(value) >= limits[0] and float(value) <= limits[1]
 			if valid:
-				set(key, float(value))
+				set(key, int(value) if INTEGER_KEYS.has(StringName(key)) else float(value))
 			else:
 				warnings.append("Malformed gameplay '%s' ignored" % key)
 		elif key == "distance_scaling" and value is bool:

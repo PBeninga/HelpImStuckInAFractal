@@ -10,6 +10,7 @@ func run() -> void:
 		return
 	check_eq(game.spawn_x, 0.0, "spawn defaults to the origin")
 	check_eq(game.exit_radius, 20.0, "the exit sphere defaults to radius 20")
+	check_eq(game.surrounding_ray_count, 12, "surrounding geometry defaults to a low-fidelity 12-ray sweep")
 	var camera := CameraState.make_default()
 	camera.set_eye(20.0, 0.0, 0.0)
 	check(not game.is_outside(camera), "on the boundary is still inside")
@@ -21,6 +22,7 @@ func run() -> void:
 	check(game.is_outside(camera), "editing the radius updates escape detection")
 	game.exit_radius = -1.0
 	check_eq(game.exit_radius, 19.0, "invalid radii cannot corrupt gameplay")
+	game.surrounding_ray_count = 24
 
 	var fly := FlyCamera.new()
 	fly.setup(params, camera)
@@ -58,8 +60,8 @@ func run() -> void:
 		"CPU rays ignore geometry behind the exit sphere's background")
 	check(not CenterRay.march(Vector3(25, 0, 0), Vector3.RIGHT, hidden)[1],
 		"the camera ray cannot select an invisible shape beyond the sphere")
-	var malformed: Array = game.apply_dict({"exit_radius": -2, "spawn_x": INF, "distance_power": {}, "distance_scaling": "yes"})
-	check_eq(malformed.size(), 4, "malformed gameplay fields are rejected individually")
+	var malformed: Array = game.apply_dict({"exit_radius": -2, "spawn_x": INF, "distance_power": {}, "distance_scaling": "yes", "surrounding_ray_count": 2})
+	check_eq(malformed.size(), 5, "malformed gameplay fields are rejected individually")
 	check_eq(game.exit_radius, 20.0, "invalid saves retain a valid default radius")
 
 	var main = load("res://src/main.tscn").instantiate()

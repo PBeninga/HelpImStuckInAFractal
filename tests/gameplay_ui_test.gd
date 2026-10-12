@@ -38,6 +38,10 @@ func run() -> void:
 	check(await ui.scroll_to(pane, move), "movement speed can be reached")
 	await ui.type_text(move.get_line_edit(), "0.5")
 	check_eq(game.move_speed, 0.5, "typing movement speed updates gameplay")
+	var geometry_rays: SpinBox = pane.controls[&"surrounding_ray_count"]
+	check(await ui.scroll_to(pane, geometry_rays), "geometry fidelity can be reached")
+	geometry_rays.value = 24
+	check_eq(game.surrounding_ray_count, 24, "geometry fidelity updates the ray count")
 	check(await ui.scroll_to(pane, pane.scaling_check), "distance scaling can be reached")
 	await ui.click(pane.scaling_check)
 	check(not game.distance_scaling, "the checkbox disables adaptive speed")

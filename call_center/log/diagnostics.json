@@ -1,0 +1,258 @@
+{
+  "_readme": [
+    "Every line the ship's diagnostics log shows. Edit freely; restart the game to see changes.",
+    "intro: the crash report played once after the failed jump. delay = seconds after the previous line; style = fail (red, bold) / error (red) / ok (green).",
+    "auto_issues: problems the ship 'fixes' by itself, drawn at random while stranded.",
+    "pilot_issues: problems that need the pilot; the agent asks `question`. {answer} in `outcome` is replaced by what the pilot said (or `default` if nobody answers).",
+    "egress_waiver: the issue the game can raise to gate the exit.",
+    "wording: the frame around each line. {code}, {id}, {problem}, {fix}, {question}, {how} and {outcome} are filled in."
+  ],
+  "wording": {
+    "auto_error": "Error #{code} {problem}",
+    "auto_resolved": "Resolved successfully via {fix}",
+    "pilot_error": "Error {id} {problem}",
+    "pilot_prompt": "Pilot input required: {question}",
+    "pilot_resolved": "Resolved {id} via {how}. {outcome}",
+    "how_pilot": "pilot input",
+    "how_timeout": "executive decision (nobody answered)"
+  },
+  "intro": [
+    {
+      "delay": 0.4,
+      "style": "fail",
+      "text": "Error: punch jump not completed successfully"
+    },
+    {
+      "delay": 1.4,
+      "style": "error",
+      "text": "Error #13432 Mandelbrought recurrence generator has animalifolds instead of manifolds"
+    },
+    {
+      "delay": 1.6,
+      "style": "ok",
+      "text": "Resolved successfully, via forced evfoldlution"
+    },
+    {
+      "delay": 1.3,
+      "style": "error",
+      "text": "Error #23223 Interdimensional demon deterrents empty"
+    },
+    {
+      "delay": 1.6,
+      "style": "ok",
+      "text": "Resolved successfully via same-nanosecond delivery"
+    },
+    {
+      "delay": 1.3,
+      "style": "error",
+      "text": "Error #33423 Stuck in fractal space"
+    },
+    {
+      "delay": 2.0,
+      "style": "fail",
+      "text": "Unable to automatically resolve, connecting to agent....."
+    }
+  ],
+  "auto_issues": [
+    {
+      "problem": "Escape-time algorithm has escaped",
+      "fix": "recapturing it where time is a spatial dimension "
+    },
+    {
+      "problem": "Airlock inverted",
+      "fix": "renaming to Earthlock"
+    },
+    {
+      "problem": "Distance estimator estimating distances emotionally",
+      "fix": "a firm talking-to"
+    },
+    {
+      "problem": "Ship's cat observed in four superposed states",
+      "fix": "opening only 4 boxes"
+    },
+    {
+      "problem": "Running derivative fell over",
+      "fix": "integration by parts"
+    },
+    {
+      "problem": "Warp core reports it is 'fine' in a tone suggesting it is not",
+      "fix": "active listening, and emotional debugging"
+    },
+    {
+      "problem": "Fractal receipt not found",
+      "fix": "receipt needs reciept"
+    },
+    {
+      "problem": "Quaternion overflow in the cupholder",
+      "fix": "conjugating the cup"
+    },
+    {
+      "problem": "Lipschitz constant has unionised",
+      "fix": "a modest pay rise and a dental plan"
+    },
+    {
+      "problem": "Self-similarity in crew roster: all crew members are you",
+      "fix": "name tags"
+    },
+    {
+      "problem": "Reality compiled in float32",
+      "fix": "squinting"
+    },
+    {
+      "problem": "Scanner returned 'yes'",
+      "fix": "asking it a more specific question"
+    },
+    {
+      "problem": "Thruster 3 is blowing off into infinity",
+      "fix": "bounding it to a fractal function"
+    },
+    {
+      "problem": "Antimatter containment field complains it doesn't matter",
+      "fix": "reversing the polarity of the apology"
+    },
+    {
+      "problem": "Hausdorff dimension of the windscreen is non-integer",
+      "fix": "wipers set to 'fractional'"
+    },
+    {
+      "problem": "Infinite coastline detected; insurance premium recalculating",
+      "fix": "measuring with an infinitely longer ruler"
+    },
+    {
+      "problem": "0.0003% of the pilot lost to the box fold",
+      "fix": "it was mostly the left eyebrow"
+    },
+    {
+      "problem": "Ship cartographer resigned, citing 'too much detail'",
+      "fix": "hiring a cartographer with worse eyesight"
+    },
+    {
+      "problem": "Sub-dimensional pigeons nesting in exhaust port",
+      "fix": "polite relocation to a Sierpinski gasket"
+    },
+    {
+      "problem": "Ray march exceeded 128 steps and asked for a lift",
+      "fix": "a lift"
+    },
+    {
+      "problem": "Ship clock reports the time as a fraction of itself",
+      "fix": "rounding to Tuesday"
+    },
+    {
+      "problem": "Shields at 110%, which is concerning",
+      "fix": "donating the extra 10% to charity"
+    },
+    {
+      "problem": "Error message contains itself recursively",
+      "fix": "reading only the first one"
+    },
+    {
+      "problem": "Engine room is bigger on the inside",
+      "fix": "confirming that is just how fractals work"
+    },
+    {
+      "problem": "Pocket dimension in the pilot's pocket now contains the pilot",
+      "fix": "turning out the pockets"
+    },
+    {
+      "problem": "Mandelbox scale set to -2.09 by an unknown party",
+      "fix": "blaming the intern"
+    },
+    {
+      "problem": "Universal translator translating everything into Fortran",
+      "fix": "compiling it back"
+    },
+    {
+      "problem": "Fold limit reached in the origami department",
+      "fix": "one (1) paper crane"
+    },
+    {
+      "problem": "Hyperdrive warranty expired four nanoseconds ago",
+      "fix": "backdating it with a stern look"
+    },
+    {
+      "problem": "Space-time continuum mildly creased",
+      "fix": "ironing on a low setting"
+    },
+    {
+      "problem": "One (1) unidentified Julia set found in the cargo hold",
+      "fix": "returning it to lost property"
+    },
+    {
+      "problem": "Autopilot asked 'are we there yet' 2^31 times",
+      "fix": "integer overflow; it has forgotten"
+    },
+    {
+      "problem": "Emergency lighting stuck on 'aesthetic'",
+      "fix": "setting it to 'emergency (aesthetic)'"
+    },
+    {
+      "problem": "Ship AI writing poetry about the fractal again",
+      "fix": "publishing it to relieve the pressure"
+    },
+    {
+      "problem": "Bounding cube breached by a stray thought",
+      "fix": "un-thinking it"
+    },
+    {
+      "problem": "Normal vectors no longer normal",
+      "fix": "renormalising them and their attitudes"
+    },
+    {
+      "problem": "Hyperspace punch card has a hanging chad",
+      "fix": "a recount"
+    }
+  ],
+  "pilot_issues": [
+    {
+      "problem": "Cupholder has achieved sentience and is requesting a name",
+      "question": "What should the cupholder be called?",
+      "default": "Cuppy",
+      "outcome": "Cupholder now answers to '{answer}'. It seems happy."
+    },
+    {
+      "problem": "Fold limit recalibration requires the pilot's favourite number",
+      "question": "What is the pilot's favourite number?",
+      "default": "seven",
+      "outcome": "Fold limit recalibrated to the essence of '{answer}'. Do not ask how."
+    },
+    {
+      "problem": "Two identical copies of the pilot detected",
+      "question": "Which copy is the real pilot: the one on the left or the one on the right?",
+      "default": "the left one",
+      "outcome": "'{answer}' confirmed as canonical. The other copy has been politely archived."
+    },
+    {
+      "problem": "Safety inspection: pilot may have looked directly at the Hausdorff measure",
+      "question": "Has the pilot looked directly at the Hausdorff measure? Yes or no.",
+      "default": "no",
+      "outcome": "Pilot says '{answer}'. Optic nerves cleared for further fractals."
+    },
+    {
+      "problem": "Ship's music player has collapsed into a single genre",
+      "question": "What music would the pilot like playing?",
+      "default": "smooth jazz",
+      "outcome": "Now playing: '{answer}', on an infinite loop, which is also a fractal."
+    },
+    {
+      "problem": "Escape pod has fractured into 4,096 smaller escape pods",
+      "question": "Should we keep all 4,096 escape pods? Yes or no.",
+      "default": "yes",
+      "outcome": "Pilot chose '{answer}'. Storage has been reorganised as a fractal."
+    },
+    {
+      "problem": "Hyperdrive is requesting a password hint",
+      "question": "What is a word that rhymes with 'fractal'?",
+      "default": "practical",
+      "outcome": "Hyperdrive accepted '{answer}' as a rhyme. Standards are low in here."
+    }
+  ],
+  "egress_waiver": {
+    "code": 99812,
+    "problem": "Egress waiver unsigned: the rift refuses to open",
+    "question": "Ask the pilot to state their full name and agree that Sub-Dimensional Support is not liable for any extra dimensions they bring home.",
+    "default": "the pilot (auto-signed)",
+    "outcome": "Waiver signed by '{answer}'. Liability for any extra dimensions transferred to the pilot.",
+    "gating": true
+  }
+}

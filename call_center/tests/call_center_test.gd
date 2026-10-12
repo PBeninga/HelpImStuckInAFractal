@@ -54,6 +54,7 @@ func run() -> void:
 func _attaches() -> void:
 	for c in CallCenter.COMMANDS:
 		check(bridge.has_command(c), "the call centre added '%s' to McpBridge" % c)
+	check(cc.tools.has_tool("point_direction") and cc.tools.has_tool("clear_direction"), "MCP exposes direction arrow tools")
 	check(cc.adapter is ExplorerAdapter, "it found the game scene and picked the explorer adapter")
 	var eye: Vector3 = cc.adapter.pose()["position"]
 	check(eye.is_equal_approx(Vector3(1.5, 0, 0)), "the demo placed the ship at the sample start")
@@ -95,6 +96,12 @@ func _tools() -> void:
 	check(listed["tools"].all(func(t): return t["inputSchema"]["type"] == "object"), "every tool has an object inputSchema")
 	var s := await _call("get_ship_status")
 	check(s["ok"] and s["in_flight"], "status: in flight")
+	check(s.has("facing") and (s["facing"] as Array).size() == 3, "status reports the player's facing vector")
+	check(s.has("surrounding_geometry") and s["surrounding_geometry"]["rays"].size() == game.params.gameplay.surrounding_ray_count,
+		"status gives the agent a tunable multidirectional geometry estimate")
+	var geo := await _call("scan_surroundings")
+	check(geo["surrounding_geometry"]["ray_count"] == game.params.gameplay.surrounding_ray_count,
+		"surroundings scan includes the geometry estimate too")
 	check_eq(s["next_waypoint"]["feature_id"], "#2312", "next waypoint #2312")
 	check(s["clearance_m"] >= 70, "clearance in metres (%d)" % s["clearance_m"])
 	check(not s["exit"]["path_clear"], "no straight path to the exit from the start")
@@ -125,7 +132,7 @@ func _tools() -> void:
 	await _call("turn_ship", {"yaw_degrees": -90})
 	_run_ship()
 	var th := await _call("thrust", {"direction": "forward", "meters": 2000})
-	check(th["ok"] and th["obstructed"] and th["moving_m"] > 100, "a long thrust at the sphere stops short (%d m)" % th["moving_m"])
+	check(th["ok"] and not th["obstructed"] and th["moving_m"] == 2000, "a long thrust ignores geometry movement limits")
 	_run_ship()
 	cc.adapter.set_pose(Vector3(1.5, 0, 0), Vector3(0.8781, 0, 0))
 	var bad: Dictionary = await bridge.handle("ship_tool", {"name": "warp_drive", "arguments": {}})
@@ -182,8 +189,9 @@ func _call_and_chat() -> void:
 
 
 func _fly_the_route_and_escape() -> void:
-	var refused := await _call("fly_to_feature", {"feature_id": "#9001"})
-	check(not refused["ok"] and refused.get("suggested_waypoint") == "#2312", "no shortcut to the exit; it suggests #2312")
+	var direct := await _call("fly_to_feature", {"feature_id": "#9001"})
+	check(direct["ok"], "autopilot movement ignores clearance raycast limits")
+	cc.adapter.stop("test setup")
 	var cursor: int = (await bridge.handle("ship_events", {}))["last_id"]
 	for id in ["#2312", "#4096", "#7071", "#8128"]:
 		var r := await _call("fly_to_feature", {"feature_id": id})
@@ -204,6 +212,14 @@ func _fly_the_route_and_escape() -> void:
 	check(not cc.hud.is_panel_visible("diagnostics_log") and cc.hud.is_panel_visible("call_panel"),
 		"the banner moves the log aside but keeps the support panel")
 	evs = (await bridge.handle("ship_events", {"after": cursor, "timeout": 0}))["events"]
+	var arrow := await _call("point_direction", {"point": [10, 20, 30], "label": "Agent target", "seconds": 45})
+	check(arrow.ok and cc.hud.overlay.direction_target.point == Vector3(10, 20, 30), "MCP places a world direction arrow")
+	arrow = await _call("point_direction", {"feature_id": "#2312"})
+	check(arrow.ok and cc.hud.overlay.direction_target.point == cc.features.find("2312").pos, "MCP points toward a landmark")
+	arrow = await _call("point_direction", {"point": [1, 2]})
+	check(not arrow.ok, "invalid arrow target rejected")
+	await _call("clear_direction", {})
+	check(cc.hud.overlay.direction_target.is_empty(), "MCP clears direction arrow")
 	check(evs.any(func(e): return e["kind"] == "escaped" and e["notify_agent"]), "and tells the agent")
 	var listeners: int = bridge.chat.listeners
 	await bridge.handle("call_center", {"call_state": "ended"})

@@ -3,7 +3,7 @@
 # told to start call_center/ beside it (`-- --call-center`).
 #
 #   call_center/run.sh            the game as usual (title menu), plus the call centre
-#   call_center/run.sh --demo     straight to the cockpit, on the sample escape route
+#   call_center/run.sh --demo     straight to the cockpit, with live geometry navigation
 #   call_center/run.sh [godot args] [-- more game args]
 #
 # For a Claude session, the same flags go through tools/launch.sh:

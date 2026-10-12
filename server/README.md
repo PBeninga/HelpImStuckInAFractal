@@ -47,7 +47,7 @@ same job as a separate process next to the game; if both run, it takes over.
   game registers mid-call reaches the live session.
 - **Ship events.** The link long-polls the call centre's events
   (`ship_events`) and sends them to the server. The agent hears them as
-  `SHIP EVENT` system messages and reacts: a waypoint reached or the escape. Scripted pilot-question events are ignored.
+  `SHIP EVENT` system messages and reacts: each instruction completing or being cancelled, and the escape. Depth scans are request-only and never pushed as events. Scripted pilot-question events are ignored.
   The agent can inspect and edit all console sections through
   `get_console_controls`, `set_console_controls`, and `console_action`.
 - **The pilot chat.** The conversation is mirrored there: the caller's words

@@ -22,7 +22,7 @@ extends Node
 ##
 ## Other layers add commands with register_command() (the call centre's ship
 ## tools, for one). `-- --call-center` (or FRACTAL_CALL_CENTER=1) starts the
-## call centre (call_center/), `-- --call-center-demo` with its sample route.
+## call centre (call_center/), `-- --call-center-demo` is retained as a compatibility alias.
 ##
 ## With a phone server configured (FRACTAL_SERVER_URL and GAME_LINK_TOKEN, in
 ## the environment or server/.env), it also dials out to that server
@@ -238,7 +238,8 @@ func handle(cmd: String, args: Dictionary) -> Dictionary:
 	if main == null:
 		return {"error": "no view is open (the title menu is showing); call start_game first"}
 	match cmd:
-		"get_camera": return _camera_json(main)
+		"get_camera": return _camera_json(main, true)
+		"get_depth_scan": return main.view.request_depth_scan(args)
 		"set_camera": return await _set_camera(main, args)
 		"move": return await _move(main, args)
 		"rotate": return await _rotate(main, args)
@@ -273,7 +274,7 @@ func _status() -> Dictionary:
 		"server_link": link.describe() if link != null else {"state": "off"},
 	}
 	if main != null:
-		out["camera"] = _camera_json(main)
+		out["camera"] = _camera_json(main, true)
 		out["view_size"] = _v2(main.view.size)
 		out["camera_mode"] = "orbit" if main.params.camera_mode == FractalParams.CameraMode.ORBIT else "fly"
 	return out
@@ -296,9 +297,9 @@ func _start_game() -> Dictionary:
 
 # ------------------------------------------------------------- camera
 
-func _camera_json(main: Main) -> Dictionary:
+func _camera_json(main: Main, include_surroundings := false) -> Dictionary:
 	var cam := main.camera
-	return {
+	var out := {
 		"eye": _eye64(cam),
 		"forward": _v3(cam.forward()),
 		"up": _v3(cam.up()),
@@ -306,6 +307,10 @@ func _camera_json(main: Main) -> Dictionary:
 		"speed_factor": cam.speed_factor,
 		"surface_distance": _surface(main),
 	}
+	if include_surroundings:
+		out["facing"] = _v3(cam.forward())
+		out["surrounding_geometry"] = _surrounding_geometry(main)
+	return out
 
 
 ## eye / look_at / forward / up, any subset; duration > 0 animates there.
@@ -329,8 +334,8 @@ func _set_camera(main: Main, args: Dictionary) -> Dictionary:
 
 ## Move in the camera's frame. Distances are multiples of the distance to the
 ## nearest surface by default (units="surface"), which keeps one step meaningful
-## at every zoom depth; units="world" takes them literally. With safe (default),
-## the move stops short of any surface in its way.
+## at every zoom depth; units="world" takes them literally. Movement ignores
+## surface raycasts by default; safe=true opts into stopping short of surfaces.
 func _move(main: Main, args: Dictionary) -> Dictionary:
 	var cam := main.camera
 	var local := Vector3(float(args.get("right", 0.0)), float(args.get("up", 0.0)), float(args.get("forward", 0.0)))
@@ -342,7 +347,7 @@ func _move(main: Main, args: Dictionary) -> Dictionary:
 	var length := dir.length() * unit
 	dir = dir.normalized()
 	var clamped := false
-	if bool(args.get("safe", true)) and length > 0.0:
+	if bool(args.get("safe", false)) and length > 0.0:
 		var hit: Variant = FractalProbe.march(cam.eye_x(), cam.eye_y(), cam.eye_z(), dir, main.params)
 		if hit != null and hit["distance"] * 0.8 < length:
 			length = hit["distance"] * 0.8
@@ -425,6 +430,14 @@ static func _eye64(cam: CameraState) -> Array:
 static func _surface(main: Main) -> float:
 	var cam := main.camera
 	return DistanceEstimator.scene_estimate_at(cam.eye_x(), cam.eye_y(), cam.eye_z(), main.params)
+
+
+func _surrounding_geometry(main: Main) -> Dictionary:
+	var cam := main.camera
+	var count: int = main.params.gameplay.surrounding_ray_count
+	var rays := FractalProbe.sample_surroundings(cam.eye_x(), cam.eye_y(), cam.eye_z(),
+		cam.forward(), cam.right(), cam.up(), main.params, count)
+	return {"ray_count": rays.size(), "rays": rays}
 
 
 # ------------------------------------------------------------- queries

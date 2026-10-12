@@ -59,6 +59,14 @@ func run() -> void:
 	r = await bridge.handle("get_camera", {})
 	check(_near(r["eye"], CameraState.DEFAULT_EYE), "get_camera reports the default eye")
 	check(r["surface_distance"] > 0.0, "and a positive surface distance")
+	check(_near(r["facing"], Vector3(r["forward"][0], r["forward"][1], r["forward"][2])),
+		"get_camera includes the player's facing direction")
+	check_eq(r["surrounding_geometry"]["ray_count"], main.params.gameplay.surrounding_ray_count,
+		"get_camera includes the tunable multidirectional geometry estimate")
+	main.params.gameplay.surrounding_ray_count = 20
+	r = await bridge.handle("get_camera", {})
+	check_eq(r["surrounding_geometry"]["ray_count"], 20, "geometry fidelity changes live with Gameplay settings")
+	main.params.gameplay.surrounding_ray_count = 12
 
 	# set_camera: eye + look_at
 	r = await bridge.handle("set_camera", {"eye": [6, 0, 0], "look_at": [0, 0, 0]})
@@ -78,8 +86,10 @@ func run() -> void:
 	check_approx(r["moved"], d0 * 0.5, "move forward 0.5 covers half the surface distance", 1e-4)
 	check(not r["clamped"], "a half-distance move is not clamped")
 	r = await bridge.handle("move", {"forward": 1000.0})
-	check(r["clamped"], "a huge move is clamped by safe")
-	check(r["surface_distance"] > 0.0, "and leaves the eye outside the surface")
+	check(not r["clamped"] and r["moved"] > d0 * 499.0, "a move ignores raycast bounds by default")
+	r = await bridge.handle("set_camera", {"eye": [6, 0, 0], "look_at": [0, 0, 0]})
+	r = await bridge.handle("move", {"forward": 1000.0, "safe": true})
+	check(r["clamped"], "safe movement remains available when explicitly requested")
 	r = await bridge.handle("move", {"right": 1.0, "units": "world", "safe": false})
 	check_approx(r["moved"], 1.0, "world units move literally")
 

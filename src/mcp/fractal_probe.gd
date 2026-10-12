@@ -8,6 +8,7 @@ extends RefCounted
 ## taken in 64-bit components, as CameraState keeps it.
 
 const MAX_STEPS := 600
+const GOLDEN_ANGLE := 2.399963229728653
 
 
 ## March from the 64-bit point (ex, ey, ez) along `rd`. Returns {point (a
@@ -42,6 +43,27 @@ static func march(ex: float, ey: float, ez: float, rd: Vector3, params: FractalP
 		if total > t_exit:
 			return null
 	return null
+
+
+## Approximate nearby geometry with an even distribution of rays over the
+## sphere. Each ray direction is expressed in world space; misses are explicit.
+static func sample_surroundings(ex: float, ey: float, ez: float, forward: Vector3, right: Vector3,
+		up: Vector3, params: FractalParams, ray_count: int) -> Array:
+	var rays: Array = []
+	var count := clampi(ray_count, 4, 64)
+	for i in count:
+		var z := 1.0 - 2.0 * (float(i) + 0.5) / float(count)
+		var radius := sqrt(maxf(0.0, 1.0 - z * z))
+		var angle := GOLDEN_ANGLE * float(i)
+		var local := Vector3(radius * cos(angle), radius * sin(angle), z)
+		var direction := (right * local.x + up * local.y + forward * local.z).normalized()
+		var hit: Variant = march(ex, ey, ez, direction, params)
+		rays.append({
+			"direction": [direction.x, direction.y, direction.z],
+			"hit": hit != null,
+			"distance": hit["distance"] if hit != null else null,
+		})
+	return rays
 
 
 ## Central-difference gradient of the scene distance at a 64-bit point.

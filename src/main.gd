@@ -672,6 +672,11 @@ func _input(event: InputEvent) -> void:
 
 # The only mouse dispatcher: Ctrl tap -> Escape/screenshot -> noise -> marker -> camera.
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"quit_game"):
+		get_viewport().set_input_as_handled()
+		get_tree().quit()
+		return
+
 	# 1. A Ctrl tap (down then up with no other key between) toggles the console.
 	if _ctrl.feed(event):
 		_on_console_toggle()

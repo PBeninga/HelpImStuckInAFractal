@@ -164,11 +164,29 @@ func base_speed() -> float:
 	if not game.distance_scaling:
 		return factor
 	var near := DistanceEstimator.scene_estimate_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _params)
+	return speed_from_distances(game, near, _ray.distance(), factor)
+
+
+## Shared by player flight, agent flight and route timing. World units/second.
+static func speed_from_distances(game: GameplaySettings, near: float, ray_distance: float, factor: float) -> float:
+	if not game.distance_scaling:
+		return factor
 	var cap := maxf(near * game.near_cap, SPEED_FLOOR)
-	var d := clampf(minf(_ray.distance(), cap), SPEED_FLOOR, game.max_distance_speed)
+	var d := clampf(minf(ray_distance, cap), SPEED_FLOOR, game.max_distance_speed)
 	# Keep the nearest-surface safety cap even when a power below one would
 	# otherwise increase a tiny distance into an unsafe movement step.
 	return clampf(minf(pow(d, game.distance_power), cap), SPEED_FLOOR, game.max_distance_speed) * factor
+
+
+static func speed_at(params: FractalParams, eye: Array, forward: Vector3, speed_factor: float,
+		speed_limit: float, sprint := false) -> float:
+	var game := params.gameplay
+	var factor := game.move_speed * speed_factor * speed_limit * (game.shift_multiplier if sprint else 1.0)
+	if not game.distance_scaling:
+		return factor
+	var near := DistanceEstimator.scene_estimate_at(eye[0], eye[1], eye[2], params)
+	var ray := CenterRay.march_at(eye[0], eye[1], eye[2], forward, params)
+	return speed_from_distances(game, near, float(ray[0]), factor)
 
 
 func scroll(up: bool) -> void:

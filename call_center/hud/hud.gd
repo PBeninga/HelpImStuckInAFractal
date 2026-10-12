@@ -288,6 +288,9 @@ func call_state() -> String:
 
 func highlight_feature(id: String, label: String, seconds: float) -> void:
 	overlay.highlight(id, label, seconds)
+	var feature: Dictionary = _features.find(id)
+	if not feature.is_empty():
+		overlay.point_direction(feature["pos"], label if label != "" else feature["name"], seconds)
 
 
 func scan_pulse(ids: Array) -> void:
@@ -343,8 +346,9 @@ func _process(delta: float) -> void:
 
 
 func _on_maneuver_started(kind: String, info: Dictionary) -> void:
-	if kind == "fly":
-		overlay.course_target = info.get("target_id", "")
+	if kind == "fly" and info.has("target"):
+		var point: Array = info.target
+		overlay.point_direction(Vector3(point[0], point[1], point[2]), "Flight target", 30.0)
 
 
 func _on_maneuver_finished(_kind: String, _info: Dictionary) -> void:
@@ -372,24 +376,16 @@ func _refresh_status() -> void:
 	var ap: Dictionary = _adapter.autopilot_state()
 	var ap_text := "idle"
 	if ap.get("active", false):
-		var target: String = ap.get("target_id", "")
-		ap_text = "%s %s(%.1f s)" % [ap["kind"], ("-> #%s " % target) if target != "" else "", ap.get("seconds_left", 0.0)]
+		ap_text = "%s (est. %.3g s)" % [ap["kind"], ap.get("seconds_left", 0.0)]
 	var lines := [
 		"CLEARANCE  %s%s" % [clearance, "   ! PROXIMITY" if not is_inf(clear_units) and _adapter.meters(clear_units) < 10 else ""],
 		"HEADING    %03d°   PITCH %+d°" % [int(round(heading)), int(round(pitch))],
 		"AUTOPILOT  %s" % ap_text,
 	]
-	var ex := _features.exit()
-	if not ex.is_empty():
-		var rel := Features.relative(pose, ex["pos"], _adapter.meters_per_unit())
-		var r := "%d m" % rel["range_m"] if rel["range_m"] < 1000 else "%.2f km" % (rel["range_m"] / 1000.0)
-		lines.append("EXIT       %s, %s" % [r, rel["direction"]])
-	if not _features.route.is_empty():
-		var passed := 0
-		for id in _features.route:
-			if _features.visited.has(id):
-				passed += 1
-		lines.append("WAYPOINTS  %d / %d    ISSUES %d open" % [passed, _features.route.size(), _issues.pending().size()])
+	var escape: Dictionary = _adapter.escape_state()
+	if escape.has("distance_to_boundary"):
+		lines.append("EXIT       %s" % ("escaped" if escape.escaped else "%.3g m to boundary" % (float(escape.distance_to_boundary) * _adapter.meters_per_unit())))
+	lines.append("SPEED      %.3g m/s" % (_adapter.travel_speed() * _adapter.meters_per_unit()))
 	status_label.text = "\n".join(lines)
 
 

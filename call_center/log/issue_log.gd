@@ -19,7 +19,7 @@ signal issue_resolved(issue: Dictionary, answer: String, by: String)
 
 const MAX_ENTRIES := 200
 ## Seconds between automatic problems, and from a problem to its fix.
-const AUTO_GAP := Vector2(5.0, 10.0)
+const AUTO_GAP := Vector2(50.0, 100.0)
 const FIX_GAP := Vector2(1.2, 2.8)
 ## Seconds a pilot issue waits for an answer before the default is assumed.
 const PILOT_TIMEOUT := 120.0
@@ -37,7 +37,7 @@ var _rng := RandomNumberGenerator.new()
 var _script_queue: Array = []
 var _script_wait := 0.0
 var _scripting := false
-var _auto_wait := 3.0
+var _auto_wait := 30.0
 var _fix_queue: Array = []        # [{at, text}]
 var _auto_pool: Array = []
 var _pilot_pool: Array = []
@@ -120,9 +120,9 @@ func _raise_auto() -> void:
 		_auto_pool = IssueCatalogue.AUTO_ISSUES.duplicate()
 		_shuffle(_auto_pool)
 	var pair: Array = _auto_pool.pop_back()
-	add("Error #%d %s" % [_code(), pair[0]], "error")
+	add(IssueCatalogue.line("auto_error", {"code": _code(), "problem": pair[0]}), "error")
 	_fix_queue.append({"at": _clock + _rng.randf_range(FIX_GAP.x, FIX_GAP.y),
-		"text": "Resolved successfully via %s" % pair[1]})
+		"text": IssueCatalogue.line("auto_resolved", {"fix": pair[1]})})
 
 
 ## Raise a pilot issue: the next from the shuffled pool, or `template` (e.g.
@@ -134,7 +134,7 @@ func raise_pilot_issue(template: Dictionary = {}) -> Dictionary:
 			_pilot_pool = IssueCatalogue.PILOT_ISSUES.duplicate()
 			_shuffle(_pilot_pool)
 		t = _pilot_pool.pop_back()
-	var code: int = t.get("code", _code())
+	var code := int(t.get("code", _code()))
 	var timeout := PILOT_TIMEOUT if agent_available else PILOT_TIMEOUT_OFFLINE
 	var issue := {
 		"id": "#%d" % code,
@@ -147,8 +147,8 @@ func raise_pilot_issue(template: Dictionary = {}) -> Dictionary:
 		"raised_at": _clock,
 	}
 	_pending.append(issue)
-	add("Error %s %s" % [issue["id"], issue["problem"]], "error")
-	add("Pilot input required: %s" % issue["question"], "pilot")
+	add(IssueCatalogue.line("pilot_error", {"id": issue["id"], "problem": issue["problem"]}), "error")
+	add(IssueCatalogue.line("pilot_prompt", {"question": issue["question"]}), "pilot")
 	pilot_input_required.emit(_public(issue))
 	return _public(issue)
 
@@ -165,9 +165,9 @@ func resolve(issue_id: String, answer: String, by := "pilot") -> String:
 			var a := answer.strip_edges()
 			if a.is_empty():
 				a = issue["default"]
-			var outcome: String = issue["outcome"] % a
-			var how := "pilot input" if by != "timeout" else "executive decision (nobody answered)"
-			add("Resolved %s via %s. %s" % [issue["id"], how, outcome], "ok")
+			var outcome := IssueCatalogue.outcome(issue["outcome"], a)
+			var how := IssueCatalogue.line("how_pilot" if by != "timeout" else "how_timeout", {})
+			add(IssueCatalogue.line("pilot_resolved", {"id": issue["id"], "how": how, "outcome": outcome}), "ok")
 			resolved_count += 1
 			if by != "timeout":
 				pilot_answers += 1

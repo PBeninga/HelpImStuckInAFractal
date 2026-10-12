@@ -24,6 +24,7 @@ shader_type canvas_item;
 //
 const int MAX_SHAPES = 8;
 
+uniform bool depth_scan = false;
 uniform vec3 eye;             // world; probe dot and the exit sphere
 // Finite background sphere at the world origin. A future sky picker can set
 // GameplaySettings.exit_skybox; longitude wraps, latitude runs pole to pole.
@@ -612,6 +613,13 @@ vec3 finish_surface(vec3 col, float t, vec3 dir, vec3 bg, vec3 sky) {
 	return mix(col, sky, view_fade(t));
 }
 
+// RG stores a 16-bit logarithmic world distance; B is a categorical status.
+// Byte packing works on the compatibility renderer without an HDR target.
+vec4 encode_scan_depth(float distance, float status) {
+	float value = floor(clamp((log2(max(distance, 1e-30)) + 96.0) / 192.0, 0.0, 1.0) * 65535.0 + 0.5);
+	return vec4(floor(value / 256.0) / 255.0, mod(value, 256.0) / 255.0, status / 255.0, 1.0);
+}
+
 void fragment() {
 	vec2 ndc = (UV - 0.5) * 2.0;
 	ndc.y = -ndc.y;  // +y up
@@ -683,8 +691,13 @@ void fragment() {
 	if (fog_distance > 0.0) {
 		t_exit = min(t_exit, fog_wall_distance());
 	}
+	float scan_far = sphere_end;
+	if (fog_distance > 0.0) { scan_far = min(scan_far, fog_wall_distance()); }
+	if (fog_dist > 0.0 && fog_clear <= 0.0) { scan_far = min(scan_far, fog_dist * near_dist); }
+	if (view_limit > 0.0) { scan_far = min(scan_far, view_limit); }
+	float scan_far_status = scan_far <= 0.0 ? 0.0 : (scan_far < sphere_end ? 3.0 : 2.0);
 	if (t_exit < 0.0 || t_start > t_exit) {
-		COLOR = vec4(sky, 1.0);
+		COLOR = depth_scan ? encode_scan_depth(scan_far, scan_far_status) : vec4(sky, 1.0);
 	} else {
 		if (fog_dist > 0.0 && fog_clear <= 0.0) {
 			t_exit = min(t_exit, fog_dist * near_dist);  // nothing past the fog is marched
@@ -720,7 +733,10 @@ void fragment() {
 			}
 		}
 
-		if (left_cube) {
+		if (depth_scan) {
+			COLOR = left_cube ? encode_scan_depth(scan_far, scan_far_status)
+				: encode_scan_depth(total, n2 < fine_steps ? 1.0 : 4.0);
+		} else if (left_cube) {
 			// The only misses: leaving every cube, the fog or the view distance.
 			// The haze fills the space the ray marched, to its exit (default: no haze).
 			float t_scat = min(t_exit, total);

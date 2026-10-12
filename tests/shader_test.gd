@@ -11,7 +11,7 @@ extends "res://tests/test_case.gd"
 ## push already looks right; the dummy renderer cannot report defaults, so this
 ## reads them from the source.
 
-const RENDERER_UNIFORMS := ["eye", "cam_right", "cam_up", "cam_forward",
+const RENDERER_UNIFORMS := ["depth_scan", "eye", "cam_right", "cam_up", "cam_forward",
 	"exit_radius", "exit_has_skybox", "exit_skybox",
 	"tan_half_fov", "aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
 	"fractal_iterations", "surface_detail", "coarse_steps", "coarse_iters", "nf_weight", "fine_steps", "fog_dist", "fog_color",

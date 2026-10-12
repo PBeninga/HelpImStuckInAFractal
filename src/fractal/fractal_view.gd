@@ -11,6 +11,8 @@ extends Control
 ## physical pixels: size * render_scale * the window's content scale (UiScale),
 ## so the still frame is sharp on a HiDPI screen.
 
+const DepthScan := preload("res://src/mcp/screen_depth_scan.gd")
+
 const TAN_HALF_FOV := 0.36397023426620234  # tan(20 degrees), half of a 40 deg vertical FOV
 ## The probe dot's radius as a fraction of its distance: about 5 px across the
 ## 800 px-high view's 40 deg field, whatever the distance.
@@ -72,6 +74,7 @@ var _from := {}                       # the on-screen values the restore started
 var _restore_frame := RESTORE_FRAMES  # frames into the restore tween; done at RESTORE_FRAMES
 var _restore_stepped_on := -1         # the process frame the tween last stepped on
 var _center_ray: CenterRay
+var _depth_scan: Node
 
 
 func _ready() -> void:
@@ -103,10 +106,14 @@ func _ready() -> void:
 		_push_probe()
 	if _noise_graph != null:
 		_rebuild_noise()
+	_setup_depth_scan()
 	request_frame()
 
 
 func setup(params: FractalParams, camera: CameraState) -> void:
+	if _depth_scan != null and (params != _params or camera != _camera):
+		_depth_scan.free()
+		_depth_scan = null
 	if _center_ray == null or params != _params or camera != _camera:
 		# Made before the view connects its own handlers, so the ray has heard
 		# of a change before the view asks it where the dot goes.
@@ -120,6 +127,7 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 	_push_params()
 	_push_camera()
 	_push_probe()
+	_setup_depth_scan()
 	request_frame()
 
 
@@ -264,6 +272,7 @@ func set_load_level(level: int) -> void:
 		_restore_frame = 0
 		_step_restore()
 	_push_params()
+	request_frame()
 
 
 ## True while a level drop is still easing in.
@@ -298,6 +307,8 @@ func _step_restore() -> void:
 
 
 func request_frame() -> void:
+	if _depth_scan != null:
+		_depth_scan.invalidate()
 	if _viewport == null:
 		return  # setup() may run before _ready wires the SubViewport
 	if continuous:
@@ -538,3 +549,20 @@ func nearest_shape() -> int:
 	if _params == null or _camera == null:
 		return 0
 	return DistanceEstimator.nearest_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _params)["index"]
+
+
+func _setup_depth_scan() -> void:
+	if _depth_scan != null or _material == null or _params == null or _camera == null:
+		return
+	_depth_scan = DepthScan.new()
+	_depth_scan.name = "ScreenDepthCache"
+	add_child(_depth_scan)
+	_depth_scan.setup(self, _params, _camera, _material, TAN_HALF_FOV)
+
+
+func depth_scan() -> Dictionary:
+	return _depth_scan.snapshot() if _depth_scan != null else {"available": false, "distances": [], "status": []}
+
+
+func request_depth_scan(args: Dictionary = {}) -> Dictionary:
+	return _depth_scan.request(args) if _depth_scan != null else {"ok": true, "available": false}

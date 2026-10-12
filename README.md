@@ -221,6 +221,7 @@ not reduce a fixed frame's shader work; it slows traversal at maximum shedding.
 | **Q / E** | the default virtual **Axis A** (negative / positive). Bind a Shape row to Axis A to give Q and E that knob |
 | **N** | toggle the noise-field editor (also releases/recaptures the mouse) |
 | **Escape** | free the mouse (click the view to recapture). Nothing else: no pause, and the console stays as it is. While the noise editor has the keyboard, Escape closes it |
+| **.** | close the game |
 | **W / A / S / D** | move forward / left / back / right |
 | **Space / Backspace** | move up / down (world-relative to the camera's own up) |
 | **Shift** (hold) | sprint — doubles the speed while held |
@@ -699,8 +700,8 @@ Elsewhere: `claude mcp add fractal -- node /path/to/repo/mcp/server.mjs`.
 |---|---|
 | `launch_game` | start the game straight into the explorer and wait for the bridge (see below) |
 | `status`, `start_game` | where things stand; leave the title menu |
-| `get_camera`, `set_camera` | eye / look_at / forward / up, optionally animated (`duration`) |
-| `move` | move in the camera's frame, in **surface units** by default (multiples of the distance to the nearest surface, so `forward: 0.5` always halves the gap at any zoom depth); `safe` stops short of walls |
+| `get_camera`, `set_camera` | eye / look_at / forward / up, optionally animated (`duration`); camera reads include facing direction and a tunable multidirectional geometry estimate |
+| `move` | move in the camera's frame, in **surface units** by default (multiples of the distance to the nearest surface, so `forward: 0.5` always halves the gap at any zoom depth); movement ignores geometry by default, with `safe: true` for raycast-limited moves |
 | `rotate` | yaw (about +Z) / pitch / roll in degrees |
 | `dive` | fly part of the way to the surface under a pixel and face it: repeat to zoom into a feature |
 | `raycast`, `probe`, `project` | surface point + normal under a pixel; distance estimate at a point; pixel of a point |
@@ -744,7 +745,7 @@ caller's words with `chat_post` and speaks the agent's replies). See
 the game: the crash report and self-resolving diagnostics log, the support
 panel, brackets on whatever the agent names, and high-level ship tools
 (`ship_tools`, `ship_tool`, `ship_events`) that McpBridge serves. Run the game
-with it via `call_center/run.sh` (`--demo` for its sample escape route); see
+with it via `call_center/run.sh` (`--demo` to enter the cockpit directly); see
 `call_center/README.md`.
 
 **Launching from a Claude session.** `launch_game` runs `tools/launch.sh -- --play

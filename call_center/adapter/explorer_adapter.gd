@@ -5,21 +5,18 @@ extends "res://call_center/adapter/ship_adapter.gd"
 ## `fly` FlyCamera, `table()`) and uses DistanceEstimator for clearance; it
 ## changes no game file. If those names change, this file is what to update.
 ##
-## Controls: smooth turns, short thrusts that stop SAFE_CLEARANCE short of the
-## fractal, and an autopilot that turns to a point and cruises to it along a
-## straight leg it has checked is clear. One manoeuvre at a time; a new one
-## replaces the old; WASD cancels it (manual override); a paused tree freezes
-## it (this node is PAUSABLE even under the always-on CallCenter).
+## Controls: smooth turns, direct thrusts and an autopilot that turns to a
+## point and cruises there without collision bounds. One manoeuvre at a time;
+## a new one replaces the old; WASD cancels it (manual override); a paused tree
+## freezes it (this node is PAUSABLE even under the always-on CallCenter).
 
 const WORLD_UP := Vector3(0, 0, 1)
 const METERS_PER_UNIT := 1000.0
-## A straight flight is allowed when the fractal stays this far away along it (7 m).
+## Margin for legacy visibility queries only; never gates agent movement.
 const LOS_CLEARANCE := 0.007
-## Thrust stops this far from the surface (5 m).
-const SAFE_CLEARANCE := 0.005
 const MAX_PITCH_DEG := 85.0
 const TURN_DEG_PER_S := 110.0
-const CRUISE_M_PER_S := 120.0
+const EscapePlanner := preload("res://src/mcp/escape_planner.gd")
 const DIRECTIONS := ["forward", "back", "left", "right", "up", "down"]
 
 ## The game scene (duck-typed: camera, params, view, fly, table()).
@@ -27,6 +24,7 @@ var game: Node
 
 ## The active manoeuvre: {kind, phase, t, duration, ...}; empty when idle.
 var _m: Dictionary = {}
+var _next_instruction_id := 1
 
 
 func _init(p_game: Node = null) -> void:
@@ -59,14 +57,28 @@ func pose() -> Dictionary:
 	return {"position": c.eye(), "forward": c.forward(), "right": c.right(), "up": c.up()}
 
 
+## A low-fidelity, multidirectional estimate of nearby surfaces for the agent.
+func surrounding_geometry() -> Dictionary:
+	var c := _camera()
+	var gameplay: GameplaySettings = _params().gameplay
+	var rays := FractalProbe.sample_surroundings(c.eye_x(), c.eye_y(), c.eye_z(),
+		c.forward(), c.right(), c.up(), _params(), gameplay.surrounding_ray_count)
+	for ray in rays:
+		if ray["hit"]:
+			ray["distance_m"] = float(ray["distance"]) * METERS_PER_UNIT
+		else:
+			ray["distance_m"] = null
+	return {"ray_count": rays.size(), "units": "world (distance), metres (distance_m)", "rays": rays}
+
+
 func set_pose(position: Vector3, look_at: Vector3) -> bool:
-	_m = {}
+	stop("position reset")
 	_camera().transform = Transform3D(Basis.IDENTITY, position).looking_at(look_at, WORLD_UP)
 	return true
 
 
 func clearance() -> float:
-	return DistanceEstimator.estimate(_camera().eye(), _params())
+	return DistanceEstimator.scene_estimate_at(_camera().eye_x(), _camera().eye_y(), _camera().eye_z(), _params())
 
 
 func project(point: Vector3) -> Variant:
@@ -109,7 +121,7 @@ func world_info() -> Dictionary:
 	var shape_name: String = ["Mandelbox", "KIFS", "Kleinian", "Mandelbulb"][clampi(p.shape, 0, 3)]
 	return {"type": shape_name, "scale": p.box_scale, "fold_limit": p.fold_limit,
 		"min_radius": p.min_radius, "fixed_radius": p.fixed_radius,
-		"iterations": DistanceEstimator.ITERATIONS, "surface_hausdorff_dimension_estimate": 2.8}
+		"iterations": DistanceEstimator.ITERATIONS}
 
 
 func palettes() -> Array:
@@ -145,46 +157,68 @@ func face(point: Vector3, info: Dictionary = {}) -> Dictionary:
 
 
 func thrust(direction: String, meters_wanted: float) -> Dictionary:
-	if not DIRECTIONS.has(direction):
-		return {"ok": false, "message": "Unknown direction '%s'." % direction}
+	if not DIRECTIONS.has(direction) or not is_finite(meters_wanted) or meters_wanted <= 0:
+		return {"ok": false, "message": "Supply a direction and a positive finite distance."}
 	var dir := _direction_vector(direction)
-	var want := clampf(meters_wanted, 0.0, 5000.0) / METERS_PER_UNIT
-	var allowed := free_distance(_camera().eye(), dir, want)
-	if allowed < 0.0005:
-		return {"ok": false, "reason": "obstructed", "moving_m": 0, "clearance_m": meters(clearance())}
+	var distance := meters_wanted / METERS_PER_UNIT
+	var eye := Array(_camera().eye64())
+	var target := [eye[0] + dir.x * distance, eye[1] + dir.y * distance, eye[2] + dir.z * distance]
 	_stop_quietly()
-	var eye := _camera().eye()
-	_m = {"kind": "thrust", "phase": "move", "t": 0.0,
-		"duration": clampf(0.8 + allowed * METERS_PER_UNIT / CRUISE_M_PER_S, 0.8, 10.0),
-		"from": eye, "to": eye + dir * allowed, "direction": direction}
-	maneuver_started.emit("thrust", {"direction": direction})
-	return {"ok": true, "moving_m": meters(allowed), "requested_m": int(round(meters_wanted)),
-		"obstructed": allowed < want - 1e-6, "seconds": snappedf(_m["duration"], 0.1)}
+	_m = {"kind": "thrust", "phase": "move", "target": target, "direction": direction}
+	return _start_instruction()
 
 
 func fly_to(point: Vector3, standoff: float, info: Dictionary = {}) -> Dictionary:
 	var eye := _camera().eye()
-	var to := point
-	var rel := point - eye
-	if standoff > 0.0 and rel.length() > standoff:
-		to = point - rel.normalized() * standoff
-	var leg := to - eye
-	if leg.length() < 0.002:
-		return {"ok": true, "already_there": true, "distance_m": meters(leg.length())}
-	if not path_clear(eye, to):
-		return {"ok": false, "reason": "obstructed", "distance_m": meters(leg.length())}
-	var target_fwd := _clamped_forward(leg.normalized())
-	var turn_angle := rad_to_deg(_camera().forward().angle_to(target_fwd))
+	var target := point
+	if standoff > 0 and eye.distance_to(point) > standoff:
+		target -= (point - eye).normalized() * standoff
+	return fly_to_point([target.x, target.y, target.z], info)
+
+
+## Preserve doubles for nested fractals. No collision or zoom-floor gate.
+func fly_to_point(point: Array, info: Dictionary = {}) -> Dictionary:
+	var leg := _leg(point)
 	_stop_quietly()
-	var turn_s := clampf(turn_angle / TURN_DEG_PER_S, 0.3, 1.8)
-	var cruise_s := clampf(1.5 + leg.length() * METERS_PER_UNIT / CRUISE_M_PER_S, 2.0, 12.0)
-	_m = {"kind": "fly", "phase": "turn", "t": 0.0, "duration": turn_s,
+	var fwd: Vector3 = leg.direction if leg.distance > 0 else _camera().forward()
+	_m = {"kind": "fly", "phase": "turn", "t": 0.0,
+		"duration": rad_to_deg(_camera().forward().angle_to(fwd)) / TURN_DEG_PER_S,
 		"q_from": _camera().transform.basis.get_rotation_quaternion(),
-		"q_to": _basis_for(target_fwd).get_rotation_quaternion(),
-		"cruise_duration": cruise_s, "from": eye, "to": to}
+		"q_to": _basis_for(fwd).get_rotation_quaternion(), "target": point.duplicate()}
 	_m.merge(info)
-	maneuver_started.emit("fly", info)
-	return {"ok": true, "distance_m": meters(leg.length()), "seconds": snappedf(turn_s + cruise_s, 0.1)}
+	return _start_instruction()
+
+
+func face_point(point: Array) -> Dictionary:
+	var leg := _leg(point)
+	return _begin_turn(leg.direction if leg.distance > 0 else _camera().forward(), "face", {"target": point.duplicate()})
+
+
+func navigation_pose() -> Dictionary:
+	var c := _camera()
+	return {"position": Array(c.eye64()), "facing": _vector(c.forward()),
+		"right": _vector(c.right()), "up": _vector(c.up())}
+
+
+func travel_speed() -> float:
+	# Exactly the player's current Gameplay speed (including Shift and wheel).
+	return game.fly.current_speed()
+
+
+func escape_state() -> Dictionary:
+	var c := _camera()
+	var radius := _params().gameplay.exit_radius
+	var radial := sqrt(c.eye_x() * c.eye_x() + c.eye_y() * c.eye_y() + c.eye_z() * c.eye_z())
+	return {"escaped": _params().gameplay.is_outside(c), "center": [0, 0, 0],
+		"radius": radius, "distance_to_boundary": maxf(radius - radial, 0.0), "units": "world"}
+
+
+func depth_scan(args: Dictionary = {}) -> Dictionary:
+	return game.view.request_depth_scan(args)
+
+
+func plan_escape() -> Dictionary:
+	return await EscapePlanner.new().plan(game)
 
 
 func stop(reason := "stopped") -> bool:
@@ -199,60 +233,63 @@ func stop(reason := "stopped") -> bool:
 func autopilot_state() -> Dictionary:
 	if _m.is_empty():
 		return {"active": false, "kind": "idle"}
-	var left: float = _m["duration"] - _m["t"]
-	if _m["kind"] == "fly" and _m["phase"] == "turn":
-		left += _m["cruise_duration"]
-	return {"active": true, "kind": _m["kind"], "target_id": _m.get("target_id", ""),
-		"seconds_left": snappedf(maxf(left, 0.0), 0.1)}
+	var out := {"active": true, "kind": _m.kind, "instruction_id": _m.instruction_id, "phase": _m.phase}
+	var left := maxf(float(_m.get("duration", 0.0)) - float(_m.get("t", 0.0)), 0.0) if _m.phase == "turn" else 0.0
+	if _m.has("target") and _m.kind != "face":
+		out["target"] = _m.target
+		var distance: float = _leg(_m.target).distance
+		out["distance_remaining"] = distance
+		left += distance / maxf(travel_speed(), 1e-30)
+	out["seconds_left"] = left
+	out["estimate_only"] = true
+	return out
 
-
-## How far the ship can move from `from` along unit `dir` (up to `limit`)
-## before coming within SAFE_CLEARANCE of the surface.
-func free_distance(from: Vector3, dir: Vector3, limit: float) -> float:
-	var t := 0.0
-	while t < limit:
-		var d := DistanceEstimator.estimate(from + dir * t, _params())
-		if d < SAFE_CLEARANCE:
-			return maxf(0.0, t - SAFE_CLEARANCE * 0.5)
-		t += maxf(d - SAFE_CLEARANCE, SAFE_CLEARANCE * 0.25)
-	return limit
-
-
-# ------------------------------------------------------------- per frame
 
 func _physics_process(delta: float) -> void:
 	step(delta)
 
 
-## Advance the manoeuvre by `delta` seconds (the tests call this directly).
 func step(delta: float) -> void:
 	if _m.is_empty() or game == null or not is_instance_valid(game):
 		return
-	var fly: Variant = game.get("fly")
-	if fly != null and fly.has_method("move_direction") and fly.move_direction() != Vector3.ZERO:
+	if game.fly.move_direction() != Vector3.ZERO:
 		stop("manual override")
 		manual_override.emit()
 		return
-	var cam := _camera()
-	_m["t"] = minf(_m["t"] + delta, _m["duration"])
-	var s := _ease(_m["t"] / maxf(_m["duration"], 1e-6))
-	if _m["phase"] == "turn":
-		var q: Quaternion = (_m["q_from"] as Quaternion).slerp(_m["q_to"], s)
-		cam.transform = Transform3D(Basis(q), cam.eye())
-	else:
-		var t := cam.transform
-		t.origin = (_m["from"] as Vector3).lerp(_m["to"], s)
-		cam.transform = t
-	if _m["t"] < _m["duration"]:
+	if Array(_camera().eye64()) != _m.last_eye or _camera().transform.basis != _m.last_basis:
+		stop("manual override or external camera change")
+		manual_override.emit()
 		return
-	if _m["kind"] == "fly" and _m["phase"] == "turn":
-		_m["phase"] = "move"
-		_m["t"] = 0.0
-		_m["duration"] = _m["cruise_duration"]
-		return
+	if _m.phase == "turn":
+		var used := minf(delta, maxf(_m.duration - _m.t, 0.0))
+		_m.t += used
+		delta -= used
+		var fraction := clampf(_m.t / maxf(_m.duration, 1e-12), 0.0, 1.0) if _m.duration > 0 else 1.0
+		_camera().set_basis(Basis((_m.q_from as Quaternion).slerp(_m.q_to, fraction)))
+		_m.last_basis = _camera().transform.basis
+		if _m.t < _m.duration:
+			return
+		if _m.kind != "fly":
+			_complete()
+			return
+		_m.phase = "move"
+	if _m.phase == "move":
+		var leg := _leg(_m.target)
+		var distance := minf(travel_speed() * maxf(delta, 0.0), leg.distance)
+		if distance >= leg.distance:
+			_camera().set_eye(_m.target[0], _m.target[1], _m.target[2])
+			_complete()
+			return
+		var c := _camera()
+		var f: float = distance / leg.distance
+		c.set_eye(c.eye_x() + leg.dx * f, c.eye_y() + leg.dy * f, c.eye_z() + leg.dz * f)
+		_m.last_eye = Array(c.eye64())
+
+
+func _complete() -> void:
 	var m := _m
 	_m = {}
-	maneuver_finished.emit(m["kind"], _finish_info(m, true, "arrived" if m["kind"] == "fly" else "done"))
+	maneuver_finished.emit(m.kind, _finish_info(m, true, "arrived" if m.kind == "fly" else "done"))
 
 
 # ------------------------------------------------------------- helpers
@@ -261,12 +298,38 @@ func _begin_turn(target_fwd: Vector3, kind: String, info: Dictionary) -> Diction
 	var angle := rad_to_deg(_camera().forward().angle_to(target_fwd))
 	_stop_quietly()
 	_m = {"kind": kind, "phase": "turn", "t": 0.0,
-		"duration": clampf(angle / TURN_DEG_PER_S, 0.3, 2.0),
+		"duration": angle / TURN_DEG_PER_S,
 		"q_from": _camera().transform.basis.get_rotation_quaternion(),
 		"q_to": _basis_for(target_fwd).get_rotation_quaternion()}
 	_m.merge(info)
-	maneuver_started.emit(kind, info)
-	return {"ok": true, "turning_deg": int(round(angle)), "seconds": snappedf(_m["duration"], 0.1)}
+	var result := _start_instruction()
+	result["turning_deg"] = angle
+	return result
+
+
+func _start_instruction() -> Dictionary:
+	_m["last_eye"] = Array(_camera().eye64())
+	_m["last_basis"] = _camera().transform.basis
+	_m["instruction_id"] = _next_instruction_id
+	_next_instruction_id += 1
+	maneuver_started.emit(_m.kind, _m.duplicate(true))
+	var state := autopilot_state()
+	return {"ok": true, "instruction_id": _m.instruction_id, "seconds": state.seconds_left,
+		"estimate_only": true, "message": "Instruction accepted; wait for instruction_completed or instruction_cancelled."}
+
+
+func _leg(target: Array) -> Dictionary:
+	var c := _camera()
+	var dx: float = target[0] - c.eye_x()
+	var dy: float = target[1] - c.eye_y()
+	var dz: float = target[2] - c.eye_z()
+	var distance := sqrt(dx * dx + dy * dy + dz * dz)
+	return {"dx": dx, "dy": dy, "dz": dz, "distance": distance,
+		"direction": Vector3(dx / distance, dy / distance, dz / distance) if distance > 0 else c.forward()}
+
+
+static func _vector(v: Vector3) -> Array:
+	return [v.x, v.y, v.z]
 
 
 func _stop_quietly() -> void:
@@ -275,8 +338,14 @@ func _stop_quietly() -> void:
 
 
 func _finish_info(m: Dictionary, completed: bool, reason: String) -> Dictionary:
-	var info := {"completed": completed, "reason": reason}
-	for k in ["target_id", "direction"]:
+	var info := {"completed": completed, "reason": reason, "instruction_id": m.instruction_id,
+		"instruction_kind": m.kind}
+	if is_instance_valid(game):
+		info.merge(navigation_pose())
+	else:
+		var basis: Basis = m.last_basis
+		info.merge({"position": m.last_eye, "facing": _vector(-basis.z)})
+	for k in ["target", "direction"]:
 		if m.has(k):
 			info[k] = m[k]
 	return info
@@ -305,9 +374,4 @@ func _clamped_forward(dir: Vector3) -> Vector3:
 
 
 func _basis_for(fwd: Vector3) -> Basis:
-	return Transform3D(Basis.IDENTITY, Vector3.ZERO).looking_at(fwd, WORLD_UP).basis
-
-
-static func _ease(x: float) -> float:
-	x = clampf(x, 0.0, 1.0)
-	return x * x * (3.0 - 2.0 * x)
+	return Basis.looking_at(fwd, Vector3.UP if absf(fwd.dot(WORLD_UP)) > 0.999 else WORLD_UP)

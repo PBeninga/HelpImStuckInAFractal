@@ -20,6 +20,8 @@ var show_exit := false
 ## id -> {label, until (seconds on _clock), occluded}
 var highlights := {}
 var course_target := ""
+## One agent-selected world target, independent of scan markers.
+var direction_target: Dictionary = {}
 ## The ship adapter (ship_adapter.gd) and the feature registry (features.gd).
 var adapter: Node
 var features: Features
@@ -51,6 +53,7 @@ func highlight(id: String, label: String, seconds: float) -> void:
 
 func clear() -> void:
 	highlights.clear()
+	clear_direction()
 	queue_redraw()
 
 
@@ -60,6 +63,8 @@ func scan_pulse() -> void:
 
 func _process(delta: float) -> void:
 	_clock += delta
+	if not direction_target.is_empty() and _clock >= direction_target["until"]:
+		clear_direction()
 	for id in highlights.keys():
 		if highlights[id]["until"] < _clock:
 			highlights.erase(id)
@@ -89,6 +94,7 @@ func _draw() -> void:
 	if not _ready_to_draw():
 		return
 	_draw_reticle()
+	_draw_direction()
 	if _scan_t >= 0.0:
 		var r := lerpf(20.0, size.length() * 0.6, _scan_t / 1.4)
 		draw_arc(size * 0.5, r, 0.0, TAU, 96, Color(0.5, 0.9, 1.0, 0.6 * (1.0 - _scan_t / 1.4)), 3.0, true)
@@ -109,6 +115,7 @@ func _draw() -> void:
 		if not f.is_empty():
 			var h: Dictionary = highlights[id]
 			_draw_marker(f, h["label"], COLOR_HIGHLIGHT, h["occluded"], pulse)
+
 
 
 func _draw_reticle() -> void:
@@ -220,3 +227,61 @@ func _dotted(a: Vector2, b: Vector2, col: Color) -> void:
 	for i in n:
 		if i % 2 == 0:
 			draw_line(a.lerp(b, float(i) / n), a.lerp(b, float(i + 1) / n), col, 2.0, true)
+
+
+## Set by an MCP point_direction request or an explicit feature highlight.
+func point_direction(point: Vector3, label: String, seconds := 30.0) -> void:
+	direction_target = {"point": point, "label": label, "until": _clock + seconds}
+	queue_redraw()
+
+
+func clear_direction() -> void:
+	direction_target.clear()
+	queue_redraw()
+
+
+## Camera-relative yaw and pitch give a stable turn cue even behind the pilot.
+## A directly rearward target chooses right rather than flickering left/right.
+static func direction_guide(pose: Dictionary, point: Vector3, viewport_size: Vector2) -> Dictionary:
+	var offset: Vector3 = point - pose["position"]
+	var forward: float = offset.dot(pose["forward"])
+	var right: float = offset.dot(pose["right"])
+	var up: float = offset.dot(pose["up"])
+	var yaw := atan2(right, forward)
+	if forward < 0.0 and absf(right) < 1e-6:
+		yaw = PI
+	var pitch := atan2(up, sqrt(forward * forward + right * right))
+	var aligned := offset.length_squared() < 1e-12 or (absf(yaw) < deg_to_rad(4.0) and absf(pitch) < deg_to_rad(4.0))
+	var dir := Vector2(yaw, -pitch).normalized()
+	var half := Vector2(maxf(1.0, viewport_size.x * 0.5 - 68.0), maxf(1.0, viewport_size.y * 0.5 - 68.0))
+	var distance := minf(half.x / maxf(absf(dir.x), 1e-6), half.y / maxf(absf(dir.y), 1e-6))
+	var position := viewport_size * 0.5 + dir * distance
+	var instruction := "Facing target"
+	if not aligned:
+		instruction = ("Turn right" if yaw > 0.0 else "Turn left") if absf(yaw) >= absf(pitch) else ("Look up" if pitch > 0.0 else "Look down")
+	return {"aligned": aligned, "direction": dir, "position": position, "instruction": instruction}
+
+
+func _draw_direction() -> void:
+	if direction_target.is_empty():
+		return
+	var guide := direction_guide(adapter.pose(), direction_target["point"], size)
+	var aligned: bool = guide["aligned"]
+	var p: Vector2 = Vector2(size.x * 0.5, 68.0) if aligned else guide["position"]
+	var col := Color(0.4, 1.0, 0.65) if aligned else COLOR_HIGHLIGHT
+	draw_circle(p, 29.0, Color(0.0, 0.02, 0.06, 0.9))
+	if aligned:
+		draw_polyline(PackedVector2Array([p + Vector2(-12, 0), p + Vector2(-3, 9), p + Vector2(14, -10)]), col, 5.0, true)
+	else:
+		var d: Vector2 = guide["direction"]
+		var side := Vector2(-d.y, d.x)
+		draw_line(p - d * 17.0, p + d * 17.0, col, 6.0, true)
+		draw_polyline(PackedVector2Array([p - d * 2.0 + side * 14.0, p + d * 17.0, p - d * 2.0 - side * 14.0]), col, 6.0, true)
+	var title: String = guide["instruction"]
+	var caption: String = direction_target["label"]
+	var width := maxf(_font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x, _font.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x)
+	var label_at := Vector2(p.x - width * 0.5, p.y + 48.0)
+	if p.y > size.y * 0.65:
+		label_at.y = p.y - 48.0
+	label_at.x = clampf(label_at.x, 12.0, maxf(12.0, size.x - width - 12.0))
+	_label(label_at, title, caption, col)

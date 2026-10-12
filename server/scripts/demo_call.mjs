@@ -138,20 +138,17 @@ class ScriptedAgent {
 
 // ---------------------------------------------------------------- the call
 
-const say_id = (id) => {
-  const n = String(id).replace("#", "");
-  return n.length === 4 ? `${Number(n.slice(0, 2))} ${n.slice(2)}` : n;
-};
-// Wait for a waypoint or arrival.
-async function untilArrived(agent, seconds = 60) {
+// Wait for this specific instruction; cancellation is not arrival.
+async function untilArrived(agent, instructionId, seconds = 120) {
   const end = Date.now() + seconds * 1000;
   while (Date.now() < end) {
-    const ev = await agent.shipEvent(/SHIP EVENT \((waypoint_reached|arrived|escaped|exit_refused)\)/, 2);
+    const ev = await agent.shipEvent(/SHIP EVENT \((instruction_completed|instruction_cancelled)\)/, 2);
     if (!ev) continue;
     const text = ev.item.content[0].text;
-    return text;
+    if (!text.includes(`"instruction_id":${instructionId},`)) continue;
+    return text.includes('(instruction_completed)');
   }
-  return "";
+  return false;
 }
 
 async function script(agent) {
@@ -171,29 +168,20 @@ async function script(agent) {
 
   for (let leg = 0; leg < 12; leg++) {
     const s = await agent.tool("get_ship_status");
-    if (!s.in_flight || !s.next_waypoint) break;
-    const wp = s.next_waypoint;
-    if (wp.kind === "exit") {
-      await agent.tool("highlight", { target: wp.feature_id, label: "EXIT" });
-      await agent.say(`Right, that's characteristic ${say_id(wp.feature_id)}, ${wp.name}. Hold on to something.`);
-      await agent.tool("fly_to_feature", { feature_id: wp.feature_id });
-      const done = await untilArrived(agent, 60);
-      if (/\(escaped\)/.test(done)) break;
-      continue;
-    }
-    await agent.tool("highlight", { target: wp.feature_id });
-    await agent.tool("post_to_log", { message: `Identified Mandelbrought characteristic ${wp.feature_id}, drawing attention and configuring flight path.` });
-    await agent.say(
-      leg === 0
-        ? `See characteristic ${say_id(wp.feature_id)}, ${wp.direction}? ${wp.name}. ${wp.description} That's our way out. Flying you over now.`
-        : `Next up, characteristic ${say_id(wp.feature_id)}, ${wp.name}, ${wp.range_m} metres ${wp.direction}. ${wp.description}`,
-    );
-    const r = await agent.tool("fly_to_feature", { feature_id: wp.feature_id });
-    if (!r.ok) break;
-    await untilArrived(agent, 60);
+    if (!s.in_flight || s.escape?.escaped) break;
+    const route = await agent.tool("plan_escape");
+    if (!route.ok || route.scene_or_pose_changed || !route.points?.length) break;
+    const point = route.points[0];
+    await agent.tool("point_direction", { point, label: "Escape route" });
+    await agent.tool("post_to_log", { message: "Estimated escape route selected. Flying the next leg at Gameplay speed." });
+    await agent.say("I've compared the travel times. Taking the next leg toward open space now.");
+    const result = await agent.tool("fly_to_point", { point });
+    if (!result.ok || !await untilArrived(agent, result.instruction_id)) break;
   }
-  await agent.say("And you are out! Welcome back to ordinary three-space.");
-  await agent.say("Wonderful. Thank you for calling Sub-Dimensional Support, and mind the folds.");
+  const final = await agent.tool("get_ship_status");
+  await agent.say(final.escape?.escaped
+    ? "And you are out! Welcome back to ordinary three-space. Thank you for calling Sub-Dimensional Support."
+    : "We're still inside the fractal. I'll leave the controls with you; call again when you'd like more help.");
 }
 
 // ---------------------------------------------------------------- run it

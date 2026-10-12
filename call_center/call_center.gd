@@ -8,7 +8,7 @@ extends Node
 ##   offers `call_center_adapter()` or looks like the explorer's Main) and
 ##   flies the ship only through a ship adapter (adapter/ship_adapter.gd);
 ## - shows its own HUD: the diagnostics log, ship status, the support-line
-##   panel and brackets on whatever the agent talks about (the conversation
+##   panel and direction guidance (the conversation
 ##   itself is in McpBridge's pilot chat);
 ## - adds the ship's tools and events to McpBridge as commands, which the
 ##   phone link carries to the phone server's voice agent and mcp/server.mjs
@@ -24,9 +24,7 @@ extends Node
 ##
 ##   var cc := get_node_or_null(^"/root/CallCenter")
 ##   if cc:
-##       cc.register_feature("2312", "The Recursive Cul-de-sac", pos, "route", "A dead end ...")
-##       cc.set_route(["2312", "4096"]); cc.set_exit("9001")
-##       cc.notify_agent("escaped", "The pilot flew into the rift and is home.")
+##       cc.log_line("Support connected.", "info")
 
 signal game_attached(scene: Node)
 signal game_detached
@@ -34,9 +32,9 @@ signal call_state_changed(state: String, info: Dictionary)
 signal agent_said(text: String)
 signal pilot_said(text: String)
 signal pilot_issue_resolved(issue_id: String, answer: String, by: String)
-## The ship came within ARRIVE_RADIUS_M of a route waypoint.
+## Legacy extension signal; live navigation reports instruction events.
 signal arrived(feature_id: String)
-## The ship came within EXIT_RADIUS_M of the exit (again after leaving it).
+## The ship crossed the Gameplay exit sphere; legacy argument is empty.
 signal exit_reached(feature_id: String)
 
 const Features := preload("res://call_center/features.gd")
@@ -46,10 +44,7 @@ const Hud := preload("res://call_center/hud/hud.gd")
 const ConsoleTools := preload("res://call_center/mcp/console_tools.gd")
 const ShipTools := preload("res://call_center/mcp/ship_tools.gd")
 const ExplorerAdapter := preload("res://call_center/adapter/explorer_adapter.gd")
-const DemoMission := preload("res://call_center/demo/demo_mission.gd")
 
-const ARRIVE_RADIUS_M := 30.0
-const EXIT_RADIUS_M := 60.0
 ## Seconds from begin() to the first random pilot-input issue, between later
 ## ones, and how many there are at most.
 const FIRST_PILOT_ISSUE := 45.0
@@ -64,7 +59,7 @@ const COMMANDS := ["ship_tools", "ship_tool", "ship_events", "call_center"]
 @export var auto_begin := true
 @export var begin_delay := 1.5
 @export var max_random_pilot_issues := 0
-## Load the sample escape route and its rules (demo/).
+## Legacy launch flag retained for compatibility; navigation uses live geometry.
 @export var demo := false
 
 var features := Features.new()
@@ -74,8 +69,7 @@ var tools: ShipTools
 var console_tools: ConsoleTools
 ## The ship adapter while a game is up, else null.
 var adapter: Node
-## Set by the game (lock_exit) while the way out is closed; the autopilot
-## holds short of a locked exit and tells the agent why.
+## Legacy extension state; it does not gate live coordinate navigation.
 var exit_lock_reason := ""
 ## name -> {definition, handler}; see register_tool().
 var custom_tools := {}
@@ -114,11 +108,6 @@ func _ready() -> void:
 	issues.issue_resolved.connect(func(issue: Dictionary, answer: String, by: String):
 		pilot_issue_resolved.emit(issue["issue_id"], answer, by))
 	_attach_bridge()
-	if demo:
-		var d := DemoMission.new()
-		d.name = "DemoMission"
-		add_child(d)
-		d.setup(self)
 
 
 func _exit_tree() -> void:
@@ -186,7 +175,7 @@ func load_features_json(path: String) -> Dictionary:
 	return features.load_json(path)
 
 
-## Close the way out (the autopilot holds short and tells the agent why).
+## Legacy extension API; Gameplay exit-sphere navigation has no locks.
 func lock_exit(reason: String) -> void:
 	exit_lock_reason = reason
 
@@ -256,7 +245,7 @@ func _cmd_ship_tool(args: Dictionary) -> Dictionary:
 	if not tools.has_tool(tool_name):
 		return {"error": "unknown ship tool '%s'" % tool_name}
 	var a: Variant = args.get("arguments", {})
-	return tools.call_tool(tool_name, a if a is Dictionary else {})
+	return await tools.call_tool(tool_name, a if a is Dictionary else {})
 
 
 ## Long-poll: events after `after`, waiting up to `timeout` seconds for one.
@@ -290,8 +279,7 @@ func _cmd_call_center(args: Dictionary) -> Dictionary:
 
 func status() -> Dictionary:
 	return {"begun": _begun, "in_flight": adapter != null, "call_state": call_state,
-		"link_up": link_up, "features": features.all().size(), "open_issues": issues.pending().size(),
-		"exit_locked": exit_lock_reason != ""}
+		"link_up": link_up, "open_issues": issues.pending().size()}
 
 
 # ------------------------------------------------------------- finding the game
@@ -372,49 +360,26 @@ func _find_adapter(node: Node, depth: int) -> Node:
 # ------------------------------------------------------------- ship events
 
 func _check_positions() -> void:
-	var here: Vector3 = adapter.pose()["position"]
-	var m: float = adapter.meters_per_unit()
-	for id in features.route:
-		var f := features.find(id)
-		if f.is_empty() or features.visited.has(id):
-			continue
-		if here.distance_to(f["pos"]) * m < ARRIVE_RADIUS_M:
-			features.visited[id] = true
-			issues.add("Waypoint #%s %s reached" % [id, f["name"]], "ok")
-			var nxt := features.next_waypoint()
-			var summary := "The ship has reached waypoint #%s %s." % [id, f["name"]]
-			if not nxt.is_empty():
-				var rel := Features.relative(adapter.pose(), nxt["pos"], m)
-				summary += " Next on the way out: #%s %s, %d m %s." % [nxt["id"], nxt["name"], rel["range_m"], rel["direction"]]
-			notify_agent("waypoint_reached", summary, {"feature_id": "#" + id,
-				"next_feature_id": "" if nxt.is_empty() else "#" + nxt["id"]})
-			arrived.emit(id)
-	var ex := features.exit()
-	if ex.is_empty():
-		return
-	var d: float = here.distance_to(ex["pos"]) * m
-	if d < EXIT_RADIUS_M and not _at_exit:
-		_at_exit = true
-		exit_reached.emit(ex["id"])
-	elif d > EXIT_RADIUS_M * 2.0:
-		_at_exit = false
+	var state: Dictionary = adapter.escape_state()
+	var outside: bool = state.get("escaped", false)
+	if outside and not _at_exit:
+		notify_agent("escaped", "The player crossed the fractal's exit sphere and escaped.", adapter.navigation_pose())
+		exit_reached.emit("")
+	_at_exit = outside
 
 
 func _on_maneuver_finished(kind: String, info: Dictionary) -> void:
-	if kind != "fly" or not info.get("completed", false):
-		return
-	var f := features.find(info.get("target_id", ""))
-	if f.is_empty() or f["kind"] == "route":
-		return   # route waypoints report through _check_positions
-	var summary := "Autopilot arrived at #%s %s." % [f["id"], f["name"]]
-	if f["kind"] == "exit" and exit_lock_reason != "":
-		summary += " The ship is holding outside it: it is locked (%s)." % exit_lock_reason
-	notify_agent("arrived", summary, {"feature_id": "#" + f["id"]})
+	var completed: bool = info.get("completed", false)
+	var event := "instruction_completed" if completed else "instruction_cancelled"
+	var summary := "Instruction %s (%s) %s: %s." % [str(info.get("instruction_id", "")), kind,
+		"completed" if completed else "cancelled", str(info.get("reason", ""))]
+	# One terminal event per accepted instruction. Never attach sensor arrays.
+	notify_agent(event, summary, info)
 
 
 func _on_manual_override() -> void:
 	issues.add("Manual override: autopilot disengaged", "info")
-	notify_agent("manual_override", "The pilot took manual control with the flight keys; the autopilot has disengaged.")
+	# The cancellation event already tells the agent about this override.
 
 
 func _on_crash_report_done() -> void:
@@ -480,15 +445,12 @@ func _hold_chat_listener(on: bool) -> void:
 	chat.listeners += 1 if on else -1
 
 
-## A pilot-chat message (typed, voice, the phone agent, or Claude piloting):
-## highlight any feature the agent names, by "#2312", "2312" or name.
+## Forward chat signals and flash the diagnostics panel when mentioned.
 func _on_chat_message(m: Dictionary) -> void:
 	var text := str(m.get("text", ""))
 	match str(m.get("role", "")):
 		"agent":
 			agent_said.emit(text)
-			for id in mentioned_features(text):
-				hud.highlight_feature(id, "", 12.0)
 			if text.to_lower().contains("diagnostic"):
 				hud.flash("diagnostics_log")
 		"human":

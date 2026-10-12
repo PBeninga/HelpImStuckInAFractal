@@ -15,13 +15,21 @@ func run() -> void:
 
 	# automatic issues: an error, then its fix
 	issues.auto_running = true
-	for i in 40:
+	issues.advance(29.0)
+	check(issues.entries.is_empty(), "first automatic error waits 30 seconds")
+	issues.advance(1.0)
+	check_eq(issues.entries.size(), 1, "first automatic error appears at 30 seconds")
+	for i in 400:
 		issues.advance(0.5)
 	var errors := 0
 	var fixes := 0
+	var last_error := -1.0
 	for e in issues.entries:
 		if e["style"] == "error":
 			errors += 1
+			if last_error >= 0.0:
+				check(e["time"] - last_error >= 50.0 and e["time"] - last_error <= 100.5, "automatic errors are 50–100 seconds apart")
+			last_error = e["time"]
 		elif e["style"] == "ok":
 			fixes += 1
 	check(errors >= 2, "auto issues are raised (%d)" % errors)
@@ -46,7 +54,7 @@ func run() -> void:
 	check(waiver["blocks_exit"], "and blocks the exit")
 	issues.advance(IssueLog.PILOT_TIMEOUT_OFFLINE + 1.0)
 	check_eq(issues.pending().size(), 1, "with an agent available it is still waiting")
-	check_eq(issues.resolve("99812", "  Grace Hopper "), IssueCatalogue.EGRESS_WAIVER["outcome"] % "Grace Hopper",
+	check_eq(issues.resolve("99812", "  Grace Hopper "), IssueCatalogue.outcome(IssueCatalogue.EGRESS_WAIVER["outcome"], "Grace Hopper"),
 		"resolve accepts an id without '#', and trims the answer")
 	check_eq(resolved[-1], ["#99812", "Grace Hopper", "pilot"], "issue_resolved reports the pilot's answer")
 	check_eq(issues.pilot_answers, 1, "one pilot answer counted")

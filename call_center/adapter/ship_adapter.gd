@@ -15,7 +15,7 @@ extends Node
 ## pitches positive up; control results are Dictionaries with `ok`.
 
 ## A manoeuvre began / ended. `info.completed` is false when it was cancelled,
-## `info.reason` says why, `info.target_id` names the feature it flew to.
+## `info.reason` says why; instruction_id correlates each accepted command.
 signal maneuver_started(kind: String, info: Dictionary)
 signal maneuver_finished(kind: String, info: Dictionary)
 ## The pilot grabbed the controls during a manoeuvre.
@@ -82,7 +82,7 @@ func thrust(_direction: String, _meters: float) -> Dictionary:
 
 
 ## Fly to `point`, stopping `standoff` world units short of it. `info` is
-## echoed in maneuver_started / maneuver_finished (target_id).
+## echoed in maneuver_started / maneuver_finished.
 func fly_to(_point: Vector3, _standoff: float, _info: Dictionary = {}) -> Dictionary:
 	return unsupported("the autopilot")
 
@@ -92,7 +92,7 @@ func stop(_reason := "stopped") -> bool:
 	return false
 
 
-## {active, kind, target_id, seconds_left}.
+## {active, kind, instruction_id, seconds_left}.
 func autopilot_state() -> Dictionary:
 	return {"active": false, "kind": "idle"}
 
@@ -114,3 +114,27 @@ func meters(units: float) -> int:
 
 func unsupported(what: String) -> Dictionary:
 	return {"ok": false, "reason": "unsupported", "message": "This ship does not support %s." % what}
+
+
+func navigation_pose() -> Dictionary:
+	var p := pose()
+	return {"position": [p.position.x, p.position.y, p.position.z],
+		"facing": [p.forward.x, p.forward.y, p.forward.z]}
+
+func travel_speed() -> float:
+	return 0.0
+
+func escape_state() -> Dictionary:
+	return {"escaped": false, "available": false}
+
+func depth_scan(_args: Dictionary = {}) -> Dictionary:
+	return unsupported("screen depth scans")
+
+func plan_escape() -> Dictionary:
+	return unsupported("route planning")
+
+func face_point(point: Array) -> Dictionary:
+	return face(Vector3(point[0], point[1], point[2]))
+
+func fly_to_point(point: Array, info: Dictionary = {}) -> Dictionary:
+	return fly_to(Vector3(point[0], point[1], point[2]), 0.0, info)

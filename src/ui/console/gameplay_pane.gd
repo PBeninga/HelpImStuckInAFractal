@@ -61,12 +61,20 @@ func _init() -> void:
 	_number(&"shift_multiplier", "Shift speed multiplier", 0.001, 100.0, "Multiplies move speed while Shift is held; default 2.")
 	scaling_check = CheckBox.new()
 	scaling_check.text = "Scale speed by camera-ray distance"
-	scaling_check.tooltip_text = "Slow near the surface straight ahead; turn off for fixed travel speed. The zoom-limit stop always applies."
+	scaling_check.tooltip_text = "Slow near the surface straight ahead; turn off for fixed travel speed. The player zoom-limit stop applies to manual flight; agent movement bypasses it."
 	scaling_check.focus_mode = Control.FOCUS_NONE
 	_list.add_child(scaling_check)
 	_number(&"distance_power", "Distance response power", 0.01, 4.0, "1 is linear. Below 1 softens distance changes; above 1 exaggerates them. Nearest-surface and speed caps still apply.")
 	_number(&"near_cap", "Nearest-surface cap", 0.001, 1000.0, "Cap the distance speed at this times the distance to the closest surface, even when looking along a corridor. Default 10.")
 	_number(&"max_distance_speed", "Max distance speed", 0.001, 1000000.0, "Upper limit on distance speed before the move, Shift, mouse-wheel and load-shed multipliers. Default 20.")
+	_heading("AGENT PERCEPTION")
+	_integer(&"surrounding_ray_count", "Surrounding geometry rays", 4, 64,
+		"Number of multidirectional surface rays in the geometry estimate sent to the support agent. More rays give a denser estimate.")
+
+	_integer(&"depth_scan_width", "Screen depth columns", 8, 128,
+		"Width of the cached screen depth grid. Height follows the view aspect ratio. Higher values reveal smaller openings.")
+	_integer(&"depth_scan_interval", "Depth refresh frames", 1, 30,
+		"Refresh the screen depth cache every this many rendered frames. Default 2.")
 
 	save_button.pressed.connect(save_requested.emit)
 	load_button.pressed.connect(load_requested.emit)
@@ -127,6 +135,26 @@ func _number(key: StringName, text: String, minimum: float, maximum: float, tool
 			_settings.set(key, v)
 			if _settings.get(key) != v:
 				_refresh())
+	row.add_child(spin)
+	_list.add_child(row)
+	controls[key] = spin
+
+
+func _integer(key: StringName, text: String, minimum: int, maximum: int, tooltip: String) -> void:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var spin := SpinBox.new()
+	spin.min_value = minimum
+	spin.max_value = maximum
+	spin.step = 1.0
+	spin.custom_minimum_size.x = 180
+	spin.tooltip_text = tooltip
+	spin.value_changed.connect(func(v):
+		if _settings != null and not _syncing:
+			_settings.set(key, int(v)))
 	row.add_child(spin)
 	_list.add_child(row)
 	controls[key] = spin
