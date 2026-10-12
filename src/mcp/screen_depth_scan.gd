@@ -109,7 +109,13 @@ static func decode_image(picture: Image) -> Dictionary:
 			var color := picture.get_pixel(x, y)
 			var flag := int(round(color.b * 255.0))
 			var encoded := int(round(color.r * 255.0)) * 256 + int(round(color.g * 255.0))
-			row.append(float("%.4g" % pow(2.0, float(encoded) / 65535.0 * 192.0 - 96.0)) if flag > 0 and flag <= 4 else null)
+			if flag > 0 and flag <= 4:
+				var distance := pow(2.0, float(encoded) / 65535.0 * 192.0 - 96.0)
+				# Round to four significant digits numerically; GDScript has no %g.
+				var step := pow(10.0, floor(log(distance) / log(10.0)) - 3.0)
+				row.append(round(distance / step) * step)
+			else:
+				row.append(null)
 			flags.append(flag)
 		distances.append(row)
 		status.append(flags)

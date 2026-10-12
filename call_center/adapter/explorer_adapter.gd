@@ -217,6 +217,10 @@ func depth_scan(args: Dictionary = {}) -> Dictionary:
 	return game.view.request_depth_scan(args)
 
 
+func scan_ship_depth(args: Dictionary = {}) -> Dictionary:
+	return await game.ship_depth_scanner.scan(game, args)
+
+
 func plan_escape() -> Dictionary:
 	return await EscapePlanner.new().plan(game)
 

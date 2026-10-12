@@ -130,6 +130,9 @@ func escape_state() -> Dictionary:
 func depth_scan(_args: Dictionary = {}) -> Dictionary:
 	return unsupported("screen depth scans")
 
+func scan_ship_depth(_args: Dictionary = {}) -> Dictionary:
+	return unsupported("full-ship depth scans")
+
 func plan_escape() -> Dictionary:
 	return unsupported("route planning")
 

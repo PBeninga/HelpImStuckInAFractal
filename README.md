@@ -764,6 +764,7 @@ Elsewhere: `claude mcp add fractal -- node /path/to/repo/mcp/server.mjs`.
 | `move` | move in the camera's frame, in **surface units** by default (multiples of the distance to the nearest surface, so `forward: 0.5` always halves the gap at any zoom depth); movement ignores geometry by default, with `safe: true` for raycast-limited moves |
 | `rotate` | yaw (about +Z) / pitch / roll in degrees |
 | `dive` | fly part of the way to the surface under a pixel and face it: repeat to zoom into a feature |
+| `scan_ship_depth` | **expensive**, optional full-ship depth rays to find off-screen directions; 96 rays by default, configurable 24–256, with a shared five-second cooldown |
 | `raycast`, `probe`, `project` | surface point + normal under a pixel; distance estimate at a point; pixel of a point |
 | `get_shape`, `set_shape` | every Mandelbox knob with ranges and descriptions; set any of them by id |
 | `list_views`, `load_view`, `save_view` | the JSON views in `saves/` |

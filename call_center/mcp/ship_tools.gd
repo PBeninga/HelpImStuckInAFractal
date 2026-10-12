@@ -18,6 +18,9 @@ func definitions() -> Array:
 	var out := [
 		_tool("get_ship_status", "Compact telemetry: position, player facing, Gameplay speed, autopilot and real exit-sphere boundary. No depth grid or scripted landmarks."),
 		_tool("scan_surroundings", "Request a low-fidelity multidirectional raycast around the player. Fidelity is tunable in Gameplay. Includes world directions and measured distances; misses are unknown, not proof of open space."),
+		_tool("scan_ship_depth", "EXPENSIVE, optional fallback when the current screen has no promising direction. Computes fresh CPU ray depths around the entire ship, including behind/above/below: 96 rays by default, at most 256. Returns captured pose, per-ray world direction/depth/status and broad distant-region recommendations. Runs only on request, yields between batches, stops after an 8-second budget (partial coverage is explicit), with a 5-second cooldown. Do not poll. CPU geometry excludes shader-only displacement; unknown/step-limited depths are not open space. Use recommended look_at with face_point, then inspect the new screen.", {
+			"ray_count": {"type": "integer", "minimum": 24, "maximum": 256, "default": 96},
+			"max_distance": {"type": "number", "exclusiveMinimum": 0, "description": "Maximum depth in world units; defaults to twice the Gameplay exit radius."}}),
 		_tool("get_depth_scan", "Read the latest locally cached screen depth scan. Returns a small summary and broad far-distance patches by default. Set include_grid=true only when the 2D array is needed. Refreshes locally every few frames; nothing is pushed to you. Requests are throttled for two seconds. Use after_frame to suppress duplicates. Censored range/step limits are NOT open space; inspect the captured pose and age.", {
 			"include_grid": {"type": "boolean", "default": false},
 			"after_frame": {"type": "integer", "minimum": 0},
@@ -61,6 +64,10 @@ func call_tool(tool_name: String, args: Variant) -> Dictionary:
 	match tool_name:
 		"get_ship_status": return status()
 		"scan_surroundings": return scan()
+		"scan_ship_depth":
+			if cc.adapter == null:
+				return _no_flight()
+			return await cc.adapter.scan_ship_depth(a)
 		"get_depth_scan": return cc.adapter.depth_scan(a) if cc.adapter != null else _no_flight()
 		"plan_escape":
 			if cc.adapter == null:

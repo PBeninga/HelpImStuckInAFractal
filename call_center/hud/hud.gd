@@ -376,7 +376,7 @@ func _refresh_status() -> void:
 	var ap: Dictionary = _adapter.autopilot_state()
 	var ap_text := "idle"
 	if ap.get("active", false):
-		ap_text = "%s (est. %.3g s)" % [ap["kind"], ap.get("seconds_left", 0.0)]
+		ap_text = "%s (est. %s s)" % [ap["kind"], String.num_scientific(ap.get("seconds_left", 0.0))]
 	var lines := [
 		"CLEARANCE  %s%s" % [clearance, "   ! PROXIMITY" if not is_inf(clear_units) and _adapter.meters(clear_units) < 10 else ""],
 		"HEADING    %03d°   PITCH %+d°" % [int(round(heading)), int(round(pitch))],
@@ -384,8 +384,8 @@ func _refresh_status() -> void:
 	]
 	var escape: Dictionary = _adapter.escape_state()
 	if escape.has("distance_to_boundary"):
-		lines.append("EXIT       %s" % ("escaped" if escape.escaped else "%.3g m to boundary" % (float(escape.distance_to_boundary) * _adapter.meters_per_unit())))
-	lines.append("SPEED      %.3g m/s" % (_adapter.travel_speed() * _adapter.meters_per_unit()))
+		lines.append("EXIT       %s" % ("escaped" if escape.escaped else "%s m to boundary" % String.num_scientific(float(escape.distance_to_boundary) * _adapter.meters_per_unit())))
+	lines.append("SPEED      %s m/s" % String.num_scientific(_adapter.travel_speed() * _adapter.meters_per_unit()))
 	status_label.text = "\n".join(lines)
 
 

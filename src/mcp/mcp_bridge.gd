@@ -241,6 +241,7 @@ func handle(cmd: String, args: Dictionary) -> Dictionary:
 		"get_camera": return _camera_json(main, true)
 		"get_depth_scan": return main.view.request_depth_scan(args)
 		"find_nearest_surface": return _find_nearest_surface(main)
+		"scan_ship_depth": return await main.ship_depth_scanner.scan(main, args)
 		"set_camera": return await _set_camera(main, args)
 		"move": return await _move(main, args)
 		"rotate": return await _rotate(main, args)

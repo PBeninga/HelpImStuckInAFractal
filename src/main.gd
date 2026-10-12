@@ -28,6 +28,8 @@ const NEW_SHAPE_DISTANCE := 7.0
 
 var params: FractalParams
 var camera: CameraState
+## Shared by direct MCP and phone tools; runs only on explicit request.
+var ship_depth_scanner := preload("res://src/mcp/ship_depth_scan.gd").new()
 
 @onready var view: FractalView = $FractalView
 @onready var governor: ResolutionGovernor = $ResolutionGovernor

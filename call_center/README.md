@@ -107,6 +107,7 @@ or `server/.env`).
 |---|---|
 | `get_ship_status` | compact position, facing, Gameplay speed, autopilot and exit-sphere boundary; no scan arrays |
 | `scan_surroundings` | tunable multidirectional raycast geometry, requested explicitly |
+| `scan_ship_depth` | **expensive**, optional fresh full-sphere ray depths when the screen has no good direction; 96 rays by default, configurable 24–256 |
 | `get_depth_scan` | cached screen-depth summary; `include_grid: true` requests the 2D distance array and status mask |
 | `plan_escape` | fastest sampled direct or two-leg route by estimated travel time, using Gameplay speed |
 | `highlight` / `clear_highlights` | flash or clear HUD panels |
@@ -141,6 +142,23 @@ default, at most 64 when explicitly requested through `max_columns`. The local
 cache can remain higher fidelity. Subsampled grids include source row/column
 indices. Captured pose, frame ID and age describe what was actually measured.
 Unknown, fog/range-limited and step-budget-limited cells are not open corridors.
+
+If the visible screen offers no promising route, the agent can explicitly call
+`scan_ship_depth {ray_count: 96}` (or pass `max_distance` in world units).
+It computes new rays around the full ship, including the six camera axes and
+uniformly spread spherical samples. Each ray returns a world direction, depth,
+status and step count. Unknown/exhausted rays have null depth; range-limited
+rays remain marked as incomplete. Up to six recommendations rank the minimum
+depth across five neighbouring rays; their `look_at` coordinates can be passed
+to `face_point` to inspect another direction before planning a flight.
+
+This call is marked **expensive** in both MCP and the voice-agent instructions.
+It has an eight-second work budget, yields between small ray batches, reports
+partial coverage if the budget expires, and shares a five-second cooldown
+between phone and direct MCP requests. It never runs automatically or sends
+scan events. The captured pose and stale flag describe the snapshot used.
+These CPU raycasts omit shader-only noise displacement, so inspect the new
+screen before selecting the next flight leg.
 
 `plan_escape` integrates sampled inverse travel speeds plus turn times to rank
 bounded direct and two-leg candidates. It returns a few routes, never the depth

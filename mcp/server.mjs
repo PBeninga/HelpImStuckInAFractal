@@ -238,6 +238,21 @@ relay(
 );
 
 relay(
+  "scan_ship_depth",
+  "scan_ship_depth",
+  "EXPENSIVE optional fallback when the screen has no good direction: compute fresh raycast depths " +
+    "around the entire ship, including behind/above/below. Returns world directions, depths, explicit " +
+    "hit/limit statuses and broad distant-region recommendations. CPU geometry excludes shader-only " +
+    "displacement. 96 rays by default; max 256, 8-second work budget, 5-second cooldown. " +
+    "Partial coverage and stale pose are explicit. Do not poll; nothing is streamed. " +
+    "Recommended look_at points are for turning, not flight destinations.",
+  {
+    ray_count: z.number().int().min(24).max(256).optional(),
+    max_distance: z.number().positive().optional().describe("World units; defaults to twice the exit-sphere radius"),
+  },
+);
+
+relay(
   "set_camera",
   "set_camera",
   "Place the camera. Give any of eye, look_at (a point to face) or forward (a direction), and up " +
@@ -453,7 +468,7 @@ server.registerTool(
     description:
       "The call centre's ship tools (when the game runs with it: launch_game {call_center: 'on'}): " +
       "high-level controls built for a support agent, each with its JSON input schema: get_ship_status, " +
-      "scan_surroundings (multidirectional geometry), get_depth_scan (on-demand cached screen depth), plan_escape, turn_ship, thrust, " +
+      "scan_surroundings (multidirectional geometry), get_depth_scan (on-demand cached screen depth), scan_ship_depth (expensive full-sphere depth), plan_escape, turn_ship, thrust, " +
       "fly_to_point (coordinate navigation at Gameplay speed), resolve_issue (answer a diagnostics question with " +
       "the person's words), post_to_log, and any the game adds. Run one with `ship`.",
     inputSchema: {},
