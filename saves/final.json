@@ -308,9 +308,9 @@
 				"pos_y": -0.8727573835219801,
 				"pos_z": 0.6704335666575532,
 				"rot_x": 0.0,
-				"rot_y": 63.599999999999994,
+				"rot_y": 0.0,
 				"rot_z": 0.0,
-				"size": 2.8840315031266037,
+				"size": 0.13335214321633232,
 				"shape": 2,
 				"w": 0.0,
 				"box_scale": -2.09,
@@ -337,7 +337,7 @@
 				"iter_rot_yz": 0.0,
 				"iter_rot_yw": 0.0,
 				"iter_rot_zw": 0.0,
-				"kifs_scale": 2.8200000000000003,
+				"kifs_scale": 3.0,
 				"kifs_fold": 0,
 				"kifs_poly_k": 5.0,
 				"kifs_twist": 0.0,
@@ -357,16 +357,16 @@
 				"kifs_rot2_yz": 0.0,
 				"kifs_rot2_yw": 0.0,
 				"kifs_rot2_zw": 0.0,
-				"kleinian_box_0": 0.848,
-				"kleinian_box_1": 0.6859999999999999,
-				"kleinian_box_2": 0.92436,
+				"kleinian_box_0": 0.164,
+				"kleinian_box_1": 0.951,
+				"kleinian_box_2": 0.7989999999999999,
 				"kleinian_box_3": 0.92436,
-				"kleinian_radius": 1.2790000000000001,
+				"kleinian_radius": 1.106,
 				"kleinian_shift_0": 0.0,
-				"kleinian_shift_1": 0.0,
+				"kleinian_shift_1": -0.03700000000000003,
 				"kleinian_shift_2": 0.0,
 				"kleinian_shift_3": 0.0,
-				"kleinian_thickness": 0.013,
+				"kleinian_thickness": 0.01,
 				"kleinian_view_distance": 10.0,
 				"mandelbulb_power": 8.0,
 				"mandelbulb_phase_theta": 0.0,
@@ -380,10 +380,10 @@
 			"bindings": {
 
 			},
-			"label": "Shape 3",
+			"label": "Shape 4",
 			"look": {
 				"defaults": {
-					"color_mode": 20,
+					"color_mode": 14,
 					"palette_source": 0,
 					"palette_frequency": 1.0,
 					"palette_offset": 0.0,
@@ -407,9 +407,9 @@
 						0.20000000298023224
 					],
 					"scatter_density": 0.0,
-					"scatter_glow": 0.0,
-					"scatter_brightness": 1.0,
-					"exposure": 1.0,
+					"scatter_glow": 0.12,
+					"scatter_brightness": 1.6400000000000001,
+					"exposure": 1.42,
 					"saturation": 1.0,
 					"surface_color": [
 						1.0,
@@ -437,7 +437,7 @@
 
 				}
 			},
-			"next_level_distance": 7.0,
+			"next_level_distance": 1000.0,
 			"commands": []
 		}
 	],
