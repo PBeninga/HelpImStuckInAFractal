@@ -33,6 +33,9 @@ and then launches the main scene: the **Icebox Nav** title menu (Play Game,
 Settings, Quit; Quit is hidden in a web build). Set `GODOT=/path/to/godot` to use a different
 binary.
 
+Godot runs as a background child without terminal input. The launcher stays
+attached for logs; **Ctrl+C** stops the game (or editor) and returns to the shell.
+
 ## Controls
 
 Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** tab

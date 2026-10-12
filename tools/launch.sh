@@ -18,6 +18,8 @@ cd "$REPO" || exit 1
 source "$REPO/tools/lib/focus.sh"
 # shellcheck source=lib/import.sh
 source "$REPO/tools/lib/import.sh"
+# shellcheck source=lib/process.sh
+source "$REPO/tools/lib/process.sh"
 
 GODOT="${GODOT:-$HOME/Downloads/Godot_mono.app/Contents/MacOS/Godot}"
 [ -x "$GODOT" ] || { echo "launch: no Godot at $GODOT (set \$GODOT)" >&2; exit 1; }
@@ -29,9 +31,8 @@ foreground=0
 for a in "$@"; do [ "$a" = --foreground-window ] && foreground=1; done
 [ "${FRACTAL_PLAY:-}" = 1 ] || [ "$foreground" = 1 ] || remember_focus
 
-"$GODOT" --path "$REPO" "$@" & pid=$!
+"$GODOT" --path "$REPO" "$@" </dev/null & pid=$!
 watcher=""
 [ -n "$FOCUS_HOME" ] && { return_focus "$FOCUS_HOME" "$pid" & watcher=$!; }
-wait "$pid"; status=$?
-[ -n "$watcher" ] && { kill "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null; }
-exit "$status"
+wait_for_godot "$pid" "$watcher"
+exit $?

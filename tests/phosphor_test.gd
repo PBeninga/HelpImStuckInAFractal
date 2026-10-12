@@ -22,6 +22,13 @@ func _exercise(params: FractalParams) -> void:
 	view.size = Vector2(320, 101)
 	view.setup(params, CameraState.make_default())
 	check_eq(view._viewport.size, Vector2i(320, 101), "disabled mode marches full frame")
+	# Stage activation resets history even when the optional effect is off.
+	# It must not remap full-frame rays using an unconfigured history height.
+	var initial_offset: Variant = view._material.get_shader_parameter("scan_y_offset")
+	var initial_scale: Variant = view._material.get_shader_parameter("scan_y_scale")
+	view._phosphor.reset_history()
+	check_eq(view._material.get_shader_parameter("scan_y_offset"), initial_offset, "inactive startup reset preserves ray origin")
+	check_eq(view._material.get_shader_parameter("scan_y_scale"), initial_scale, "inactive startup reset preserves vertical field of view")
 	params.set("phosphor_bands", 8)
 	params.set("phosphor_enabled", true)
 	var scan = view._phosphor
@@ -73,6 +80,12 @@ func _exercise(params: FractalParams) -> void:
 	check_eq(view._viewport.size, Vector2i(160, 51), "disable restores full-frame marching")
 	check_eq(view._display.material, null, "disable removes phosphor presentation")
 	check_approx(float(view._material.get_shader_parameter("scan_y_scale")), 1.0, "disable restores original ray coordinates")
+	# Resize after disabling: the retained history now has a different height.
+	view.size = Vector2(400, 240)
+	scan.reset_history()
+	check_approx(float(view._material.get_shader_parameter("scan_y_offset")), 0.0, "inactive reset after resizing preserves ray origin")
+	check_approx(float(view._material.get_shader_parameter("scan_y_scale")), 1.0, "inactive reset after resizing preserves full-frame projection")
+	view.size = Vector2(320, 101)
 	params.set("phosphor_enabled", true)
 	check_eq(scan.history.render_target_clear_mode, SubViewport.CLEAR_MODE_ONCE, "reenable clears previous session")
 	params.set("phosphor_bands", 32)

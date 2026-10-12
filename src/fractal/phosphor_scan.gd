@@ -101,6 +101,10 @@ func configure(enabled: bool, px: Vector2i, bands: int) -> void:
 
 
 func reset_history() -> void:
+	# Gameplay can reset presentation history while this optional effect is off.
+	# Its unused target size must never change the full-frame ray coordinates.
+	if not active:
+		return
 	_next_row = 0
 	_clear_pending = true
 	_elapsed = 0.0

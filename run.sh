@@ -23,12 +23,17 @@ if ! command -v "$GODOT" >/dev/null 2>&1; then
   fi
 fi
 
-if [ "$1" = "--editor" ]; then
+. tools/lib/process.sh
+
+if [ "${1:-}" = "--editor" ]; then
   shift
-  exec "$GODOT" --editor --path . "$@"
+  "$GODOT" --editor --path . "$@" </dev/null &
+  wait_for_godot "$!"
+  exit $?
 fi
 
 . tools/lib/import.sh
 refresh_class_cache
 
-exec "$GODOT" --path . "$@"
+"$GODOT" --path . "$@" </dev/null &
+wait_for_godot "$!"
