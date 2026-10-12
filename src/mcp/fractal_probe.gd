@@ -38,9 +38,9 @@ static func march(ro: Vector3, rd: Vector3, params: FractalParams) -> Variant:
 
 ## Central-difference gradient of the distance estimate at `p`.
 static func normal(p: Vector3, params: FractalParams, h: float) -> Vector3:
-	var dx := DistanceEstimator.estimate_at(p.x + h, p.y, p.z, params) - DistanceEstimator.estimate_at(p.x - h, p.y, p.z, params)
-	var dy := DistanceEstimator.estimate_at(p.x, p.y + h, p.z, params) - DistanceEstimator.estimate_at(p.x, p.y - h, p.z, params)
-	var dz := DistanceEstimator.estimate_at(p.x, p.y, p.z + h, params) - DistanceEstimator.estimate_at(p.x, p.y, p.z - h, params)
+	var dx := DistanceEstimator.scene_estimate_at(p.x + h, p.y, p.z, params) - DistanceEstimator.scene_estimate_at(p.x - h, p.y, p.z, params)
+	var dy := DistanceEstimator.scene_estimate_at(p.x, p.y + h, p.z, params) - DistanceEstimator.scene_estimate_at(p.x, p.y - h, p.z, params)
+	var dz := DistanceEstimator.scene_estimate_at(p.x, p.y, p.z + h, params) - DistanceEstimator.scene_estimate_at(p.x, p.y, p.z - h, params)
 	var n := Vector3(dx, dy, dz)
 	return n.normalized() if n.length_squared() > 0.0 else Vector3.ZERO
 

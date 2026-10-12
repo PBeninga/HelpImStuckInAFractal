@@ -105,8 +105,9 @@ func trace_clear(a: Vector3, b: Vector3, margin: float) -> bool:
 
 
 func world_info() -> Dictionary:
-	var p := _params()
-	return {"type": "Mandelbox", "scale": p.box_scale, "fold_limit": p.fold_limit,
+	var p := _params().active_shape()
+	var shape_name: String = ["Mandelbox", "KIFS", "Kleinian", "Mandelbulb"][clampi(p.shape, 0, 3)]
+	return {"type": shape_name, "scale": p.box_scale, "fold_limit": p.fold_limit,
 		"min_radius": p.min_radius, "fixed_radius": p.fixed_radius,
 		"iterations": DistanceEstimator.ITERATIONS, "surface_hausdorff_dimension_estimate": 2.8}
 
@@ -119,7 +120,7 @@ func set_palette(name: String) -> Dictionary:
 	var i := FractalParams.COLOR_MODE_NAMES.find(name)
 	if i < 0:
 		return {"ok": false, "message": "Unknown palette '%s'." % name}
-	game.table().set_default(&"color_mode", FractalParams.COLOR_MODE_IDS[i])
+	game.look_table().set_default(&"color_mode", FractalParams.COLOR_MODE_IDS[i])
 	return {"ok": true}
 
 

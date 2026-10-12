@@ -417,9 +417,20 @@ func _project(main: Main, args: Dictionary) -> Dictionary:
 
 # ------------------------------------------------------------- shape / views
 
+## The knobs a set_shape can reach: the active shape's table, then the look
+## table (light, material, colour).
+func _shape_tables(main: Main) -> Array[AttributeTable]:
+	return [main.table(), main.look_table()]
+
+
 func _get_shape(main: Main) -> Dictionary:
-	var table := main.table()
 	var out: Array = []
+	for table in _shape_tables(main):
+		_list_rows(table, out)
+	return {"params": out}
+
+
+func _list_rows(table: AttributeTable, out: Array) -> void:
 	for s: AttributeSpec in table.specs:
 		var row := {
 			"id": String(s.id), "label": s.label, "group": s.group,
@@ -434,25 +445,28 @@ func _get_shape(main: Main) -> Dictionary:
 			for i in s.enum_values.size():
 				row["options"][str(s.enum_values[i])] = s.enum_labels[i]
 		out.append(row)
-	return {"params": out}
 
 
 func _set_shape(main: Main, args: Dictionary) -> Dictionary:
 	var values: Variant = args.get("values", {})
 	if not values is Dictionary or values.is_empty():
 		return {"error": "set_shape needs a non-empty values object"}
-	var table := main.table()
+	var tables := _shape_tables(main)
+	var owner := {}
 	var unknown: Array = []
 	for id in values:
-		if table.has(StringName(id)):
-			table.set_default(StringName(id), values[id])
+		for table: AttributeTable in tables:
+			if table.has(StringName(id)):
+				owner[id] = table
+				break
+		if owner.has(id):
+			(owner[id] as AttributeTable).set_default(StringName(id), values[id])
 		else:
 			unknown.append(id)
 	main._resolve_once()
 	var applied := {}
-	for id in values:
-		if table.has(StringName(id)):
-			applied[id] = table.get_default(StringName(id))
+	for id in owner:
+		applied[id] = (owner[id] as AttributeTable).get_default(StringName(id))
 	var out := {"applied": applied}
 	if not unknown.is_empty():
 		out["unknown"] = unknown
