@@ -35,7 +35,7 @@ export function loadConfig(env = process.env) {
     // such as Claude on the pilot loop). Defaults to openai when its key is set.
     voiceAgent: (env.VOICE_AGENT || (env.OPENAI_API_KEY ? "openai" : "relay")).toLowerCase(),
     openai: {
-      apiKey: env.OPENAI_API_KEY || "",
+      apiKey: (env.OPENAI_API_KEY || "").trim(),
       url: env.OPENAI_REALTIME_URL || "wss://api.openai.com/v1/realtime",
       model: env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1",
       voice: env.OPENAI_VOICE || "cedar",
@@ -54,6 +54,14 @@ export function formatPhoneNumber(n) {
   return m ? `+1 (${m[1]}) ${m[2]}-${m[3]}` : n || "";
 }
 
+// Report only the offending character's code and position, never the secret.
+export function openaiKeyProblem(key) {
+  const index = key.search(/[^A-Za-z0-9_-]/);
+  if (index < 0) return "";
+  const code = key.codePointAt(index).toString(16).toUpperCase().padStart(4, "0");
+  return `OPENAI_API_KEY contains an invalid character (U+${code}) at position ${index + 1}; replace the phone-server variable with the complete key on one line and deploy the change`;
+}
+
 // Problems that make the server unusable for real calls; logged at boot.
 export function configProblems(config) {
   const out = [];
@@ -62,6 +70,7 @@ export function configProblems(config) {
   if (!config.gameLinkToken) out.push("GAME_LINK_TOKEN is not set: the game cannot link");
   if (config.allowedCallers.length === 0) out.push("ALLOWED_CALLERS is empty: every call is refused");
   if (config.voiceAgent === "openai" && !config.openai.apiKey) out.push("VOICE_AGENT=openai but OPENAI_API_KEY is not set");
+  if (config.voiceAgent === "openai" && openaiKeyProblem(config.openai.apiKey)) out.push(openaiKeyProblem(config.openai.apiKey));
   if (!["openai", "relay"].includes(config.voiceAgent)) out.push(`VOICE_AGENT must be openai or relay, not '${config.voiceAgent}'`);
   return out;
 }

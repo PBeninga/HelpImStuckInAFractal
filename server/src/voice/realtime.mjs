@@ -10,6 +10,7 @@
 
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
+import { openaiKeyProblem } from '../config.mjs';
 
 export class RealtimeSession extends EventEmitter {
   /**
@@ -40,6 +41,8 @@ export class RealtimeSession extends EventEmitter {
   }
 
   connect() {
+    const keyProblem = openaiKeyProblem(this.config.apiKey);
+    if (keyProblem) throw new Error(keyProblem);
     const url = `${this.config.url}?model=${encodeURIComponent(this.config.model)}`;
     this.ws = new this.WebSocketImpl(url, { headers: { Authorization: `Bearer ${this.config.apiKey}` } });
     this.ws.on('open', () => {
