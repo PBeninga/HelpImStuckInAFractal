@@ -1,6 +1,6 @@
 class_name EscapeAnimationPane
 extends ScrollContainer
-## Level-owned timing for the sky reveal and distance fog clearing.
+## Level-owned timing for the escape landscape and fractal dissolve.
 
 var controls := {}
 var _settings: GameplaySettings
@@ -16,10 +16,11 @@ func _init() -> void:
 	list.add_theme_constant_override("separation", 12)
 	add_child(list)
 	var description := Label.new()
-	description.text = "Cross the exit sphere to reveal the sky and clear the distance fog.\nBoth fades start together. Returning inside resets the effect."
+	description.text = "Cross the exit sphere to reveal the sky and grass, clear fog, and dissolve the fractal.\nFades start together. Look around freely; movement and controls stay locked until returning inside."
 	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	list.add_child(description)
-	for field in [[&"escape_sky_duration", "Skybox fade in"], [&"escape_fog_duration", "Distance fog fade out"]]:
+	for field in [[&"escape_sky_duration", "Skybox fade in"], [&"escape_fog_duration", "Distance fog fade out"],
+		[&"escape_ground_duration", "Grass fade in"], [&"escape_fractal_duration", "Fractal dither fade out"]]:
 		var key: StringName = field[0]
 		var row := HBoxContainer.new()
 		var label := Label.new()

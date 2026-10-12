@@ -134,7 +134,6 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 		# Made before the view connects its own handlers, so the ray has heard
 		# of a change before the view asks it where the dot goes.
 		_center_ray = CenterRay.new(params, camera)
-	_escaped = false
 	_escape_elapsed = 0.0
 	_params = params
 	_camera = camera
@@ -311,11 +310,16 @@ func restoring() -> bool:
 
 func _process(delta: float) -> void:
 	if _escaped and _params != null:
-		var duration := maxf(_params.gameplay.escape_sky_duration, _params.gameplay.escape_fog_duration)
+		var game := _params.gameplay
+		var duration := maxf(maxf(game.escape_sky_duration, game.escape_fog_duration),
+			maxf(game.escape_ground_duration, game.escape_fractal_duration))
 		if _escape_elapsed < duration:
 			_escape_elapsed = minf(_escape_elapsed + delta, duration)
 			_push_escape()
 			request_frame()
+		# Grass wind remains animated after the transitions have completed.
+		else:
+			request_frame(false)
 	if restoring() and _restore_stepped_on != Engine.get_process_frames():
 		_step_restore()
 		_push_shed()
@@ -341,8 +345,8 @@ func _step_restore() -> void:
 	_steps = lerpf(_from["steps"], _shed["steps"], t)
 
 
-func request_frame() -> void:
-	if _depth_scan != null:
+func request_frame(invalidate_depth := true) -> void:
+	if invalidate_depth and _depth_scan != null:
 		_depth_scan.invalidate()
 	if _viewport == null:
 		return  # setup() may run before _ready wires the SubViewport
@@ -618,6 +622,8 @@ func _push_escape() -> void:
 	_material.set_shader_parameter("exit_has_skybox", alpha > 0.0 and _params.gameplay.exit_skybox != null)
 	_material.set_shader_parameter("exit_sky_alpha", alpha)
 	_material.set_shader_parameter("escape_fog_clear", clear)
+	_material.set_shader_parameter("escape_ground_alpha", _escape_progress(_params.gameplay.escape_ground_duration))
+	_material.set_shader_parameter("escape_fractal_dissolve", _escape_progress(_params.gameplay.escape_fractal_duration))
 	_material.set_shader_parameter("fog_distance", _params.fog_distance if clear < 1.0 else 0.0)
 	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 and clear < 1.0 else 0.0)
 	_material.set_shader_parameter("fog_clear", 1.0 - (1.0 - _fog_clear) * (1.0 - clear))

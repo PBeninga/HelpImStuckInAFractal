@@ -7,6 +7,12 @@ extends Control
 
 const RING_RADIUS := 10.0
 
+var suppressed := false:
+	set(value):
+		suppressed = value
+		if _params != null:
+			_on_changed()
+
 var _params: FractalParams
 var _camera: CameraState
 var _view: FractalView
@@ -30,7 +36,7 @@ func setup(params: FractalParams, camera: CameraState, view: FractalView, shapes
 
 
 func _on_changed() -> void:
-	visible = _shape().julia_enabled()
+	visible = not suppressed and _shape().julia_enabled()
 	queue_redraw()
 
 
@@ -52,7 +58,7 @@ func screen_point() -> Variant:
 ## Start a drag if `mouse` is on the ring and Julia is on. Captures the point's
 ## camera-space depth so it slides in the facing plane.
 func begin_drag(mouse: Vector2) -> bool:
-	if not _shape().julia_enabled():
+	if suppressed or not _shape().julia_enabled():
 		return false
 	var sp: Variant = screen_point()
 	if sp == null or (sp as Vector2).distance_to(mouse) > RING_RADIUS * 2.0:

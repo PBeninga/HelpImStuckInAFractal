@@ -71,6 +71,8 @@ precision highp int;
 const float PI = 3.141592653589793;
 in vec2 UV;
 out vec4 COLOR;
+uniform float TIME;
+#define FRAGCOORD gl_FragCoord
 uniform float test_surface;
 uniform float test_stride;
 uniform int test_output;
@@ -112,7 +114,7 @@ try {
     out vec2 UV;
     void main() {
         vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-        UV = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+        UV = vec2(p.x, 1.0 - p.y); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
     }`));
     gl.attachShader(program, compile(gl.FRAGMENT_SHADER, SHADER));
     gl.linkProgram(program);
@@ -230,6 +232,44 @@ try {
     p = draw({escape_fog_clear:1, fog_distance:0});
     check(p.slice(0,3).every((v,i)=>Math.abs(v-marchedAlmostClear[i]) <= 1),
         'marched misses have no scattering colour jump when fog finishes clearing');
+    // Escape dissolve runs before the expensive fractal work. Count real
+    // scene queries over one ordered-dither tile, not merely shader uniforms.
+    Object.entries({eye:[0,0,0],local_eye:[0,0,0],frame_x:[1,0,0],cam_forward:[1,0,0],
+        shape_count:1,box_half:[10],exit_radius:100,test_surface:2,test_stride:0.25,
+        scatter_density:0,fog_distance:0,fog_dist:0,escape_fog_clear:1,
+        escape_ground_alpha:0,coarse_steps:96,fine_steps:32,test_output:1}).forEach(([k,v])=>set(k,v));
+    function tile(values) {
+        Object.entries(values).forEach(([k,v])=>set(k,v));
+        gl.viewport(0,0,4,4); gl.drawArrays(gl.TRIANGLES,0,3);
+        const px=new Uint8Array(64); gl.readPixels(0,0,4,4,gl.RGBA,gl.UNSIGNED_BYTE,px);
+        if(gl.getError()!==gl.NO_ERROR) throw new Error('tile draw failed');
+        return px;
+    }
+    let previous=new Set();
+    for(const [fade,want] of [[0,0],[0.25,4],[0.5,8],[0.75,12],[1,16]]) {
+        const pixels=tile({escape_fractal_dissolve:fade});
+        const gone=new Set();
+        for(let i=0;i<16;i++) if(pixels[i*4]===0 && pixels[i*4+2]===0) gone.add(i);
+        check(gone.size===want, `dissolve ${fade} skips marching and shading on ${want}/16 pixels`);
+        check([...previous].every(i=>gone.has(i)), 'dissolve coverage only increases');
+        previous=gone;
+    }
+    const scanBefore=tile({depth_scan:1,test_output:0,escape_fractal_dissolve:0,escape_ground_alpha:0});
+    const scanAfter=tile({escape_fractal_dissolve:1,escape_ground_alpha:1});
+    check(scanBefore.every((v,i)=>v===scanAfter[i]), 'escape effects leave geometry depth scans unchanged');
+    gl.viewport(0,0,1,1);
+    const skyOnly=draw({depth_scan:0,shape_count:0,escape_fractal_dissolve:1,escape_ground_alpha:0,
+        cam_forward:[0,1,1],TIME:0});
+    p=draw({escape_ground_alpha:1});
+    check(p.every((v,i)=>v===skyOnly[i]), 'grass never covers the upward sky');
+    const groundOff=tile({cam_forward:[0,1,-1],tan_half_fov:0.364,aspect:1,escape_ground_alpha:0});
+    const groundOn=tile({escape_ground_alpha:1});
+    check(groundOn.some((v,i)=>i%4!==3 && v!==groundOff[i]), 'downward rays render actual grass beneath the eye');
+    const groundHalf=tile({escape_ground_alpha:0.5});
+    check(groundHalf.every((v,i)=>Math.abs(v-(groundOn[i]+groundOff[i])*0.5)<=1),
+        'ground fade blends smoothly with the existing backdrop');
+    const windy=tile({escape_ground_alpha:1,TIME:1});
+    check(windy.some((v,i)=>i%4!==3 && v!==groundOn[i]), 'grass wind animates after escape');
     results.push(failures ? `${failures} FAILED` : 'ALL PASSED');
 } catch (e) { results.push('ERROR ' + e.stack); }
 document.body.textContent = results.join('\n');

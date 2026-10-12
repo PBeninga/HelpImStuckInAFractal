@@ -31,6 +31,8 @@ uniform float exit_radius = 20.0;
 uniform bool exit_has_skybox = false;
 uniform float exit_sky_alpha = 0.0;
 uniform float escape_fog_clear = 0.0;
+uniform float escape_ground_alpha = 0.0;
+uniform float escape_fractal_dissolve = 0.0;
 uniform sampler2D exit_skybox : source_color, filter_linear, repeat_enable;
 uniform vec3 cam_right;
 uniform vec3 cam_up;
@@ -625,6 +627,8 @@ vec4 encode_scan_depth(float distance, float status) {
 uniform float scan_y_offset = 0.0;
 uniform float scan_y_scale = 1.0;
 
+#include "res://src/fractal/escape_grass.gdshaderinc"
+
 void fragment() {
 	vec2 ray_uv = vec2(UV.x, scan_y_offset + UV.y * scan_y_scale);
 	vec2 ndc = (ray_uv - 0.5) * 2.0;
@@ -658,6 +662,18 @@ void fragment() {
 			acos(clamp(dir.z, -1.0, 1.0)) / PI);
 		bg = mix(bg, texture(exit_skybox, sky_uv).rgb, exit_sky_alpha);
 	}
+	// Both effects are presentation-only: collision/depth scans keep geometry.
+	bool dissolved = false;
+	if (!depth_scan) {
+		if (escape_ground_alpha > 0.0 && dir.z < -0.00001) {
+			bg = mix(bg, escape_grass_color(dir, cam_right, bg, TIME), escape_ground_alpha);
+		}
+		if (escape_fractal_dissolve >= 1.0) {
+			dissolved = true;
+		} else if (escape_fractal_dissolve > 0.0) {
+			dissolved = escape_fractal_dissolve >= escape_dither_threshold(FRAGCOORD.xy);
+		}
+	}
 	// A miss is infinitely far, so under fog the sky is the fog: far surfaces fade
 	// into it without a seam.
 	vec3 base_bg = bg;
@@ -688,7 +704,7 @@ void fragment() {
 	float t_start = 1e30;
 	float t_exit = -1.0;
 	for (int i = 0; i < MAX_SHAPES; i++) {
-		if (i >= shape_count) { break; }
+		if (dissolved || i >= shape_count) { break; }
 		vec2 tb = box_intersect(local_eye[i], local_dir(i, dir), box_half[i]) * shape_size[i];
 		if (tb.y >= max(tb.x, 0.0)) {
 			t_start = min(t_start, max(tb.x, 0.0));
@@ -708,7 +724,10 @@ void fragment() {
 	if (fog_dist > 0.0 && fog_clear <= 0.0) { scan_far = min(scan_far, fog_dist * near_dist); }
 	if (view_limit > 0.0) { scan_far = min(scan_far, view_limit); }
 	float scan_far_status = scan_far <= 0.0 ? 0.0 : (scan_far < sphere_end ? 3.0 : 2.0);
-	if (t_exit < 0.0 || t_start > t_exit) {
+	if (dissolved) {
+		// No fractal march, normals or shadows for pixels already dissolved.
+		COLOR = vec4(base_bg, 1.0);
+	} else if (t_exit < 0.0 || t_start > t_exit) {
 		COLOR = depth_scan ? encode_scan_depth(scan_far, scan_far_status) : vec4(sky, 1.0);
 	} else {
 		if (fog_dist > 0.0 && fog_clear <= 0.0) {

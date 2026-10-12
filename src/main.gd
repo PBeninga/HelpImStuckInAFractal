@@ -117,7 +117,7 @@ func _ready() -> void:
 	# The sensitivity is the player's, not the view's: Settings owns it.
 	params.mouse_sensitivity = Settings.mouse_sensitivity
 	_view_pane.set_sensitivity(Settings.mouse_sensitivity)
-	view.show_probe = Settings.show_center_ray
+	view.show_probe = Settings.show_center_ray and not _escape_active
 	Settings.changed.connect(_on_settings_changed)
 	params.changed.connect(_sync_sensitivity_to_settings)
 
@@ -364,7 +364,8 @@ func set_docked(on: bool) -> void:
 	_docked = on
 	if on:
 		_console.dock(_dock_rect())
-		_console.open()
+		if not _escape_active:
+			_console.open()
 	else:
 		var was_open := _console.visible
 		_console.undock()
@@ -428,7 +429,7 @@ func _layout_view() -> void:
 
 
 func _reopen_console() -> void:
-	if not _docked and not _console.visible:
+	if not _escape_active and not _docked and not _console.visible:
 		_console.open()
 
 
@@ -475,6 +476,8 @@ func _build_workspace_files() -> void:
 
 func _process(_delta: float) -> void:
 	_resolve_once()
+	if _escape_active:
+		governor.mark_changed()
 	# The fly camera's zoom limit reaches the Movement pane the way the shed
 	# level does, polled since it can change on any physics tick.
 	if _console != null:
@@ -609,9 +612,11 @@ func _on_escape_changed(escaped: bool) -> void:
 	_escape_active = escaped
 	fly.movement_locked = escaped
 	_axis_controller.set_process(not escaped)
+	_files.quick_save_enabled = not escaped
+	if _marker:
+		_marker.suppressed = escaped
 	if escaped:
-		_escape_ui = {"console": _console.visible, "chat": _chat.visible,
-			"marker": _marker.visible if _marker else false}
+		_escape_ui = {"console": _console.visible, "chat": _chat.visible}
 		_drop_side_focus()
 		_chat.input.release_focus()
 		_console.hide_console()
@@ -621,14 +626,11 @@ func _on_escape_changed(escaped: bool) -> void:
 		view.show_probe = false
 		if _marker:
 			_marker.end_drag()
-			_marker.hide()
 		_free_requested = false
 	else:
 		_chat.visible = _escape_ui.get("chat", true)
 		_chat.process_mode = Node.PROCESS_MODE_INHERIT
-		if _marker:
-			_marker.visible = _escape_ui.get("marker", true)
-		view.show_probe = Settings.show_center_ray
+		view.show_probe = Settings.show_center_ray and not _escape_active
 		if _escape_ui.get("console", false):
 			_console.open()
 	_apply_mode()

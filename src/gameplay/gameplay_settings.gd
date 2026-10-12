@@ -5,12 +5,14 @@ extends Resource
 ## Spawn and escape detection use doubles, never the camera's Vector3 mirror.
 
 const DEFAULT_SKYBOX := preload("res://Assets/sky_82_2k.png")
-const DURATION_KEYS := [&"escape_sky_duration", &"escape_fog_duration"]
+const DURATION_KEYS := [&"escape_sky_duration", &"escape_fog_duration",
+	&"escape_ground_duration", &"escape_fractal_duration"]
 
 const NUMERIC_KEYS := [&"exit_radius", &"spawn_x", &"spawn_y", &"spawn_z",
 	&"move_speed", &"shift_multiplier", &"distance_power", &"near_cap", &"max_distance_speed",
 	&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval",
-	&"escape_sky_duration", &"escape_fog_duration"]
+	&"escape_sky_duration", &"escape_fog_duration",
+	&"escape_ground_duration", &"escape_fractal_duration"]
 const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval"]
 
 @export var exit_radius := 20.0:
@@ -89,6 +91,16 @@ const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_sc
 	set(v):
 		if is_finite(v) and v >= 0.0 and v != escape_fog_duration:
 			escape_fog_duration = v
+			emit_changed()
+@export var escape_ground_duration := 3.0:
+	set(v):
+		if is_finite(v) and v >= 0.0 and v != escape_ground_duration:
+			escape_ground_duration = v
+			emit_changed()
+@export var escape_fractal_duration := 3.0:
+	set(v):
+		if is_finite(v) and v >= 0.0 and v != escape_fractal_duration:
+			escape_fractal_duration = v
 			emit_changed()
 @export var exit_skybox: Texture2D = DEFAULT_SKYBOX:
 	set(v):

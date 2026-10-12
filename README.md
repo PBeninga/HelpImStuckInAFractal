@@ -477,8 +477,13 @@ The View tab holds **Camera** mode (Fly / Orbit), **mouse sensitivity**, the
 
 **Save level…** / **Load level…** live here, with the current file and status.
 **Exit Radius** sizes the sphere centered at world origin (default 20). Its
-surface bounds the rendered scene; crossing outside shows **You escaped!**.
-Returning inside clears the message. `params.gameplay.exit_skybox` accepts an
+surface bounds the rendered scene. Crossing outside starts the escape animation:
+the sky and wind-blown grass fade in beneath the player, distance fog clears,
+and the fractal dissolves with ordered dithering. **Escape Animation** sets each
+transition’s duration independently (default 3 seconds; 0 is instant). Controls
+hide and movement locks while mouse look remains available, including after
+the fades finish. Escape releases the mouse and clicking the view recaptures it.
+Returning inside, including a return to spawn, resets the effects and controls. `params.gameplay.exit_skybox` accepts an
 optional equirectangular `Texture2D` for the sphere's background; no sky picker
 is included yet. With no texture it uses the current colour mode's background.
 
