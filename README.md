@@ -352,7 +352,11 @@ no (reason)** line head the tab, over a list with one entry per shape in the
 scene. Each entry is a header line — a **▾ / ▸** arrow that expands or
 collapses its panel, the shape's editable name, and a **✕** that removes it
 (the last shape cannot be removed) — above that shape's full control panel.
-Clicking a header makes the shape the **active** one (its name turns blue):
+Only one panel can be expanded at a time. The **Light** and **Material** tabs
+edit that expanded shape and show its list number at the top. Closing every
+panel hides both editors. Inactive shapes show their defaults in binding
+readouts and palette previews; only the gameplay-active shape is resolved live.
+Clicking a header expands the shape and makes it the **active** one (its name turns blue):
 the self-similarity line and the Julia marker follow it, and **Add shape**
 makes a copy of its knobs (bindings aside) at a tenth of its size, centred in
 front of the camera, and selects it. The self-similarity line says whether the
@@ -576,7 +580,7 @@ ordinary scales.
 ## The level save
 
 There is one save file — the **level** — a small JSON file tagged
-`"kind": "level"`, **version 4**. (`"kind": "sequence"` is reserved for the
+`"kind": "level"`, **version 5**. (`"kind": "sequence"` is reserved for the
 level-sequence editor to come; a sequence file handed to the level loader is
 refused by name, and so is an old stand-alone keymap file.)
 
@@ -584,10 +588,10 @@ refused by name, and so is an old stand-alone keymap file.)
   `defaults` map (every per-shape catalogue id to its value, the fractal and
   the Placement ids among them) and a `bindings` map (only active bindings,
   each a source / gain / waveform / period). A file from before the fractal
-  could be chosen has no `shape` id and loads as a Mandelbox.
+  could be chosen has no `shape` id and loads as a Mandelbox. Each entry also
+  carries its own `look` table (`defaults` and `bindings`) for light, colour,
+  material and palette settings.
 - **`active`** — the index of the console's selected shape.
-- **`look`** — the scene's light, colour, material and palette knobs, the same
-  `defaults` / `bindings` shape as one shape entry.
 - **`axes`** — the keymap: a list of `{id, label, speed, positive, negative,
   value}` entries. Loading a level replaces the keymap in hand with these,
   rebinding the input actions.
@@ -604,8 +608,9 @@ refused by name, and so is an old stand-alone keymap file.)
 - **`noise`** — the noise graph, when one is wired (additive; see below).
 
 Loading skips anything it does not recognise or cannot read, with a warning, and
-leaves values a file does not mention as they are. Older levels still load: a
-**version-3** file (one `shape` table over the whole catalogue) loads as a
+leaves values a file does not mention as they are. Older levels still load: a **version-4** file
+copies its shared `look` table into each shape, preserving defaults and bindings
+as independent settings. A **version-3** file (one `shape` table over the whole catalogue) loads as a
 one-shape scene at the identity placement, its light and material rows going
 to the look table; a **version-2** file (whose `axes` is a dict of values by
 id) applies those values onto the axes in hand and leaves the keys alone; a
@@ -613,7 +618,7 @@ id) applies those values onto the axes in hand and leaves the keys alone; a
 (`scale`→`box_scale`, `inner_radius`→`min_radius`,
 `outer_radius`→`fixed_radius`, `julia_enabled`→`julia_all`,
 `julia_point`→the three Constants); all without a warning. Saving always
-writes version 4. An exported build cannot write into the
+writes version 5. An exported build cannot write into the
 project, so it saves to `user://saves/` instead.
 
 **Play Game** opens the level named in `last_saved.txt` in the project root.

@@ -30,7 +30,7 @@ func _chord(keycode: Key) -> InputEventKey:
 func run() -> void:
 	var shapes := ShapeList.new()
 	var table := shapes.table(0)
-	var look := AttributeTable.new(ShapeCatalogue.scene_specs())
+	var look := shapes.look_table(0)
 	var km := Keymap.new()
 	km.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
@@ -74,7 +74,7 @@ func run() -> void:
 	check(console.view_pane() != null and console.view_pane().get_parent() == console.tabs(), "which is the View pane")
 	check(console.palette_window() != null and material.is_ancestor_of(console.palette_window()),
 		"the palette window heads the Material tab's list")
-	check(console.palette().table() == look, "and edits the scene's look table")
+	check(console.palette().table() == look, "and edits the expanded shape's look table")
 
 	# --- a COLOR row's value control is a ColorPickerButton; changing it writes the table ---
 	var lc_row := light.row(&"light_color")

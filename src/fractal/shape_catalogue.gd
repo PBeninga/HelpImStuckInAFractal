@@ -5,15 +5,16 @@ extends RefCounted
 ## (which shape, and the fourth coordinate w), the Mandelbox's Box, Julia and
 ## Iteration rotation groups (MandelboxShape), KIFS and KIFS rotation
 ## (KifsShape), Kleinian (KleinianShape), Mandelbulb (MandelbulbShape), the
-## precision, then the rows the whole SCENE shares — the colour mode and the
+## precision, then the light and material rows — the colour mode and the
 ## Palette mode's controls, the lamp and its scattering, the surface's
 ## colour/roughness/specular, the texture and bump strengths, and the
 ## palette's twelve numbers. A shape's own rows show only while that shape is
 ## drawn.
 ##
 ## The scene is a list of shapes, each with its own table over shape_specs()
-## (Placement + SHAPE_GROUPS: the ShapeParams fields), and one look table over
-## scene_specs() (LIGHT_GROUPS + MATERIAL_GROUPS: the FractalParams fields).
+## (Placement + SHAPE_GROUPS: the ShapeParams fields), and its own look table over
+## scene_specs() (LIGHT_GROUPS + MATERIAL_GROUPS). FractalParams holds the
+## gameplay-active shape's resolved look for the existing scalar shader uniforms.
 ## The console shows one collapsible shape panel per shape on its Shape tab,
 ## LIGHT_GROUPS on its Light tab (Light, Scattering, Picture) and
 ## MATERIAL_GROUPS on its Material tab (Colour, Surface, Texture, Palette).
@@ -44,8 +45,7 @@ const PALETTE_VECTOR_EFFECTS := [
 ]
 
 
-## Which groups the console's tabs show. SHAPE_GROUPS are per shape; the rest
-## are the scene's.
+## Which groups the console's tabs show. Every group is authored per shape.
 const SHAPE_GROUPS: Array[String] = ["Placement", "Fractal", "Box", "Julia", "Iteration rotation",
 	"KIFS", "KIFS rotation", "Kleinian", "Mandelbulb", "Render"]
 const LIGHT_GROUPS: Array[String] = ["Light", "Scattering", "Picture"]

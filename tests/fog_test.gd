@@ -4,7 +4,8 @@ extends "res://tests/test_case.gd"
 
 
 func run() -> void:
-	var look := AttributeTable.new(ShapeCatalogue.scene_specs())
+	var shapes := ShapeList.new()
+	var look := shapes.look_table(0)
 	for id in [&"fog_distance", &"fog_start", &"fog_tint"]:
 		check(look.has(id), "the scene has '%s'" % id)
 	if not look.has(&"fog_distance"):
@@ -14,7 +15,6 @@ func run() -> void:
 	check(float(look.spec(&"fog_start").sanitize(1.0)) < 1.0,
 		"fade start cannot collapse the fade interval")
 
-	var shapes := ShapeList.new()
 	var km := Keymap.new()
 	var clock := Clock.new()
 	root.add_child(clock)

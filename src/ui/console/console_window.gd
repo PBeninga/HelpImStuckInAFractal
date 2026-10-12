@@ -10,7 +10,7 @@ extends Window
 ## the lamp, its scattering and the picture's exposure and saturation; the
 ## Material tab is Fractacular's Colour window (the cosine palette's sliders,
 ## curves and strip) above the Colour, Surface, Texture and Palette rows, in one
-## scrolling list (the Light and Material tabs edit the scene's one look
+## scrolling list (the Light and Material tabs edit the expanded shape's look
 ## table); Gameplay holds Save / Load, spawn and flight tuning; View holds camera
 ## mode, the mouse sensitivity, the Noise editor button, the Renderer options
 ## and Back to Menu. Stacked, the tabs get the full width, so the sliders have
@@ -90,8 +90,8 @@ var _docked := false
 var _dock_rect := Rect2i()
 
 
-## `shapes` is the scene's list of per-shape tables, `look` the one table of
-## light and material knobs they share. `placement_source` returns the defaults
+## `shapes` owns geometry and look tables per entry. `_look` is retained for
+## compatibility with older callers; both look tabs use the expanded entry. `placement_source` returns the defaults
 ## (id -> value) for a shape the Add shape button creates; Main supplies one
 ## that places it in front of the camera.
 func setup(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable(), placement_source: Callable = Callable()) -> void:

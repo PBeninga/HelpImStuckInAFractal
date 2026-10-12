@@ -16,6 +16,7 @@ const DEFAULT_NEXT_LEVEL_DISTANCE := 20.0
 
 signal changed
 signal stage_changed(index: int)
+signal next_level_distance_changed(index: int)
 signal relabelled(index: int)
 signal entry_changed(index: int, id: StringName)
 
@@ -229,9 +230,15 @@ func set_stage(i: int, distance: float, commands: Array) -> bool:
 		return false
 	if validate_commands(table(i), commands) != "":
 		return false
+	var commands_changed := Array(_entries[i].commands) != commands
+	var distance_changed := _entries[i].next_level_distance != distance
 	_entries[i].next_level_distance = distance
 	_entries[i].commands.assign(commands)
-	stage_changed.emit(i)
+	if commands_changed:
+		stage_changed.emit(i)
+	elif distance_changed:
+		# Distance edits preserve the active shape and its runtime geometry.
+		next_level_distance_changed.emit(i)
 	return true
 
 

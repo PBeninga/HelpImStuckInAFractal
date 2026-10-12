@@ -9,7 +9,7 @@ extends VBoxContainer
 ## console's "active" shape (the Julia marker follows it, a new shape is
 ## placed relative to it, the self-similarity line is its). The pane rebuilds
 ## its entries whenever the ShapeList's structure changes (a load, an add, a
-## remove), keeping each entry's expanded state by index; a relabel only
+## remove), keeping the expanded and selected entries by table identity; a relabel only
 ## updates the one label.
 
 ## The selected (active) shape changed.
@@ -54,6 +54,7 @@ func setup(shapes: ShapeList, group_tooltips: Dictionary, placement_source: Call
 	_shapes.changed.connect(_rebuild)
 	_shapes.relabelled.connect(_on_relabelled)
 	_shapes.stage_changed.connect(_refresh_stage_distances)
+	_shapes.next_level_distance_changed.connect(_refresh_stage_distances)
 	_rebuild()
 
 

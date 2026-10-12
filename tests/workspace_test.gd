@@ -32,7 +32,7 @@ func run() -> void:
 	table.set_default(&"box_scale", -2.29)
 	table.set_default(&"fold_limit", 0.72)
 	table.set_default(&"julia_all", true)
-	var look := _look()
+	var look := shapes.look_table(0)
 	look.set_default(&"color_mode", 15)
 	var bind := Binding.new()
 	bind.source = &"a"; bind.gain = 0.5; bind.waveform = Binding.Waveform.SINE; bind.period = 3.0
@@ -84,13 +84,13 @@ func run() -> void:
 	check_approx(t2.get_default(&"box_scale"), -2.29, "box_scale default")
 	check_approx(t2.get_default(&"fold_limit"), 0.72, "fold_limit default")
 	check_eq(t2.get_default(&"julia_all"), true, "julia_all default")
-	check_eq(l2.get_default(&"color_mode"), 15, "color_mode default, in the look table")
+	check_eq(s2.look_table(0).get_default(&"color_mode"), 15, "color_mode default, in shape 1's look table")
 	var b2 := t2.binding(&"box_scale")
 	check(b2 != null and b2.source == &"a", "the binding's source restores")
 	check_approx(b2.gain, 0.5, "the binding's gain")
 	check_eq(b2.waveform, Binding.Waveform.SINE, "the binding's waveform")
 	check_approx(b2.period, 3.0, "the binding's period")
-	check(l2.binding(&"light_yaw").source == &"time", "the look's binding restores")
+	check(s2.look_table(0).binding(&"light_yaw").source == &"time", "the shape's look binding restores")
 	# the keymap: its axes, labels, speeds, values and keys all travel with the level
 	check_approx(k2.axes().value(&"a"), 2.5, "the axis value restores")
 	check(k2.axes().has(&"turn"), "the second axis is restored")
@@ -116,16 +116,16 @@ func run() -> void:
 	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TMP))
 	check_eq(int(data["version"]), Workspace.VERSION, "the file carries version 4")
 	check_eq(data["kind"], "level", "and is tagged as a level")
-	check(data.has("shapes") and data.has("active") and data.has("look") and data.has("axes") and data.has("fractal") and data.has("camera"),
-		"it has the shapes / active / look / axes / fractal / camera sections")
+	check(data.has("shapes") and data.has("active") and data.has("axes") and data.has("fractal") and data.has("camera"),
+		"it has the shapes / active / axes / fractal / camera sections")
 	check(not data.has("shape"), "and no version-3 'shape' section")
 	check(data["axes"] is Array, "axes is a list of entries")
 	check_eq(data["fractal"]["camera_mode"], "orbit", "camera mode is saved by name")
 	check(data["shapes"][0]["bindings"].has("box_scale"), "only active bindings are written")
 	check_eq(data["shapes"][1]["label"], "Inner", "each entry carries its label")
 	check(data["shapes"][1]["defaults"].has("pos_x"), "and its placement among the defaults")
-	check(not data["shapes"][0]["defaults"].has("color_mode"), "the look is not repeated per shape")
-	check(data["look"]["defaults"].has("color_mode") and data["look"]["bindings"].has("light_yaw"), "it is in the look section")
+	check(not data.has("look"), "no shared look is saved")
+	check(data["shapes"][0]["look"]["defaults"].has("color_mode") and data["shapes"][0]["look"]["bindings"].has("light_yaw"), "look defaults and bindings are saved per shape")
 
 	# --- kind_of classifies each save family ---
 	check_eq(Workspace.kind_of(data), "level", "a v4 save is a level")

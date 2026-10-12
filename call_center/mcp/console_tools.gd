@@ -38,9 +38,9 @@ func inspect(args: Dictionary) -> Dictionary:
 				shapes.append({"index": i, "label": main.shapes().label(i)})
 			data = {"sections": SECTIONS, "actions": ACTIONS, "shapes": shapes, "selected_shape": main.params.active, "active": main.params.active, "shape_run": main.shape_run.briefing() if main.shape_run != null else {}, "paused": main.get_tree().paused}
 		"shape", "look":
-			if section == "shape" and (index < 0 or index >= main.shapes().count()):
+			if index < 0 or index >= main.shapes().count():
 				return _fail("Shape index is out of range.")
-			var table: AttributeTable = main.shapes().table(index) if section == "shape" else main.look_table()
+			var table: AttributeTable = main.shapes().table(index) if section == "shape" else main.shapes().look_table(index)
 			data = table.to_dict()
 			data["attributes"] = _attributes(table)
 		"view":
@@ -92,7 +92,7 @@ func edit(args: Dictionary) -> Dictionary:
 	match section:
 		"shape", "look":
 			var index := int(args.get("shape_index", main.params.active))
-			if section == "shape" and (index < 0 or index >= main.shapes().count()):
+			if index < 0 or index >= main.shapes().count():
 				return _fail("Shape index is out of range.")
 			for key in values:
 				if key not in ["defaults", "bindings"] or not values[key] is Dictionary:
@@ -100,7 +100,7 @@ func edit(args: Dictionary) -> Dictionary:
 			for binding in values.get("bindings", {}).values():
 				if not binding is Dictionary:
 					return _fail("Each binding must be an object.")
-			var table: AttributeTable = main.shapes().table(index) if section == "shape" else main.look_table()
+			var table: AttributeTable = main.shapes().table(index) if section == "shape" else main.shapes().look_table(index)
 			for key in values.get("defaults", {}):
 				if not table.has(StringName(key)):
 					return _fail("Unknown attribute: " + str(key))
@@ -188,7 +188,7 @@ func act(args: Dictionary) -> Dictionary:
 			main._resolve_once()
 			return bridge._find_nearest_surface(main)
 		"reset_renderer": main.view_pane().renderer.reset_defaults()
-		"reset_palette": main.console().palette().reset()
+		"reset_palette": Palette.new(main.look_table()).reset()
 		"reset_axes": main.keymap().reset_to_default()
 		"toggle_fullscreen": main.toggle_fullscreen()
 		"reset_window": main.reset_window()
