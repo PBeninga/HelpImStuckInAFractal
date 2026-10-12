@@ -21,6 +21,10 @@ shader_type canvas_item;
 // numbers a fold sees are O(1) whatever the shape's size or distance from the
 // origin. Forming eye + dir · t in world space and subtracting the shape's
 // position here would lose a nested shape to float32 cancellation.
+//
+// Past the 32-bit floor the shape the camera is nearest marches perturbed
+// (perturbation.gdshaderinc), in its own frame; with pert_iters 0 every path is
+// exactly the direct one.
 
 const int MAX_SHAPES = 8;
 
@@ -374,6 +378,17 @@ vec4 mb_constant(int s, vec4 z0) {
 		(all || julia_3[s] != 0) ? c_3[s] : z0.w);
 }
 
+// Iterations first..iters-1 of shape s's Mandelbox orbit: the direct de() runs
+// them all from 0 (exactly the loop it always ran), the perturbed de_pert() from
+// its handoff.
+void mb_orbit(int s, inout vec4 z, inout float dz, vec4 c, int first, int iters) {
+	bool rotating = mb_rotating(s);
+	for (int i = first; i < 32; i++) {
+		if (i >= iters) { break; }
+		mb_step(s, z, dz, c, rotating, i);
+	}
+}
+
 #include "res://src/fractal/kifs.gdshaderinc"
 #include "res://src/fractal/kleinian.gdshaderinc"
 #include "res://src/fractal/mandelbulb.gdshaderinc"
@@ -397,13 +412,11 @@ float de(int s, vec3 p, int iters) {
 	vec4 c = mb_constant(s, z0);
 	vec4 z = z0;
 	float dz = 1.0;
-	bool rotating = mb_rotating(s);
-	for (int i = 0; i < 32; i++) {
-		if (i >= iters) { break; }
-		mb_step(s, z, dz, c, rotating, i);
-	}
+	mb_orbit(s, z, dz, c, 0, iters);
 	return length(z) / abs(dz) + noise_displace(p);
 }
+
+#include "res://src/fractal/perturbation.gdshaderinc"
 
 // The scene distance at a world offset `off` from the eye, in world units:
 // the smallest shape distance, each evaluated in its own frame and scaled back
@@ -420,7 +433,7 @@ float de_scene(vec3 off, bool coarse, out int which) {
 		float bound = cube_dist(q, box_half[i]) * shape_size[i];
 		if (bound >= best) { continue; }
 		int iters = coarse ? clamp(coarse_iters[i], 16, 32) : 32;
-		float d = de(i, q, iters) * shape_size[i];
+		float d = (pert_on(i) ? de_pert(i, pert_offset(i, off), iters) : de(i, q, iters)) * shape_size[i];
 		if (d < best) { best = d; which = i; }
 	}
 	return best;
@@ -450,6 +463,14 @@ vec3 calc_normal(int s, vec3 v, float delta) {
 		de(s, v + e.yyx, 32) - de(s, v - e.yyx, 32)));
 }
 
+// The true surface normal of shape s at local point v, a world offset `off`
+// from the eye: calc_normal(s, v, delta), or for the perturbed shape the
+// perturbed estimate's (v is then too coarse to difference).
+vec3 true_normal(int s, vec3 v, vec3 off, float delta) {
+	if (pert_on(s)) { return calc_normal_pert(s, pert_offset(s, off), delta); }
+	return calc_normal(s, v, delta);
+}
+
 // The Ice Fractal normal: field at the half-scale base point h = v/2, offset
 // samples at the full-scale point + 0.01 (local units). Not a true gradient,
 // by design.
@@ -461,6 +482,7 @@ vec3 calc_nf(int s, vec3 v, vec3 h) {
 		field(s, v + vec3(0.0, 0.0, 0.01)) - lw) / 0.01;
 	return normalize(g);
 }
+
 
 // Six-segment rainbow ramp: red->yellow->green->cyan->blue->magenta->red.
 vec3 hue(float q) {
@@ -669,16 +691,16 @@ void fragment() {
 					if (nf_weight >= 1.0) {
 						n = calc_nf(s, v, h);
 					} else if (nf_weight <= 0.0) {
-						n = calc_normal(s, v, delta);
+						n = true_normal(s, v, dir * total, delta);
 					} else {
 						vec3 nf = calc_nf(s, v, h);
-						vec3 m = mix(calc_normal(s, v, delta), nf, nf_weight);
+						vec3 m = mix(true_normal(s, v, dir * total, delta), nf, nf_weight);
 						// The two can point nearly opposite ways (NF is not a gradient);
 						// a blend that cancels to nothing keeps NF rather than a NaN.
 						n = dot(m, m) > 1e-12 ? normalize(m) : nf;
 					}
 				} else {
-					n = calc_normal(s, v, delta);
+					n = true_normal(s, v, dir * total, delta);
 				}
 
 				// Bump: tilt the normal by the across-surface part of noise_bump's
