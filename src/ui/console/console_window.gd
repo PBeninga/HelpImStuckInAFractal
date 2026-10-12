@@ -1,7 +1,7 @@
 class_name ConsoleWindow
 extends Window
 ## The console ("Fractacular embedded") for the scene of shapes being flown
-## through in the main window: four tabs stacked above the Movement pane in a
+## through in the main window: five tabs stacked above the Movement pane in a
 ## VSplit. The Shape tab is the ShapeListPane: Add shape and a read-only line
 ## saying whether the selected shape is self-similar
 ## (ShapeCatalogue.self_similarity, fed by Main) over one collapsible panel per
@@ -11,7 +11,7 @@ extends Window
 ## Material tab is Fractacular's Colour window (the cosine palette's sliders,
 ## curves and strip) above the Colour, Surface, Texture and Palette rows, in one
 ## scrolling list (the Light and Material tabs edit the scene's one look
-## table); the View tab is Save / Load view, the camera
+## table); Gameplay holds Save / Load, spawn and flight tuning; View holds camera
 ## mode, the mouse sensitivity, the Noise editor button, the Renderer options
 ## and Back to Menu. Stacked, the tabs get the full width, so the sliders have
 ## room (side by side, the panes' minimum widths overflowed the
@@ -54,8 +54,6 @@ signal unhandled_key(event: InputEventKey)
 signal game_focus_requested
 ## The zoom level changed (by a key or set_zoom()).
 signal zoom_changed(zoom: float)
-## The Movement pane's Reset camera button was pressed.
-signal reset_camera_requested
 
 ## In points (logical units); UiScale.px turns them into window pixels.
 const DEFAULT_SIZE := Vector2i(1000, 700)
@@ -80,6 +78,7 @@ var _palette_window: PaletteWindow
 var _self_similar: Label
 var _movement: MovementPane
 var _view: ViewPane
+var _gameplay: GameplayPane
 var _keymap: Keymap
 var _ctrl := CtrlTap.new()
 var _docked := false
@@ -147,12 +146,13 @@ func setup(shapes: ShapeList, look: AttributeTable, keymap: Keymap, clock: Clock
 
 	_view = ViewPane.new()
 	_tabs.add_child(_view)
+	_gameplay = GameplayPane.new()
+	_tabs.add_child(_gameplay)
 
 	_movement = MovementPane.new()
 	_movement.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_movement.size_flags_vertical = Control.SIZE_FILL
 	_movement.setup(keymap, clock, speed_source)
-	_movement.reset_camera_requested.connect(reset_camera_requested.emit)
 	split.add_child(_movement)
 
 	_ctrl.typing_guard = func() -> bool: return TextFocus.any([self])
@@ -194,12 +194,16 @@ func tabs() -> TabContainer:
 	return _tabs
 
 
-## The View tab: files, camera mode, noise editor, renderer, Back to Menu.
+## The View tab: camera mode, noise editor, renderer, Back to Menu.
 func view_pane() -> ViewPane:
 	return _view
 
 
-## Bring the Shape (0), Light (1), Material (2) or View (3) tab to the front.
+func gameplay_pane() -> GameplayPane:
+	return _gameplay
+
+
+## Bring Shape (0), Light (1), Material (2), View (3) or Gameplay (4) to the front.
 func show_tab(index: int) -> void:
 	_tabs.current_tab = clampi(index, 0, _tabs.get_tab_count() - 1)
 
@@ -230,11 +234,6 @@ func show_shed_level(level: int) -> void:
 ## Whether the fly camera is held at the zoom floor, shown in the Movement pane.
 func show_zoom_limit(on: bool) -> void:
 	_movement.show_zoom_limit(on)
-
-
-## The perturbed march's k, shown in the Movement pane while above 0.
-func show_deep(n: int) -> void:
-	_movement.show_deep(n)
 
 
 ## Feed one frame of resolved values — one Dictionary per shape, and the

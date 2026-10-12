@@ -38,7 +38,8 @@ binary.
 Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** tab
 (one collapsible panel per shape, with a row for every fractal and placement
 knob), the **Light** and **Material** tabs, with a row for every light and
-material knob, and the **View** tab (Save / Load level, the Camera mode, the
+material knob, the **Gameplay** tab (Save / Load level, exit sphere, spawn and movement),
+and the **View** tab (the Camera mode, the
 mouse sensitivity, the
 Noise editor button, the Window buttons, the Renderer options and Back to Menu), stacked above the
 **Movement** pane of virtual axes.
@@ -81,8 +82,7 @@ tab) is the player's preference, not part of a level: it is kept in
 change it.
 
 The **Renderer** options on the console's View tab tune how the open view is
-rendered, and are saved with the view. Their **Reset camera** button puts the
-camera back where the current save file has it (below).
+rendered, and are saved with the view.
 
 | Renderer option | what it does |
 |---|---|
@@ -129,62 +129,17 @@ off, so the picture there is exactly the site's.
   the fly speed and saves use the 64-bit ones (a saved level keeps the eye to
   within one 64-bit rounding step), and the camera's distance to the surface is
   measured from them, down to `1e-14`.
-- **Perturbation.** Near the surface the shader's 32-bit numbers cannot tell
-  one pixel's point from its neighbour's, so instead of iterating the pixel's
-  own point the work is split. On each camera or shape change (which is when a
-  frame is redrawn) the CPU runs the camera's own
-  orbit in 64-bit (`X_0` the eye, `X_1` its first iterate, `X_2` the next, and
-  so on). Each pixel starts a small offset `δ_0 = dir × t` away from the eye,
-  and the GPU follows only the offset, `δ_(i+1) = f(X_i + δ_i) − f(X_i)`, never
-  the pixel's own point. Each fold's difference is worked out from the gap
-  between the crease and `X` (crease minus `X`, computed in 64-bit, so it is
-  small exactly when precision matters). That way nothing subtracts two nearly
-  equal large numbers, which is where 32-bit loses its digits ("catastrophic
-  cancellation": the leading digits cancel and what is left is rounding noise).
-  Each ray hands off on its own: once its offset has grown (by the
-  magnification) to `0.1`, or the 20 recorded iterations run out, it adds the
-  offset back to `X_i` in 32 bits and finishes with the ordinary loop. A ray
-  that starts `0.1` or more from the eye hands off at once, so distant parts of
-  the picture are drawn exactly as before. It switches on within `10 ×` the
-  32-bit floor, where both marches agree, so there is no pop. In a scene of
-  several shapes only the one you are nearest is perturbed, its orbit worked
-  out in that shape's own frame (see **Shapes and nesting**); the others march
-  as usual. The Movement pane shows `deep 20` (the iterations recorded) while
-  it is on. The design is in
-  [the spec](docs/superpowers/specs/2026-10-09-perturbation-deep-zoom-design.md);
-  the technique is the one Mandelbrot zoomers use, see Wikipedia's
-  [perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation)
-  section.
-- **Zoom limit.** The shader's 32-bit floats near a coordinate `x` can only land
-  on a grid `ulp32(x) = 2^(floor(log2 x) − 23)` apart (about `1.2e-7` near the
-  box). Once the hit threshold is much finer than that grid, rays reach the
-  surface only by luck. With perturbation the grid that matters is the one at
-  the last handoff point: `floor_pert = ulp32(max |X_K|) / (50 × eps × λ_K)`,
-  the old 32-bit rule applied at `K = min(20, n)` iterations in (`n` is how many
-  the orbit has before it escapes; for the Kleinian, before it settles at a
-  fixed point), where the view is `λ_K` times bigger. That
-  is about `3e-11` to `3e-10` on the default box (the old floor was about
-  `1e-4`). The fly camera will not go closer than that. Shapes it does not
-  perturb (the octahedral fold, the KIFS polyfold, the Mandelbulb) keep the
-  32-bit floor `ulp32(largest |eye coordinate|) / (50 × eps)`; a higher Detail
-  (a finer threshold) or Julia mode's larger coordinates stop it further out. A
-  noise field's displacement is still evaluated at the 32-bit position (a
-  displaced surface is smooth below its displacement anyway). While a move is
-  being refused the console's Movement pane shows `zoom limit` beside the speed
-  readout. Moving away is always allowed, so a saved level already past the
-  limit can still leave.
-- **Where 32 iterations run out.** The orbit has 32 iterations, so the surface
-  has only so much detail, and past a point (which varies enormously from place
-  to place) the hit test can no longer be met: rays run out of steps and the
-  picture darkens, the same look as the old coarse-pass problem. The camera is
-  not stopped there. Measured by `perturbation_test.gd` (a 64-bit march with the
-  shader's hit threshold and 128 steps): at the default view's centre point the
-  surface stops resolving between `1e-7` and `1e-8`, so the default box gains
-  about three to four decades past the old `1e-4` floor there, not the seven the
-  floor allows;
-  neighbouring points of the same view resolve to `1e-9` .. `1e-12`; the Menger
-  sponge and the Kleinian resolve to `1e-12`; the terraces save stops near
-  `1e-6`. More iterations are a follow-up.
+- **Zoom limit.** The shader uses the direct march in 32-bit floats. Near a
+  coordinate `x`, those floats land on a grid
+  `ulp32(x) = 2^(floor(log2 |x|) − 23)` apart (about `1.2e-7` near the box).
+  Once the hit threshold is much finer than that grid, rays reach the surface
+  only by luck. The fly camera stops at the nearest shape's floor,
+  `size × ulp32(largest |local eye coordinate|) / (50 × eps)`, where
+  `eps = precision / detail`: about `1e-4` on the default box. Higher Detail
+  needs a finer threshold, so it stops further out. The Movement pane shows
+  `zoom limit` while a move is refused. Moving away is always allowed, so a
+  saved level already past the limit can still leave. Older saves' retired
+  perturbation settings are ignored when loaded.
 
 ### Load shedding
 
@@ -239,8 +194,7 @@ the nearest surface in any direction, so looking down a long corridor with a
 wall at your elbow cannot carry you sideways through the wall, and a ray that
 hits nothing takes that cap. The load shedder's speed cap still applies on top.
 It will not fly closer to the surface than the zoom limit (see **Zoom limit**
-under [Deep zoom](#deep-zoom): about `1e-10` on the default box, where the old
-32-bit limit was about `1e-4`); the Movement pane shows `zoom limit` while it
+under [Deep zoom](#deep-zoom): about `1e-4` on the default box); the Movement pane shows `zoom limit` while it
 is holding you there. The speed follows the distance measured from the 64-bit
 eye and can fall as low as `1e-14`, so a slow approach stays steady all the
 way down. The centre ray marches whichever fractal is drawn, in that
@@ -388,8 +342,8 @@ waveform(source)`, shown as a live readout while a binding is active.
 **Movement pane.** One line per virtual axis — an editable label, its id, the
 live value, a **0** button, the push **speed**, two key-capture buttons (click,
 then press a key) and a remove button — plus **Add axis**, the clock readout and
-the fly camera's speed factor beside a **Reset camera** button. The keys and
-axes have no file of their own: they are saved inside the level (the View tab's
+the fly camera's speed factor. The keys and
+axes have no file of their own: they are saved inside the level (the Gameplay tab's
 **Save level…**) and restored when a level is loaded. Key pairs push an axis at
 its speed; a Shape row bound to that axis reads the value, so the row's gain is
 the key's sensitivity.
@@ -402,11 +356,30 @@ the clipboard as a PNG. On Linux this needs `xclip`.
 
 ### View tab (console)
 
-The console's View tab holds what is not a shape knob: a **Save level…** /
-**Load level…** row with the current file's name and a status line, the
-**Camera** mode (Fly / Orbit), the **mouse sensitivity**, a **Noise editor…**
-button, the **Renderer** options (above, with Fast Controls and Reset camera)
-and **Back to Menu**.
+The View tab holds **Camera** mode (Fly / Orbit), **mouse sensitivity**, the
+**Noise editor…**, window controls, **Renderer** options and **Back to Menu**.
+
+### Gameplay tab (console)
+
+**Save level…** / **Load level…** live here, with the current file and status.
+**Exit Radius** sizes the sphere centered at world origin (default 20). Its
+surface bounds the rendered scene; crossing outside shows **You escaped!**.
+Returning inside clears the message. `params.gameplay.exit_skybox` accepts an
+optional equirectangular `Texture2D` for the sphere's background; no sky picker
+is included yet. With no texture it uses the current colour mode's background.
+
+**Spawn X/Y/Z** default to `(0, 0, 0)`. **Return to spawn** moves there, preserves
+the view direction and resets the wheel speed factor to 1. Saving the camera
+never changes spawn; loading still restores the saved camera position.
+
+**Move speed** multiplies travel, and **Shift speed multiplier** applies while
+Shift is held (default 2). **Scale speed by camera-ray distance** defaults on;
+off gives fixed speed in world units per second. **Distance response power**
+(default 1) shapes the distance response, **Nearest-surface cap** (default 10)
+limits it near surrounding walls, and **Max distance speed** (default 20) caps
+it before movement, Shift, wheel and load-shed multipliers. The zoom-limit stop
+still applies. These gameplay settings are saved under the additive
+`gameplay` section; older levels receive the defaults.
 
 ## Keys and axes
 
@@ -449,9 +422,8 @@ computed in 64-bit, and the frame's axes — so a ray samples
 `local_eye + Rᵀdir · t / size`. The camera's eye is itself kept in 64-bit
 (`CameraState.set_eye` / `move_by`; `transform.origin` is its float32 mirror)
 so a frame's travel inside a tiny shape is not rounded away, and a save writes
-the eye at full precision. Deep inside a shape's own detail, past its 32-bit
-zoom floor, the perturbed march (see **Deep zoom**) takes over for that shape,
-in the same frame. Two limits remain: the ray parameter `t`
+the eye at full precision. Within each shape, the direct march still has a
+32-bit zoom floor, scaled by its size (see **Deep zoom**). The ray parameter `t`
 is float32, so a surface further than about 1e7 × its own detail from the eye
 is below resolution (never the case for a shape you can see), and the orbit
 camera moves the eye through 32-bit transforms, so switch to Orbit only at
@@ -481,10 +453,10 @@ refused by name, and so is an old stand-alone keymap file.)
   eye is written at full precision (all the digits of the 64-bit numbers; the
   other numbers in a save are tidied), so a camera deep in a view or inside a
   nested shape comes back where it was, to within one 64-bit rounding step
-  (the parser can land one step off). **Reset
-  camera** (in the console's Movement pane and the View tab's Renderer options)
-  puts the camera and speed factor back to these, as the current file was last
-  loaded or saved; with no file current it goes to the starting view.
+  (the parser can land one step off). **Return to spawn** uses the separately
+  saved gameplay spawn coordinates, independent of this camera snapshot.
+- **`gameplay`** — spawn coordinates, exit radius, movement tuning and an
+  optional sphere sky texture resource path. Older files use gameplay defaults.
 - **`noise`** — the noise graph, when one is wired (additive; see below).
 
 Loading skips anything it does not recognise or cannot read, with a warning, and
@@ -611,14 +583,9 @@ camera 1e-3 and 1e-5 short of the default view's surface: with the old fixed
 16-iteration coarse pass the ray spends its whole budget or misses, with the
 distance-following count it hits in under half.
 
-`perturbation_test.gd` runs a GDScript port of the shader's perturbed step in
-emulated float32. It checks each fold's difference formula case by case, whole
-orbits in 64-bit against the direct orbit, and the march at 1e-5, 1e-6 and 1e-7
-from five fixtures, where today's float32 march gets under 30% of the rays
-right (where the reference resolves the surface) and the perturbed one at
-least 90%. It also prints where the 64-bit march itself stops hitting, the
-numbers quoted under Deep zoom. `reference_orbit_test.gd` checks that the
-reference orbit's distance is the estimator's exactly.
+`render_budget_test.gd` checks the fractal iteration budget, confirms the
+shader has no perturbation uniforms, and loads an older save with retired
+perturbation settings to verify the direct zoom floor and clean re-saving.
 
 The reference capture from the site lives at
 **`docs/reference/icefractal-default.jpg`**. Put `screenshots/default_view.png`

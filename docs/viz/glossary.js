@@ -204,49 +204,35 @@ VIZ.glossary({
     links: [WIKI("Unit_in_the_last_place"), WIKI("Single-precision_floating-point_format")],
   },
 
-  // ---------------------------------------------------------------- deep zoom: perturbation
-  perturbation: {
-    term: "Perturbation (deep-zoom perturbation theory)",
-    match: ["perturbation theory", "perturbation", "perturbed"],
-    body: "Rather than computing a hard thing directly, compute one nearby thing exactly and then track only the small difference from it. Deep Mandelbrot-set zoomers work this way. One reference point's orbit is computed once in high precision on the CPU, and every pixel iterates only its tiny offset δ from that orbit in ordinary floats, because a small number keeps as many significant digits as a large one. Here the reference is the camera's eye, run in 64-bit once per frame. The GPU iterates each pixel's δ for the first k iterations, then hands off to the normal loop. The hard part is writing each fold's difference so that it never subtracts two nearly equal numbers.",
-    links: [WIKI("Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation"),
-      { url: "https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html", label: "mathr: Deep zoom theory and practice" }],
-  },
-  "reference-orbit": {
-    term: "Reference orbit",
-    match: ["reference orbit", "reference orbits"],
-    body: "The orbit of one chosen point (its iterates X_0, X_1, … X_32), computed in high precision, that every pixel's orbit is measured against. Here it is the eye's orbit: X_0 is the 64-bit eye, X_1 its first Mandelbox iterate, and so on, recomputed on the CPU whenever the camera moves (ReferenceOrbit.build). Alongside the points it records, per iteration, the gap from X to each fold's crease. With those gaps the GPU can tell which side of a crease each pixel falls on without ever holding X at full precision.",
-    links: [WIKI("Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation"),
-      { url: "https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html", label: "mathr: Deep zoom theory and practice" }],
-  },
+  // ---------------------------------------------------------------- floating-point precision
   cancellation: {
     term: "Catastrophic cancellation",
     match: ["catastrophic cancellation", "cancellation", /\bnearly equal\b/gi],
-    body: "What goes wrong when you subtract two nearly equal floating-point numbers: the leading digits cancel and only the rounded tail is left. A 32-bit float keeps about 7 significant digits whatever its size, so 1.0000001 − 1.0000000 gives 1.19e-7 against the true 1e-7: about one correct digit. That is why `eye + dir × t` fails at depth: the small offset is rounded away before the fractal maths starts, and P − X can't bring it back. Perturbation's formulas only ever subtract small numbers (gaps the CPU already computed in 64-bit), or use products, never the difference of two big ones.",
+    body: "What goes wrong when you subtract two nearly equal floating-point numbers: the leading digits cancel and only the rounded tail is left. A 32-bit float keeps about 7 significant digits whatever its size, so 1.0000001 − 1.0000000 gives 1.19e-7 against the true 1e-7: about one correct digit. That is why `eye + dir × t` fails at depth: the small offset is rounded away before the fractal maths starts, and P − X can't bring it back. Computing each shape's local eye in 64-bit before sending it to the shader avoids losing tiny nested shapes when subtracting large world coordinates.",
     links: [WIKI("Catastrophic_cancellation"), { url: "https://floating-point-gui.de/", label: "The Floating-Point Guide" }],
   },
   magnification: {
     term: "Magnification λ",
     match: ["magnification", /λ(?:_\w+)?/g],
-    body: "How much the first i iterations stretch a tiny neighbourhood of the reference point: λ_i. Each iteration multiplies it by |box_scale| (2.09 by default), and by the sphere fold's factor when that fires (up to fixed² / min², about 2.04). So it grows exponentially: about 2.5 million after 20 iterations on the default view's centre ray. It is the shader's running derivative dz without the + 1s. It matters twice. A pixel's offset δ grows by λ_i, so after k iterations it is big enough for float32. And λ_32 sets how fine 32 iterations can resolve the surface.",
+    body: "How much the first i iterations stretch a tiny neighbourhood of the reference point: λ_i. Each iteration multiplies it by |box_scale| (2.09 by default), and by the sphere fold's factor when that fires (up to fixed² / min², about 2.04). So it grows exponentially: about 2.5 million after 20 iterations on the default view's centre ray. It is the shader's running derivative dz without the + 1s. The magnification at the last iteration sets how fine the finite iteration budget can resolve the surface.",
     links: [WIKI("Lyapunov_exponent"), SYNTOPIA_MANDELBOX],
   },
   "piecewise-linear": {
     term: "Piecewise-linear map",
     match: ["piecewise-linear", "piecewise linear"],
-    body: "A function made of straight-line pieces joined at creases, like |x| or clamp(x, −1, 1). On each side of a crease it is linear (a scale, a shift, a mirror), and the rule switches where you cross one. The box fold, the KIFS abs and sort folds and the Kleinian's box fold are all piecewise-linear. That makes the difference between two points' images exact and cheap: it is the same linear piece applied to δ, unless the two points sit on different pieces (the case table on the Crossing a fold tab). The Mandelbulb's power map is curved everywhere, which is why the design leaves it out.",
+    body: "A function made of straight-line pieces joined at creases, like |x| or clamp(x, −1, 1). On each side of a crease it is linear (a scale, a shift, a mirror), and the rule switches where you cross one. The box fold, the KIFS abs and sort folds and the Kleinian's box fold are all piecewise-linear. Within one piece, small offsets are transformed by the same linear rule. Across a crease, the rules differ. The Mandelbulb's power map is curved.",
     links: [WIKI("Piecewise_linear_function")],
   },
   "double-float": {
     term: "Double-float (two-float) arithmetic",
     match: ["two-float", "double-float", "double-double", "paired-float"],
-    body: "Storing one number as the unevaluated sum of two floats, a big part plus a small correction (hi + lo). A pair of 32-bit floats then carries about 48 significant bits instead of 24. Each add or multiply becomes a dozen or so float operations that capture the rounding error exactly (the error-free transformations TwoSum and TwoProduct). That only works if the compiler computes each step exactly as written. A GPU compiler that fuses a multiply and an add, or reorders them, silently breaks it. It was the research note's alternative to perturbation: exact, but about 7× the cost per ray.",
+    body: "Storing one number as the unevaluated sum of two floats, a big part plus a small correction (hi + lo). A pair of 32-bit floats then carries about 48 significant bits instead of 24. Each add or multiply becomes a dozen or so float operations that capture the rounding error exactly (the error-free transformations TwoSum and TwoProduct). That only works if the compiler computes each step exactly as written. A GPU compiler that fuses a multiply and an add, or reorders them, silently breaks it. It is a possible way to improve precision, at the cost of many more operations per ray.",
     links: [WIKI("Quadruple-precision_floating-point_format#Double-double_arithmetic"), WIKI("2Sum")],
   },
   regime: {
     term: "Regime (of a radial fold)",
     match: ["regimes", "regime"],
-    body: "Which of its three rules a radial fold applies to a point, decided by the point's distance r from the centre. For the sphere fold: inside (r < min_radius) every point is scaled by the same constant fixed² / min². In the shell (min_radius ≤ r < fixed_radius) the point is inverted, scaled by fixed² / r². Outside (r ≥ fixed_radius) nothing happens. When the reference X and the pixel P are in different regimes, their factors m and m' come from different rules. The spec writes m' − m separately for each pair, so it stays a small, precise number.",
+    body: "Which of its three rules a radial fold applies to a point, decided by the point's distance r from the centre. For the sphere fold: inside (r < min_radius) every point is scaled by the same constant fixed² / min². In the shell (min_radius ≤ r < fixed_radius) the point is inverted, scaled by fixed² / r². Outside (r ≥ fixed_radius) nothing happens. Points in different regimes are transformed by different rules.",
     links: [SYNTOPIA_MANDELBOX, WIKI("Inversive_geometry")],
   },
 

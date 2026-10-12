@@ -66,7 +66,7 @@ func run() -> void:
 	check(material.row(&"light_color") == null and light.row(&"color_mode") == null,
 		"neither tab holds the other's rows")
 	check(material.row(&"palette_a_r") != null, "the palette's twelve numbers are on the Material tab")
-	check_eq(console.tabs().get_tab_count(), 4, "four tabs")
+	check_eq(console.tabs().get_tab_count(), 5, "five tabs")
 	check_eq(console.tabs().get_tab_title(0), "Shape", "the first is Shape")
 	check_eq(console.tabs().get_tab_title(1), "Light", "the second Light")
 	check_eq(console.tabs().get_tab_title(2), "Material", "the third Material")
@@ -195,14 +195,6 @@ func run() -> void:
 	# --- Movement pane: the keymap-file strip is gone (keys travel in the level) ---
 	check_eq(movement.get_node_or_null("KeymapFiles"), null, "the Movement pane has no keymap file panel")
 	check(not (&"save_button" in movement), "and no Save keymap button")
-
-	# --- Movement pane: "deep N" (the records in use) while the march is perturbed, hidden at 0 ---
-	check(movement.deep_label != null and not movement.deep_label.visible, "the deep readout starts hidden")
-	console.show_deep(14)
-	check(movement.deep_label.visible and movement.deep_label.text == "deep 14",
-		"show_deep(14) shows 'deep 14' in the Movement pane")
-	console.show_deep(0)
-	check(not movement.deep_label.visible, "and 0 hides it again")
 
 	# --- Movement pane: Add axis grows the keymap ---
 	var before := km.axes().list().size()

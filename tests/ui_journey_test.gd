@@ -6,7 +6,7 @@ extends "res://tests/test_case.gd"
 ## held; WASD flies the camera and the wheel changes its speed; Escape only
 ## frees the mouse and never closes the console; the console's View tab opens
 ## the noise window; a Value noise is added and wired; Save level… then New +
-## Load level… (on the View tab) restores the shape, the binding, the camera and
+## Load level… (on Gameplay) restores the shape, the binding, the camera and
 ## the noise; a resized window asks the view for a frame; the View tab's Back
 ## to Menu returns to the title.
 ##
@@ -288,10 +288,17 @@ func _wire_value_noise() -> void:
 	check(main.view.shader_uniform_names().has(StringName("n_%s_scale" % vn)), "wired to Displace, it reaches the view's shader")
 
 
-## On the console's View tab, click Save level… or Load level…, point the panel at
-## user:// and type the file name. Returns the panel.
+## On the Gameplay tab, click Save level… or Load level… and type a name.
 func _use_view_panel(save: bool) -> FileDialog:
-	var vp := await _show_view_tab()
+	await _show_view_tab()
+	var console: ConsoleWindow = main.console()
+	var bar := console.tabs().get_tab_bar()
+	var title := ui.control_point(bar, bar.get_tab_rect(4).get_center())
+	await ui.click_at(title)
+	if console.tabs().current_tab != 4:
+		await ui.click_at(title)
+	check_eq(console.tabs().current_tab, 4, "a click on Gameplay shows its file controls")
+	var vp: GameplayPane = main.gameplay_pane()
 	await ui.click(vp.save_button if save else vp.load_button)
 	await ui.frames(1)
 	var files: WorkspaceFiles = main.workspace_files()
@@ -316,7 +323,7 @@ func _save_new_and_reload() -> void:
 	var dialog := await _use_view_panel(true)
 	check(not dialog.visible, "typing a name into the Save level… panel and Enter closes it")
 	check(FileAccess.file_exists(SAVE), "and writes user://ui_journey.json")
-	check_eq(main.view_pane().file_label.text, SAVE.get_file(), "the View tab names the saved file")
+	check_eq(main.gameplay_pane().file_label.text, SAVE.get_file(), "Gameplay names the saved file")
 	main.console().hide_console()
 	await ui.frames(1)
 

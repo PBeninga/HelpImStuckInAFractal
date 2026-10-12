@@ -72,14 +72,6 @@ var _from := {}                       # the on-screen values the restore started
 var _restore_frame := RESTORE_FRAMES  # frames into the restore tween; done at RESTORE_FRAMES
 var _restore_stepped_on := -1         # the process frame the tween last stepped on
 var _center_ray: CenterRay
-## The perturbed march's iteration count last pushed (0: off). Main shows it in
-## the Movement pane as "deep N".
-var _pert_iters := 0
-## How many times `_push_near` was called while perturbation is on (never while
-## it is off). It runs on every parameter push, so any knob edit or load-level
-## change counts, and a save's clock-animated shape values count every frame
-## (the tests read it).
-var _pert_pushes := 0
 
 
 func _ready() -> void:
@@ -135,11 +127,6 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 ## speed and the dot come from one march. null before setup().
 func center_ray() -> CenterRay:
 	return _center_ray
-
-
-## How many iterations the shader perturbs for the current camera (0: off).
-func pert_iters() -> int:
-	return _pert_iters
 
 
 ## Show a noise field on the fractal. The view listens to the graph: a structural
@@ -412,6 +399,9 @@ func _push_probe() -> void:
 func _push_params() -> void:
 	if _material == null or _params == null:
 		return
+	_material.set_shader_parameter("exit_radius", _params.gameplay.exit_radius)
+	_material.set_shader_parameter("exit_has_skybox", _params.gameplay.exit_skybox != null)
+	_material.set_shader_parameter("exit_skybox", _params.gameplay.exit_skybox)
 	# Every scene id is a scalar uniform of the same name, pushed as it is; the
 	# two COLOR keys go as a vec3 (the shader's colour uniforms).
 	for key in FractalParams.RESOLVED_KEYS:
@@ -501,12 +491,9 @@ func _push_camera() -> void:
 ## origin keeps its precision) and the frame's axes in world space — along with
 ## the camera's distance to the nearest surface (of any shape), which the
 ## level-of-detail range is measured in, and the coarse pass's iteration count
-## per shape and the shading crossfade that follow from it; and the perturbed
-## march's iteration count and record, for the nearest shape. The distance and
-## the record come from one ReferenceOrbit built at the 64-bit eye (its distance
-## is the scene estimate, so nothing is computed twice). They depend on both
-## the camera and the shapes, so both pushes refresh them. The record arrays
-## are pushed only while perturbation is on.
+## per shape and the shading crossfade that follow from it. The distance is
+## estimated at the 64-bit eye. These depend on both the camera and the shapes,
+## so both pushes refresh them.
 func _push_near() -> void:
 	if _material == null or _params == null or _camera == null:
 		return
@@ -524,8 +511,7 @@ func _push_near() -> void:
 	var ex := _camera.eye_x()
 	var ey := _camera.eye_y()
 	var ez := _camera.eye_z()
-	var orbit := ReferenceOrbit.build(_params, ex, ey, ez)
-	var near := maxf(orbit.distance, FractalParams.NEAR_FLOOR)
+	var near := maxf(DistanceEstimator.scene_estimate_at(ex, ey, ez, _params), FractalParams.NEAR_FLOOR)
 	for i in _params.shapes.size():
 		var sh := _params.shapes[i]
 		var q := sh.to_local(ex, ey, ez)
@@ -542,16 +528,6 @@ func _push_near() -> void:
 	_material.set_shader_parameter("coarse_iters", iters)
 	_material.set_shader_parameter("near_dist", near)
 	_material.set_shader_parameter("nf_weight", FractalParams.nf_weight(near))
-	_pert_iters = _params.pert_iters(orbit, orbit.distance)
-	_material.set_shader_parameter("pert_iters", _pert_iters)
-	if _pert_iters > 0:
-		_material.set_shader_parameter("pert_shape", orbit.index)
-		_material.set_shader_parameter("pert_a", orbit.a)
-		_material.set_shader_parameter("pert_b", orbit.b)
-		_material.set_shader_parameter("pert_c", orbit.c)
-		_material.set_shader_parameter("pert_d", orbit.d)
-		_material.set_shader_parameter("pert_x", orbit.points.slice(0, ReferenceOrbit.PERT_MAX + 1))
-		_pert_pushes += 1
 
 
 ## The shape the camera is nearest to (index into params.shapes).

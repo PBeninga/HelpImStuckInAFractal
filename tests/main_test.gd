@@ -27,14 +27,6 @@ func run() -> void:
 	var fly: FlyCamera = main.get_node("FlyCamera")
 	var console: ConsoleWindow = main.console()
 
-	# With no file current, Reset camera goes back to the built-in starting view
-	main.camera.transform = main.camera.transform.translated(Vector3(1, 2, 3))
-	main.camera.speed_factor = 3.0
-	main.reset_camera()
-	check(main.camera.transform.is_equal_approx(CameraState.make_default().transform),
-		"with no file, Reset camera restores the starting view")
-	check_approx(main.camera.speed_factor, 1.0, "and the starting speed factor")
-
 	# the console opens beside the game at startup (for now), the fly camera is
 	# active and the mouse captured; the rest of the journey starts it closed
 	check(console.visible, "the console starts open")
@@ -195,12 +187,13 @@ func run() -> void:
 	main._free_requested = false
 	main._update_mouse()
 
-	# the console's View tab owns Save / Load / Camera / Noise / Renderer
+	# Gameplay owns Save / Load; View owns Camera / Noise / Renderer
 	var vp: ViewPane = main.view_pane()
 	check(vp == console.view_pane(), "the View tab is the console's")
 	var files: WorkspaceFiles = main.workspace_files()
-	check(vp.save_requested.is_connected(files.prompt_save), "View Save opens the save panel")
-	check(vp.load_requested.is_connected(files.prompt_load), "View Load opens the open panel")
+	var gp: GameplayPane = main.gameplay_pane()
+	check(gp.save_requested.is_connected(files.prompt_save), "Gameplay Save opens the save panel")
+	check(gp.load_requested.is_connected(files.prompt_load), "Gameplay Load opens the open panel")
 
 	# save and load: the real path round-trips a knob (the shape table), the
 	# axes and the camera
@@ -209,7 +202,7 @@ func run() -> void:
 	main.camera.speed_factor = 2.0
 	main.save_level_to(tmp)
 	check_eq(files.current_path, tmp, "a save that worked becomes current")
-	check_eq(vp.file_label.text, "main_test_view.json", "and the View tab names it")
+	check_eq(gp.file_label.text, "main_test_view.json", "and Gameplay names it")
 	main.table().set_default(&"fold_limit", 0.3)
 	main.camera.speed_factor = 1.0
 	main.load_level_from(tmp)
@@ -217,7 +210,7 @@ func run() -> void:
 	await frames(1)
 	check_approx(main.params.shape().fold_limit, 0.72, "and the resolve pushes it into params")
 	check_approx(main.camera.speed_factor, 2.0, "and the camera")
-	check(vp.status_label.text.begins_with("Loaded"), "the View tab reports the load: %s" % vp.status_label.text)
+	check(gp.status_label.text.begins_with("Loaded"), "Gameplay reports the load: %s" % gp.status_label.text)
 	main.load_level_from("user://no_such_view.json")
 	check_eq(files.current_path, tmp, "a failed load does not change the current file")
 
@@ -259,39 +252,18 @@ func run() -> void:
 	pane.remove_shape(1)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp2))
 
-	# Reset camera goes back to the current file's camera and speed factor, from
-	# the console's Movement pane and from the View tab's Renderer options
-	var file_view: Transform3D = main.camera.transform
-	main.camera.transform = file_view.translated(Vector3(0.5, -1, 2))
-	main.camera.speed_factor = 7.0
-	console.movement_pane().reset_camera_button.pressed.emit()
-	check(main.camera.transform.is_equal_approx(file_view), "the console's Reset camera restores the file's camera")
-	check_approx(main.camera.speed_factor, 2.0, "and its speed factor")
-	main.camera.transform = file_view.rotated(Vector3(0, 0, 1), 0.3)
-	vp.renderer.reset_camera_button.pressed.emit()
-	check(main.camera.transform.is_equal_approx(file_view), "the View tab's Reset camera does too")
-	# a save makes the saved camera the new reset point
-	main.camera.transform = file_view.translated(Vector3(0, 0, 1))
-	var resaved: Transform3D = main.camera.transform
+	# Saving the current camera never changes the independently configured spawn.
+	main.params.gameplay.spawn_x = 1.2345678901234
+	main.params.gameplay.spawn_y = 0.9140000000123
+	main.params.gameplay.spawn_z = 0.787
+	var saved_view: Transform3D = main.camera.transform
 	main.save_level_to(tmp)
-	main.camera.transform = file_view
-	main.reset_camera()
-	check(main.camera.transform.is_equal_approx(resaved), "after a save, Reset camera goes to the saved camera")
-	# a deep home keeps its 64-bit eye: Reset camera restores the doubles, not just
-	# the 32-bit shadow, both after a move too small for the shadow to notice and
-	# after flying far away
-	main.camera.set_eye64(1.2345678901234, 0.9140000000123, 0.787)
-	main._remember_home()
-	var deep_home: PackedFloat64Array = main.camera.eye64()
-	main.camera.set_eye64(deep_home[0] + 1e-10, deep_home[1], deep_home[2])
-	check(main.camera.eye() == Vector3(deep_home[0], deep_home[1], deep_home[2]), "(a 1e-10 move keeps the same 32-bit shadow)")
-	main.reset_camera()
-	check_eq(main.camera.eye64(), deep_home, "Reset camera undoes a move below the 32-bit grid")
-	main.camera.set_eye64(5.0, -3.0, 2.0)
-	main.reset_camera()
-	check_eq(main.camera.eye64(), deep_home, "and one far away restores the home eye's doubles exactly")
-	main.camera.transform = resaved
-	main._remember_home()
+	main.camera.set_eye(5.0, -3.0, 2.0)
+	gp.return_button.pressed.emit()
+	check_eq(main.camera.eye64(), PackedFloat64Array([1.2345678901234, 0.9140000000123, 0.787]),
+		"Return to spawn uses the full-precision spawn independently of the saved camera")
+	check_approx(main.camera.speed_factor, 1.0, "returning resets the wheel speed factor")
+	main.camera.transform = saved_view
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 
 	# the View tab's Camera row switches mode
@@ -504,15 +476,6 @@ func run() -> void:
 	main.fly.at_zoom_limit = false
 	main._process(0.0)
 	check(not zoom_label.visible, "and hides it once the limit clears")
-
-	# the perturbed march's k reaches the Movement pane each frame
-	var deep_label: Label = main.console().movement_pane().deep_label
-	main.view._pert_iters = 14
-	main._process(0.0)
-	check(deep_label.visible and deep_label.text == "deep 14", "Main shows the view's records in use in the Movement pane")
-	main.view._pert_iters = 0
-	main._process(0.0)
-	check(not deep_label.visible, "and hides it at 0")
 
 	# Back to Menu swaps to the main menu
 	vp.menu_button.pressed.emit()

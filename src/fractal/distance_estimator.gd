@@ -75,7 +75,8 @@ static func cube_distance(qx: float, qy: float, qz: float, half: float) -> float
 ## Where a world ray enters and leaves the union of the shapes' cubes, in world
 ## ray distance: [t_enter, t_exit], or null when it meets none. Each cube is
 ## intersected in its shape's own frame (so a rotated shape's box is oriented).
-## The exit is also cut at the scene's view distance (a Kleinian's horizon).
+## Clipped to the exit sphere and scene view distance (a Kleinian's horizon),
+## matching the renderer so picks and the centre ray only see visible shapes.
 static func scene_bounds(ex: float, ey: float, ez: float, dir: Vector3, params: FractalParams) -> Variant:
 	var t_start := INF
 	var t_exit := -1.0
@@ -90,9 +91,19 @@ static func scene_bounds(ex: float, ey: float, ez: float, dir: Vector3, params: 
 			t_exit = maxf(t_exit, leave)
 	if t_exit < 0.0:
 		return null
+	var b := ex * dir.x + ey * dir.y + ez * dir.z
+	var radius := params.gameplay.exit_radius
+	var discriminant := b * b - (ex * ex + ey * ey + ez * ez) + radius * radius
+	if discriminant < 0.0:
+		return null
+	var root := sqrt(discriminant)
+	t_start = maxf(t_start, maxf(0.0, -b - root))
+	t_exit = minf(t_exit, -b + root)
 	var vd := params.scene_view_distance()
 	if vd > 0.0:
 		t_exit = minf(t_exit, vd)   # the shader stops there too
+	if t_start > t_exit:
+		return null
 	return [t_start, t_exit]
 
 

@@ -5,7 +5,8 @@ extends RefCounted
 ## bindings, placement included), which one is active, the look as an
 ## AttributeTable over the scene catalogue (light and material), the keymap
 ## (its axes, keys, speeds and values), the non-shape preference fields, the
-## camera, and the noise graph. There is one file type — the level — tagged
+## camera, gameplay (spawn, exit sphere and movement), and the noise graph.
+## There is one file type — the level — tagged
 ## `"kind": "level"`; `"kind": "sequence"` is reserved for the level-sequence
 ## editor to come, and such a file is refused by name here. The clock and
 ## anything derivable (the orbit centre, the governor's render scale, rendered
@@ -33,7 +34,7 @@ extends RefCounted
 ## sqrt(2 / (shininess + 2)) with no warning; a binding on light_shininess is
 ## dropped with one. Saving always writes version 4. The camera's eye is
 ## written at full precision (every digit of its 64-bit value): a camera inside
-## a nested shape, or deep in a perturbed view, sits at a position the 7 digits
+## a nested shape sits at a position the 7 digits
 ## the unit vectors get would not hold.
 
 const VERSION := 4
@@ -43,7 +44,7 @@ const VERSION := 4
 const FRACTAL_KEYS: Array[String] = [
 	"fast_controls", "camera_mode", "mouse_sensitivity",
 	"detail", "detail_range", "detail_falloff", "max_steps", "min_render_scale",
-	"perturbation_enabled", "perturbation_iterations", "fractal_iterations",
+	"fractal_iterations",
 ]
 const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
 
@@ -59,6 +60,7 @@ static func capture(shapes: ShapeList, look: AttributeTable, keymap: Keymap, par
 	var out := {
 		"version": VERSION,
 		"kind": "level",
+		"gameplay": params.gameplay.to_dict(),
 		"shapes": shapes.to_dict(),
 		"active": params.active,
 		"look": look.to_dict(),
@@ -82,6 +84,8 @@ static func capture(shapes: ShapeList, look: AttributeTable, keymap: Keymap, par
 ## left alone). Returns the warnings.
 static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState) -> Array:
 	var warnings: Array = []
+	for warning in params.gameplay.apply_dict(data.get("gameplay", {})):
+		warnings.append(warning)
 
 	if data.has("shape") and not data.has("shapes"):
 		data = _split_shape(data)
@@ -142,6 +146,9 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 	var fractal: Variant = data.get("fractal", {})
 	if fractal is Dictionary:
 		for key in fractal:
+			# Retired renderer settings in older levels are harmless and discarded.
+			if key in ["perturbation_enabled", "perturbation_iterations"]:
+				continue
 			if not FRACTAL_KEYS.has(key):
 				warnings.append("Unknown fractal value '%s' ignored" % key)
 				continue
@@ -327,7 +334,7 @@ static func _migrate_v1(data: Dictionary) -> Dictionary:
 ## The typed value for one "fractal" key, or null when malformed.
 static func _parse_fractal(key: String, raw: Variant) -> Variant:
 	match key:
-		"fast_controls", "perturbation_enabled":
+		"fast_controls":
 			return raw if raw is bool else null
 		"camera_mode":
 			var index := CAMERA_MODE_NAMES.find(String(raw)) if raw is String else -1
@@ -336,7 +343,7 @@ static func _parse_fractal(key: String, raw: Variant) -> Variant:
 			return float(raw) if (raw is float or raw is int) and float(raw) > 0.0 else null
 		"detail_falloff":
 			return float(raw) if (raw is float or raw is int) and float(raw) >= 0.0 else null
-		"max_steps", "perturbation_iterations", "fractal_iterations":
+		"max_steps", "fractal_iterations":
 			return int(raw) if (raw is float or raw is int) and float(raw) >= 1.0 else null
 		_:
 			return float(raw) if (raw is float or raw is int) else null

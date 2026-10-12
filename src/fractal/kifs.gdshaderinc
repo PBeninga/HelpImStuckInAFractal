@@ -80,17 +80,15 @@ bool kifs_rot2_on(int s) {
 		+ abs(kifs_rot2_yz[s]) + abs(kifs_rot2_yw[s]) + abs(kifs_rot2_zw[s])) > 1e-6;
 }
 
-// Iterations first..iters-1 of shape s's KIFS orbit p; n counts the iterations
-// run. The direct kifs_de runs them all from 0, the perturbed de_pert from its
-// handoff.
-void kifs_orbit(int s, inout vec4 p, inout int n, int first, int iters) {
+// Up to iters iterations of shape s's KIFS orbit p; n counts the iterations run.
+void kifs_orbit(int s, inout vec4 p, inout int n, int iters) {
 	float sc = kifs_scale[s];
 	vec4 o = vec4(kifs_offset_0[s], kifs_offset_1[s], kifs_offset_2[s], kifs_offset_3[s]);
 	int fold = kifs_fold[s];
 	float twist = kifs_twist[s];
 	bool rot1 = kifs_rot1_on(s);
 	bool rot2 = kifs_rot2_on(s);
-	for (int i = first; i < 32; i++) {
+	for (int i = 0; i < 32; i++) {
 		if (i >= iters) { break; }
 		if (rot1) { p = kifs_rot1(s, p); }
 		if (fold == 1) {
@@ -120,6 +118,6 @@ float kifs_distance(int s, vec4 p, int n) {
 
 float kifs_de(int s, vec4 p, int iters) {
 	int n = 0;
-	kifs_orbit(s, p, n, 0, iters);
+	kifs_orbit(s, p, n, iters);
 	return kifs_distance(s, p, n);
 }

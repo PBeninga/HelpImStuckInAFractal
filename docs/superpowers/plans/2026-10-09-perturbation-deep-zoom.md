@@ -1,5 +1,8 @@
 # Perturbation Deep Zoom Implementation Plan
 
+> Historical: perturbation was removed on 2026-10-12. The renderer uses the
+> direct 32-bit march and zoom floor; this document records the retired design.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let the fly camera zoom past the 32-bit floor: a 64-bit eye, a CPU reference orbit, and a GPU march in which each ray iterates only its small offset from that orbit until the offset is big enough for 32 bits (perturbation), with the zoom guard moved down to where the perturbed march runs out of precision.

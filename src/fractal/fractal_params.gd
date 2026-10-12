@@ -18,6 +18,8 @@ enum CameraMode { FLY, ORBIT }
 ## Which fractal de() draws: the `shape` catalogue row.
 enum Shape { MANDELBOX, KIFS, KLEINIAN, MANDELBULB }
 
+var gameplay := GameplaySettings.new()
+
 ## Colour-mode ids in the dropdown's order (ids match the site).
 ## Palette (20) is this project's own, past the site's range.
 const COLOR_MODE_IDS: Array[int] = [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14, 20]
@@ -81,6 +83,7 @@ var _suppress := false
 
 
 func _init() -> void:
+	gameplay.changed.connect(emit_changed)
 	add_shape()
 
 
@@ -282,10 +285,6 @@ const SHADOW_STEPS := 48
 ## Work budgets shared by the CPU distance estimates, camera and shader.
 const FRACTAL_ITERATIONS_MIN := 8
 const FRACTAL_ITERATIONS_MAX := 32
-@export var perturbation_enabled: bool = false:
-	set(v): perturbation_enabled = v; emit_changed()
-@export var perturbation_iterations: int = 20:
-	set(v): perturbation_iterations = clampi(v, 1, 20); emit_changed()
 @export var fractal_iterations: int = 32:
 	set(v): fractal_iterations = clampi(v, FRACTAL_ITERATIONS_MIN, FRACTAL_ITERATIONS_MAX); emit_changed()
 
@@ -365,74 +364,20 @@ static func ulp32(x: float) -> float:
 ## floor (ShapeParams.zoom_floor) of the shape the eye is nearest to, in that
 ## shape's own frame, at this view's detail: about 1e-4 near the box at the
 ## default precision for one shape at the identity placement, and a thousandth
-## of that for a shape a thousandth the size. The guard for shapes that are not
-## perturbed, and the scale pert_iters() switches on at.
+## of that for a shape a thousandth the size.
 func floor32(eye) -> float:
-	var i: int = DistanceEstimator.nearest_at(eye[0], eye[1], eye[2], self)["index"]
-	return shapes[i].zoom_floor(eye[0], eye[1], eye[2], detail)
+	return zoom_floor_at(eye[0], eye[1], eye[2])
 
 
-## Perturbation (see ReferenceOrbit and perturbation.gdshaderinc) switches on
-## once the camera is within PERT_ON × the 32-bit floor: an order of magnitude
-## before the 32-bit march breaks, where both agree, so there is no pop.
-const PERT_ON := 10.0
-## The shader's handoff radius (perturbation.gdshaderinc's PERT_HANDOFF, which
-## shader_test checks against this): a ray stops perturbing once its offset from
-## the reference reaches it, where a 32-bit point is fine enough for the hit
-## threshold. Measured (tests/perturbation_test.gd's grid): at 1e-2 four rays in
-## 27 on the default box at 1e-6 landed 0.15-0.5% off; at 0.1 every cell agrees.
-const PERT_HANDOFF := 0.1
-
-
-## The shape a reference orbit was built for (ReferenceOrbit.index).
-func orbit_shape(orbit: ReferenceOrbit) -> ShapeParams:
-	return shapes[clampi(orbit.index, 0, shapes.size() - 1)]
-
-
-## How many of the reference orbit's records the shader may use for a camera
-## whose raw (world) distance to the surface is `near`: 0 (off: the direct
-## march, exactly as before) when the orbit's shape is not perturbable or the
-## camera is at least PERT_ON × floor32 away; else all of them,
-## min(PERT_MAX, orbit.n). Each ray decides its own handoff from the size of
-## its offset (PERT_HANDOFF). Only the orbit's shape, the one the camera is
-## nearest, is perturbed.
-func pert_iters(orbit: ReferenceOrbit, near: float) -> int:
-	if not perturbation_enabled or not orbit.perturbable or near >= PERT_ON * floor32(orbit.world_eye):
-		return 0
-	return mini(perturbation_iterations, orbit.n)
-
-
-## The perturbed march's own floor, in world units: the 32-bit floor applied at
-## the last handoff point X_K (K = min(PERT_MAX, n)), where the view is mag[K]
-## times bigger, in the orbit's shape's frame and scaled back by its size.
-func floor_pert(orbit: ReferenceOrbit) -> float:
-	var s := orbit_shape(orbit)
-	var k := mini(perturbation_iterations, orbit.n)
-	var x: Vector4 = orbit.points[k]
-	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
-	return ulp32(m) * s.size / (ShapeParams.ZOOM_FLOOR_DIVISOR * maxf(s.precision / detail, 1e-30) * maxf(orbit.mag[k], 1e-300))
-
-
-## The zoom floor for a reference orbit already built at the eye: floor_pert when
-## the shape is perturbable, else the 32-bit floor. Not guarded: where 32
-## iterations stop resolving (the estimate bottoms out). That depth varies by
-## orders of magnitude from point to point (tests/perturbation_test.gd prints it),
-## and past it rays run out of steps and the picture darkens; a follow-up.
-func zoom_floor_for(orbit: ReferenceOrbit) -> float:
-	if not perturbation_enabled or not orbit.perturbable:
-		return floor32(orbit.world_eye)
-	return floor_pert(orbit)
-
-
-## How close the fly camera may come to the surface with its eye at `eye` (world
-## units; a Vector3, or 64-bit components as [x, y, z] or a PackedFloat64Array):
-## the floor of the reference orbit at the eye, built for the nearest shape.
+## How close the fly camera may come to the surface (world units), using the
+## nearest shape's 32-bit floor in its own frame.
 func zoom_floor(eye) -> float:
 	return zoom_floor_at(eye[0], eye[1], eye[2])
 
 
 func zoom_floor_at(ex: float, ey: float, ez: float) -> float:
-	return zoom_floor_for(ReferenceOrbit.build(self, ex, ey, ez))
+	var nearest := DistanceEstimator.nearest_at(ex, ey, ez, self)
+	return shapes[nearest["index"]].zoom_floor(ex, ey, ez, detail)
 
 
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the

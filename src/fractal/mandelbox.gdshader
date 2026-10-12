@@ -22,13 +22,14 @@ shader_type canvas_item;
 // origin. Forming eye + dir · t in world space and subtracting the shape's
 // position here would lose a nested shape to float32 cancellation.
 //
-// Past the 32-bit floor the shape the camera is nearest marches perturbed
-// (perturbation.gdshaderinc), in its own frame; with pert_iters 0 every path is
-// exactly the direct one.
-
 const int MAX_SHAPES = 8;
 
-uniform vec3 eye;             // world; only the probe dot reads it
+uniform vec3 eye;             // world; probe dot and the exit sphere
+// Finite background sphere at the world origin. A future sky picker can set
+// GameplaySettings.exit_skybox; longitude wraps, latitude runs pole to pole.
+uniform float exit_radius = 20.0;
+uniform bool exit_has_skybox = false;
+uniform sampler2D exit_skybox : source_color, filter_linear, repeat_enable;
 uniform vec3 cam_right;
 uniform vec3 cam_up;
 uniform vec3 cam_forward;
@@ -379,12 +380,10 @@ vec4 mb_constant(int s, vec4 z0) {
 		(all || julia_3[s] != 0) ? c_3[s] : z0.w);
 }
 
-// Iterations first..iters-1 of shape s's Mandelbox orbit: the direct de() runs
-// them all from 0 (exactly the loop it always ran), the perturbed de_pert() from
-// its handoff.
-void mb_orbit(int s, inout vec4 z, inout float dz, vec4 c, int first, int iters) {
+// Up to iters iterations of shape s's Mandelbox orbit.
+void mb_orbit(int s, inout vec4 z, inout float dz, vec4 c, int iters) {
 	bool rotating = mb_rotating(s);
-	for (int i = first; i < 32; i++) {
+	for (int i = 0; i < 32; i++) {
 		if (i >= iters) { break; }
 		mb_step(s, z, dz, c, rotating, i);
 	}
@@ -413,11 +412,9 @@ float de(int s, vec3 p, int iters) {
 	vec4 c = mb_constant(s, z0);
 	vec4 z = z0;
 	float dz = 1.0;
-	mb_orbit(s, z, dz, c, 0, iters);
+	mb_orbit(s, z, dz, c, iters);
 	return length(z) / abs(dz) + noise_displace(p);
 }
-
-#include "res://src/fractal/perturbation.gdshaderinc"
 
 // The scene distance at a world offset `off` from the eye, in world units:
 // the smallest shape distance, each evaluated in its own frame and scaled back
@@ -434,7 +431,7 @@ float de_scene(vec3 off, bool coarse, out int which) {
 		float bound = cube_dist(q, box_half[i]) * shape_size[i];
 		if (bound >= best) { continue; }
 		int iters = coarse ? clamp(coarse_iters[i], 1, fractal_iterations) : fractal_iterations;
-		float d = (pert_on(i) ? de_pert(i, pert_offset(i, off), iters) : de(i, q, iters)) * shape_size[i];
+		float d = de(i, q, iters) * shape_size[i];
 		if (d < best) { best = d; which = i; }
 	}
 	return best;
@@ -462,14 +459,6 @@ vec3 calc_normal(int s, vec3 v, float delta) {
 		de(s, v + e.xyy, fractal_iterations) - de(s, v - e.xyy, fractal_iterations),
 		de(s, v + e.yxy, fractal_iterations) - de(s, v - e.yxy, fractal_iterations),
 		de(s, v + e.yyx, fractal_iterations) - de(s, v - e.yyx, fractal_iterations)));
-}
-
-// The true surface normal of shape s at local point v, a world offset `off`
-// from the eye: calc_normal(s, v, delta), or for the perturbed shape the
-// perturbed estimate's (v is then too coarse to difference).
-vec3 true_normal(int s, vec3 v, vec3 off, float delta) {
-	if (pert_on(s)) { return calc_normal_pert(s, pert_offset(s, off), delta); }
-	return calc_normal(s, v, delta);
 }
 
 // The Ice Fractal normal: field at the half-scale base point h = v/2, offset
@@ -559,8 +548,7 @@ vec3 scatter(vec3 col, float t, vec3 dir, vec3 ldir) {
 // one extra ray per pixel; skipped when shadow_steps is 0. The world offset
 // from the eye (dir · total + the normal lift + ldir · t) is what every shape
 // maps into its own frame, so the hit shape's numbers stay O(1); and since it
-// goes through de_scene, the perturbed shape's estimates are the perturbed ones,
-// which keep their precision at depth (de from the 32-bit point would be noise).
+// goes through de_scene, every estimate is evaluated in its shape's frame.
 float soft_shadow(int s, vec3 n_world, vec3 dir, vec3 ldir, float total) {
 	float eps0 = hit_eps(total, precision[s]);
 	vec3 lift = dir * total + n_world * 4.0 * eps0;
@@ -596,6 +584,21 @@ void fragment() {
 	}
 
 	vec3 bg = (color_mode == 5 || color_mode == 6) ? vec3(1.0) : vec3(0.0);
+	float sphere_b = dot(eye, dir);
+	float sphere_discriminant = sphere_b * sphere_b - dot(eye, eye) + exit_radius * exit_radius;
+	float sphere_start = 0.0;
+	float sphere_end = -1.0;
+	if (sphere_discriminant >= 0.0) {
+		float root = sqrt(sphere_discriminant);
+		sphere_start = max(0.0, -sphere_b - root);
+		sphere_end = -sphere_b + root;
+	}
+	if (exit_has_skybox && sphere_end > 0.0) {
+		vec3 normal = normalize(eye + dir * sphere_end);
+		vec2 sky_uv = vec2(atan(normal.y, normal.x) / (2.0 * PI) + 0.5,
+			acos(clamp(normal.z, -1.0, 1.0)) / PI);
+		bg = texture(exit_skybox, sky_uv).rgb;
+	}
 	// A miss is infinitely far, so under fog the sky is the fog: far surfaces fade
 	// into it without a seam.
 	if (fog_dist > 0.0) { bg = mix(fog_color, bg, fog_clear); }
@@ -614,7 +617,11 @@ void fragment() {
 		}
 	}
 
-	if (t_exit < 0.0) {
+	// The exit sphere is the scene's finite background surface. Fractal
+	// geometry behind it does not hide the sky, including while outside.
+	t_start = max(t_start, sphere_start);
+	t_exit = min(t_exit, sphere_end);
+	if (t_exit < 0.0 || t_start > t_exit) {
 		COLOR = vec4(bg, 1.0);
 	} else {
 		if (fog_dist > 0.0 && fog_clear <= 0.0) {
@@ -694,16 +701,16 @@ void fragment() {
 					if (nf_weight >= 1.0) {
 						n = calc_nf(s, v, h);
 					} else if (nf_weight <= 0.0) {
-						n = true_normal(s, v, dir * total, delta);
+						n = calc_normal(s, v, delta);
 					} else {
 						vec3 nf = calc_nf(s, v, h);
-						vec3 m = mix(true_normal(s, v, dir * total, delta), nf, nf_weight);
+						vec3 m = mix(calc_normal(s, v, delta), nf, nf_weight);
 						// The two can point nearly opposite ways (NF is not a gradient);
 						// a blend that cancels to nothing keeps NF rather than a NaN.
 						n = dot(m, m) > 1e-12 ? normalize(m) : nf;
 					}
 				} else {
-					n = true_normal(s, v, dir * total, delta);
+					n = calc_normal(s, v, delta);
 				}
 
 				// Bump: tilt the normal by the across-surface part of noise_bump's

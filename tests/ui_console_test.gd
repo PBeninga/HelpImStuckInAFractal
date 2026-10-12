@@ -207,18 +207,6 @@ func _layout_at_default_size() -> void:
 	await ui.frames(1)
 	check(pane.zoom_label.is_visible_in_tree() and win.encloses(ui.global_rect(pane.zoom_label)),
 		"the zoom limit readout, when shown, is inside the window (%s)" % ui.global_rect(pane.zoom_label))
-	check(win.encloses(ui.global_rect(pane.reset_camera_button)),
-		"and so is Reset camera beside it (%s)" % ui.global_rect(pane.reset_camera_button))
-	pane.show_zoom_limit(false)
-	await ui.frames(1)
-	pane.show_zoom_limit(true)
-	pane.show_deep(20)
-	await ui.frames(1)
-	check(pane.deep_label.is_visible_in_tree() and win.encloses(ui.global_rect(pane.deep_label)),
-		"the deep readout, shown beside the zoom limit, is inside the window (%s)" % ui.global_rect(pane.deep_label))
-	check(win.encloses(ui.global_rect(pane.reset_camera_button)),
-		"and Reset camera still is (%s)" % ui.global_rect(pane.reset_camera_button))
-	pane.show_deep(0)
 	pane.show_zoom_limit(false)
 	await ui.frames(1)
 	for id in pane.line_ids():

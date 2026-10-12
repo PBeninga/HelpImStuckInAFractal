@@ -1,18 +1,9 @@
 class_name Main
 extends Node
-## Wires the shape list and the look table, the keymap/axes, the clock and the
-## console into every child, selects the active camera from camera_mode, owns
-## the mouse capture, and is the single mouse-event dispatcher. Each frame it
-## resolves every shape's table (into its ShapeParams) and the look table (into
-## the params' look fields) + axis values + clock, which every consumer reads;
-## the ShapeList's structure is mirrored into params.shapes. Saving and
-## loading a level: WorkspaceFiles picks the file, Workspace does the reading and
-## writing, the console's View tab shows the result. Escape only frees the
-## mouse; a Ctrl tap opens the console, whose View tab holds Save / Load, the
-## camera mode, the renderer and Back to Menu. Reset camera (in the Movement
-## pane and the View tab's Renderer options) puts the camera back where the
-## current file has it. R shows or hides the centre-ray probe dot (a Settings
-## preference).
+## Wires shape/look tables, axes, cameras and the console. Gameplay owns level
+## files, spawn and escape controls; View owns rendering and window controls.
+## Escape frees the mouse; a Ctrl tap toggles the console. Return to spawn uses
+## the level's configured coordinates. R toggles the centre-ray probe.
 ##
 ## Fullscreen (the View tab's button, or the OS's own green button) docks the
 ## console into the main window's right-hand strip and narrows the view to the
@@ -53,6 +44,8 @@ var _console: ConsoleWindow
 var _last_mode := -1
 var _files: WorkspaceFiles
 var _view_pane: ViewPane
+var _gameplay_pane: GameplayPane
+var escape_label: Label
 var _noise: NoiseWindow
 var _chat: ChatPanel
 var _loading := false
@@ -67,11 +60,6 @@ var _ctrl := CtrlTap.new()
 ## the Ctrl tap: the main window's, the console's and the noise window's. One
 ## array, shared by reference with the fly camera and the axis controller.
 var _text_viewports: Array = []
-## Where Reset camera goes: the camera as the current file has it (as last
-## loaded or saved), or the starting view while no file is current.
-var _home_transform: Transform3D
-var _home_eye: Array = [0.0, 0.0, 0.0]   # the 64-bit eye the transform's origin mirrors
-var _home_speed := 1.0
 ## The console is docked beside the view in one fullscreen window.
 var _docked := false
 ## Whether the main window was fullscreen when last looked at; a change docks
@@ -87,7 +75,6 @@ func _ready() -> void:
 	UiScale.follow_size(get_window(), WINDOW_SIZE)
 	params = FractalParams.new()
 	camera = CameraState.make_default()
-	_remember_home()
 
 	_shapes = ShapeList.new()
 	_shapes.changed.connect(_sync_shapes)
@@ -117,6 +104,7 @@ func _ready() -> void:
 
 	_build_workspace_files()
 	_build_view_pane()
+	_build_gameplay()
 	_build_noise_window()
 	_build_chat()
 
@@ -148,6 +136,10 @@ func _ready() -> void:
 
 func workspace_files() -> WorkspaceFiles:
 	return _files
+
+
+func gameplay_pane() -> GameplayPane:
+	return _gameplay_pane
 
 
 func view_pane() -> ViewPane:
@@ -243,7 +235,6 @@ func _build_console() -> void:
 	# The zoom is the player's, like the sensitivity: Settings keeps it.
 	_console.set_zoom(Settings.console_zoom)
 	_console.zoom_changed.connect(func(z: float): Settings.console_zoom = z)
-	_console.reset_camera_requested.connect(reset_camera)
 	# Its place is the player's too: put it back where it was last left.
 	_console.remembered_rect = Settings.window_rect(&"console")
 	Settings.track_window(&"console", _console)
@@ -296,17 +287,48 @@ func _toggle_noise() -> void:
 func _build_view_pane() -> void:
 	_view_pane = _console.view_pane()
 	_view_pane.setup(params)
-	_view_pane.show_file(_files.display_name())
-	_view_pane.renderer.reset_camera_requested.connect(reset_camera)
 	_view_pane.menu_requested.connect(back_to_menu)
-	_view_pane.save_requested.connect(_files.prompt_save)
-	_view_pane.load_requested.connect(_files.prompt_load)
 	_view_pane.noise_requested.connect(_open_noise)
 	_view_pane.sensitivity_changed.connect(func(v: float): Settings.mouse_sensitivity = v)
 	# Deferred: docking hides and re-makes the console, which must not happen
 	# inside the console's own click.
 	_view_pane.fullscreen_requested.connect(toggle_fullscreen, CONNECT_DEFERRED)
 	_view_pane.reset_window_requested.connect(reset_window, CONNECT_DEFERRED)
+
+
+func _build_gameplay() -> void:
+	_gameplay_pane = _console.gameplay_pane()
+	_gameplay_pane.setup(params.gameplay)
+	_gameplay_pane.show_file(_files.display_name())
+	_gameplay_pane.save_requested.connect(_files.prompt_save)
+	_gameplay_pane.load_requested.connect(_files.prompt_load)
+	_gameplay_pane.return_requested.connect(return_to_spawn)
+	var hud := CanvasLayer.new()
+	hud.name = "GameplayHUD"
+	hud.layer = 5
+	add_child(hud)
+	escape_label = Label.new()
+	escape_label.name = "EscapeMessage"
+	escape_label.text = "You escaped!"
+	escape_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	escape_label.add_theme_font_size_override("font_size", 44)
+	escape_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.75))
+	escape_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	escape_label.add_theme_constant_override("shadow_offset_x", 2)
+	escape_label.add_theme_constant_override("shadow_offset_y", 2)
+	escape_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(escape_label)
+	escape_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	escape_label.offset_top = 70
+	escape_label.offset_bottom = 130
+	camera.changed.connect(_update_escape)
+	params.gameplay.changed.connect(_update_escape)
+	_update_escape()
+
+
+func _update_escape() -> void:
+	if escape_label != null:
+		escape_label.visible = params.gameplay.is_outside(camera)
 
 
 ## Show the console beside the main window, then hand focus back to the main
@@ -406,7 +428,7 @@ func _layout_view() -> void:
 	var right := 0.0
 	if _docked and _console.visible:
 		right = -float(_dock_rect().size.x)
-	for c in [view, _marker]:
+	for c in [view, _marker, escape_label]:
 		if c != null:
 			c.offset_right = right
 	if _chat != null:
@@ -438,8 +460,8 @@ func _sync_sensitivity_to_settings() -> void:
 
 
 func _on_file_current_changed(display_name: String) -> void:
-	if _view_pane != null:
-		_view_pane.show_file(display_name)
+	if _gameplay_pane != null:
+		_gameplay_pane.show_file(display_name)
 
 
 func _build_workspace_files() -> void:
@@ -462,11 +484,9 @@ func _build_workspace_files() -> void:
 func _process(_delta: float) -> void:
 	_resolve_once()
 	# The fly camera's zoom limit reaches the Movement pane the way the shed
-	# level does, polled since it can change on any physics tick; so does the
-	# view's perturbed iteration count.
+	# level does, polled since it can change on any physics tick.
 	if _console != null:
 		_console.show_zoom_limit(fly.at_zoom_limit)
-		_console.show_deep(view.pert_iters())
 
 
 ## Resolve every shape's table (into its ShapeParams) and the look table (into
@@ -499,7 +519,6 @@ func save_level_to(path: String) -> void:
 		_report("Save failed (error %d): %s" % [err, path])
 		return
 	_files.note_saved(path)
-	_remember_home()
 	_report("Saved %s" % path.get_file())
 
 
@@ -513,7 +532,6 @@ func load_level_from(path: String) -> void:
 		_report("Load failed: %s" % warnings[0])
 		return
 	_files.note_loaded(path)
-	_remember_home()
 	_resolve_once()   # push the loaded table straight into params
 	var noise: Variant = result.get("noise", null)
 	if noise is Dictionary and _noise != null:
@@ -528,23 +546,13 @@ func load_level_from(path: String) -> void:
 		_report("Loaded %s with %d warning(s): %s" % [path.get_file(), warnings.size(), "; ".join(warnings)])
 
 
-## Put the camera (and its speed factor) back where the current file has it, or
-## at the starting view while no file is current. In Orbit, re-centre on what
-## the camera now looks at.
-func reset_camera() -> void:
-	camera.transform = _home_transform
-	camera.set_eye(_home_eye[0], _home_eye[1], _home_eye[2])
-	camera.speed_factor = _home_speed
+## Return to the level's configured spawn, preserving the look direction.
+func return_to_spawn() -> void:
+	params.gameplay.return_to_spawn(camera)
 	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
 		_orbit.enter()
-	var file_name := _files.display_name() if _files != null else ""
-	_report("Camera reset to %s" % (file_name if file_name != "" else "the starting view"))
-
-
-func _remember_home() -> void:
-	_home_transform = camera.transform
-	_home_eye = [camera.eye_x(), camera.eye_y(), camera.eye_z()]
-	_home_speed = camera.speed_factor
+	_update_escape()
+	_report("Returned to spawn")
 
 
 ## Cmd/Ctrl+P: put the fractal (without any UI) on the clipboard.
@@ -565,8 +573,8 @@ func _on_shed_level_changed(level: int) -> void:
 
 func _report(line: String) -> void:
 	print(line)
-	if _view_pane != null:
-		_view_pane.show_status(line)
+	if _gameplay_pane != null:
+		_gameplay_pane.show_status(line)
 
 
 ## A file panel is opening (possibly from Cmd+S with the mouse captured): free

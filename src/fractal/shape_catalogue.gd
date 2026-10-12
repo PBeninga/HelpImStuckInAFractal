@@ -137,7 +137,7 @@ static func shape_specs() -> Array[AttributeSpec]:
 			FractalParams.Shape.MANDELBULB],
 		"group": "Fractal",
 		"tooltip": "Which fractal is drawn. Each has its own rows below; only the chosen one's are shown.",
-		"effects": "Mandelbox is the site's box-and-sphere-fold solid. KIFS is the kaleidoscopic family: the Menger sponge, the Sierpinski tetrahedron and their rotated, twisted relatives. Kleinian is a pseudo-Kleinian limit set, an endless lattice of curved sheets and rings whose rays stop at its View distance. Mandelbulb is the 3D cousin of the Mandelbrot set: a lobed, budding ball about 2.2 across. The camera stays put, so fly out (or Reset camera) to frame the new shape.",
+		"effects": "Mandelbox is the site's box-and-sphere-fold solid. KIFS is the kaleidoscopic family: the Menger sponge, the Sierpinski tetrahedron and their rotated, twisted relatives. Kleinian is a pseudo-Kleinian limit set, an endless lattice of curved sheets and rings whose rays stop at its View distance. Mandelbulb is the 3D cousin of the Mandelbrot set: a lobed, budding ball about 2.2 across. The camera stays put, so fly out to frame the new shape, or use Gameplay’s Return to spawn.",
 	}))
 	out.append(AttributeSpec.make({
 		"id": "w", "label": "W", "type": F,

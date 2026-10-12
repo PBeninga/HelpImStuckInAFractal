@@ -1,5 +1,8 @@
 # Perturbation: zooming past the 32-bit floor — design
 
+> Historical: perturbation was removed on 2026-10-12. The renderer uses the
+> direct 32-bit march and zoom floor; this document records the retired design.
+
 Date: 2026-10-09. Builds on
 [the deep-zoom march spec](2026-10-08-deep-zoom-march-design.md) (its cause 2
 and option C) and the measurements in

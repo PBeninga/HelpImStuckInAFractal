@@ -5,9 +5,8 @@ extends Node
 ## follows how far away the surface straight ahead is (the CenterRay), capped
 ## by the distance to the nearest surface (of any shape) in any direction, so
 ## inside a small nested shape it crawls at that shape's scale. Holding Shift
-## doubles the speed. A move that would take the camera below the zoom floor of
-## the nearest shape (FractalParams.zoom_floor: where the perturbed march or 32
-## iterations run out, or the 32-bit floor for shapes that are not perturbed)
+## applies the level's sprint multiplier (default 2). A move that would take the camera below the zoom floor of
+## the nearest shape (FractalParams.zoom_floor: the shader's 32-bit floor)
 ## is refused. Reads and writes a shared CameraState, moving its eye in 64-bit.
 
 const WORLD_UP := Vector3(0, 0, 1)
@@ -103,13 +102,14 @@ func move_allowed(from, to) -> bool:
 	return move_allowed_at([from[0], from[1], from[2]], [to[0], to[1], to[2]])
 
 
-## move_allowed() on 64-bit points ([x, y, z] each). One ReferenceOrbit at `to`
-## gives both its distance and its floor.
+## move_allowed() on 64-bit points ([x, y, z] each). The nearest shape at `to`
+## gives both its distance and its 32-bit floor, with one scene estimate.
 func move_allowed_at(from: Array, to: Array) -> bool:
-	var orbit := ReferenceOrbit.build(_params, to[0], to[1], to[2])
-	if orbit.distance >= _params.zoom_floor_for(orbit):
+	var nearest := DistanceEstimator.nearest_at(to[0], to[1], to[2], _params)
+	var floor_at_to := _params.shapes[nearest["index"]].zoom_floor(to[0], to[1], to[2], _params.detail)
+	if nearest["distance"] >= floor_at_to:
 		return true
-	return orbit.distance >= DistanceEstimator.scene_estimate_at(from[0], from[1], from[2], _params)
+	return nearest["distance"] >= DistanceEstimator.scene_estimate_at(from[0], from[1], from[2], _params)
 
 
 ## Rotate the view by a mouse delta (pixels). Yaw turns the heading about world
@@ -148,19 +148,27 @@ func move_direction() -> Vector3:
 	return dir
 
 
-## Travel speed: base_speed(), times SPRINT_MULTIPLIER while sprinting.
+## Travel speed: base_speed(), times the gameplay Shift multiplier while sprinting.
 func current_speed() -> float:
-	return base_speed() * (SPRINT_MULTIPLIER if sprinting else 1.0)
+	return base_speed() * (_params.gameplay.shift_multiplier if sprinting else 1.0)
 
 
 ## Speed before sprinting: ~one second covers the distance to the surface
 ## straight ahead, but never more than NEAR_CAP times the distance to the
-## nearest surface (a miss, at infinity, takes the cap), times the speed factor
+## nearest surface (a miss, at infinity, takes the cap), shaped by the gameplay
+## distance power and movement multiplier, times the wheel speed factor
 ## and the load shedder's speed_limit.
 func base_speed() -> float:
+	var game := _params.gameplay
+	var factor := game.move_speed * _camera.speed_factor * speed_limit
+	if not game.distance_scaling:
+		return factor
 	var near := DistanceEstimator.scene_estimate_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _params)
-	var d := minf(_ray.distance(), near * NEAR_CAP)
-	return clampf(d, SPEED_FLOOR, 20.0) * _camera.speed_factor * speed_limit
+	var cap := maxf(near * game.near_cap, SPEED_FLOOR)
+	var d := clampf(minf(_ray.distance(), cap), SPEED_FLOOR, game.max_distance_speed)
+	# Keep the nearest-surface safety cap even when a power below one would
+	# otherwise increase a tiny distance into an unsafe movement step.
+	return clampf(minf(pow(d, game.distance_power), cap), SPEED_FLOOR, game.max_distance_speed) * factor
 
 
 func scroll(up: bool) -> void:

@@ -1,8 +1,5 @@
 extends "res://tests/test_case.gd"
 
-const DEEP_TICKS := 4000   # physics ticks the deep flight may take
-
-
 func _fresh() -> Array:
 	var params := FractalParams.new()
 	var cam := CameraState.make_default()
@@ -161,7 +158,7 @@ func run() -> void:
 		await _fly_at(shot[0], shot[1], shot[2])
 
 	await _zoom_floor_guard()
-	await _deep_flight()
+	await _zoom_floor_guard(MandelboxShape.FoldShape.OCTAHEDRAL)
 
 
 
@@ -194,15 +191,14 @@ func _tick(action: StringName) -> void:
 
 
 ## The fly camera refuses a move below FractalParams.zoom_floor, says so through
-## at_zoom_limit, and always lets the camera back off. Run on the octahedral fold,
-## which is not perturbed and keeps the 32-bit floor (the deep flight on the
-## default box is _deep_flight).
-func _zoom_floor_guard() -> void:
+## at_zoom_limit, and always lets the camera back off. Run on the default box
+## and the octahedral fold, both guarded by the direct march's 32-bit floor.
+func _zoom_floor_guard(fold_shape: int = MandelboxShape.FoldShape.BOX) -> void:
 	var ctx := _fresh()
 	var params: FractalParams = ctx[0]
 	var cam: CameraState = ctx[1]
 	var fly: FlyCamera = ctx[2]
-	params.shape().fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
+	params.shape().fold_shape = fold_shape
 	var s := SurfaceFixture.default_surface(params)
 	check_eq(fly.at_zoom_limit, false, "a new fly camera is not at the zoom limit")
 
@@ -320,52 +316,3 @@ func _surface_within(origin: PackedFloat64Array, dir: Vector3, length: float, pa
 		if t >= length:
 			return false
 	return false
-
-
-## On the default box, from 1e-6 short of the surface (below today's 32-bit
-## floor, where the old guard refused W), holding W closes in, stops at the new
-## floor with at_zoom_limit, and the speed follows the distance down: under 1e-9
-## per tick at the end. base_speed measures both its distances from the 64-bit eye.
-func _deep_flight() -> void:
-	var ctx := _fresh()
-	var params: FractalParams = ctx[0]
-	params.perturbation_enabled = true
-	var cam: CameraState = ctx[1]
-	var fly: FlyCamera = ctx[2]
-	var s := SurfaceFixture.default_surface(params)
-	_place(cam, s, 1e-6)
-	var e0 := cam.eye64()
-	var d0 := DistanceEstimator.scene_estimate_at(e0[0], e0[1], e0[2], params)
-	check(d0 < params.floor32(e0), "1e-6 short of the surface is below the 32-bit floor (%s < %s): the old guard refused W" % [d0, params.floor32(e0)])
-	check(d0 > params.zoom_floor(e0), "and above the new one (%s)" % params.zoom_floor(e0))
-	var ray := CenterRay.new(params, cam)
-	fly.setup(params, cam, ray)
-	fly.enabled = true
-	var first_step := -1.0
-	var last_step := 0.0
-	var ticks := 0
-	Input.action_press("move_forward")
-	for _i in DEEP_TICKS:
-		var before := cam.eye64()
-		await physics_frame
-		ticks += 1
-		if fly.at_zoom_limit:
-			break
-		var now := cam.eye64()
-		last_step = sqrt((now[0] - before[0]) ** 2 + (now[1] - before[1]) ** 2 + (now[2] - before[2]) ** 2)
-		if first_step <= 0.0:
-			first_step = last_step   # the first tick after the press may not have moved yet
-	Input.action_release("move_forward")
-	var e1 := cam.eye64()
-	var d1 := DistanceEstimator.scene_estimate_at(e1[0], e1[1], e1[2], params)
-	check(fly.at_zoom_limit, "holding W reaches the new zoom limit (after %d ticks, at %s)" % [ticks, d1])
-	check(d1 < 0.1 * d0, "after closing in more than ten times (%s from %s)" % [d1, d0])
-	check(d1 >= params.zoom_floor(e1), "and stopping at the floor, not past it (%s over %s)" % [d1, params.zoom_floor(e1)])
-	check(last_step < 1e-9 and last_step < 0.1 * first_step,
-		"the speed follows the distance: under 1e-9 per tick at the end (%s, the first %s)" % [last_step, first_step])
-	var want := clampf(minf(ray.distance(), FlyCamera.NEAR_CAP * d1), FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor
-	check_approx(fly.base_speed(), want, "base_speed there measures both distances from the 64-bit eye", want * 1e-9)
-	check(fly.base_speed() < 1e-6, "and is far below the old 1e-6 clamp (%s)" % fly.base_speed())
-	fly.enabled = false
-	fly.queue_free()
-	await frames(1)

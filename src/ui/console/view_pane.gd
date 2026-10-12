@@ -1,19 +1,13 @@
 class_name ViewPane
 extends ScrollContainer
-## The console's View tab: everything the old pause menu held that is not a
-## shape knob. A Save level… / Load level… row with the current file's name and a
-## status line, the Camera mode (Fly / Orbit), the Noise editor… button, the
-## mouse sensitivity, the Window buttons (Fullscreen, Reset window), the
-## Renderer options (detail, march steps, Fast Controls, Reset camera) and Back
-## to Menu. It hands each choice back through its signals; Main owns the files,
-## the noise window, the windows and the scene change.
+## The console's View tab: camera mode, mouse sensitivity, noise editor,
+## window controls, renderer options and Back to Menu. Level files and movement
+## controls live on Gameplay. Main owns the windows and scene changes.
 ##
 ## The sensitivity is the player's (the Settings autoload keeps it), so Main
 ## wires it through `sensitivity_changed` / set_sensitivity(): naming the
 ## autoload here would stop a `-s` test from compiling the console.
 
-signal save_requested
-signal load_requested
 signal noise_requested
 signal menu_requested
 signal fullscreen_requested
@@ -23,8 +17,6 @@ signal sensitivity_changed(value: float)
 ## The autoload's script, for its range constants only.
 const SettingsScript := preload("res://src/settings/settings.gd")
 
-var save_button: Button
-var load_button: Button
 var noise_button: Button
 var menu_button: Button
 var fullscreen_button: Button
@@ -32,8 +24,6 @@ var reset_window_button: Button
 var camera_option: OptionButton
 var sens_slider: HSlider
 var sens_value: Label
-var file_label: Label
-var status_label: Label
 var renderer: RendererOptions
 
 var _params: FractalParams
@@ -50,22 +40,6 @@ func _init() -> void:
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 8)
 	add_child(list)
-
-	list.add_child(_heading("FILE"))
-	var files_row := HBoxContainer.new()
-	files_row.add_theme_constant_override("separation", 8)
-	save_button = _button("Save level…",
-		"Save the level to a file in saves/: the shape, the bindings, the keys and axes, the camera, the noise graph and the preferences (Cmd/Ctrl+S overwrites the current file).")
-	load_button = _button("Load level…", "Load a saved level from saves/.")
-	file_label = Label.new()
-	files_row.add_child(save_button)
-	files_row.add_child(load_button)
-	files_row.add_child(file_label)
-	list.add_child(files_row)
-	status_label = Label.new()
-	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-	status_label.visible = false
-	list.add_child(status_label)
 
 	list.add_child(_heading("CAMERA"))
 	var camera_row := HBoxContainer.new()
@@ -127,15 +101,12 @@ func _init() -> void:
 	menu_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	list.add_child(menu_button)
 
-	save_button.pressed.connect(save_requested.emit)
-	load_button.pressed.connect(load_requested.emit)
 	noise_button.pressed.connect(noise_requested.emit)
 	menu_button.pressed.connect(menu_requested.emit)
 	fullscreen_button.pressed.connect(fullscreen_requested.emit)
 	reset_window_button.pressed.connect(reset_window_requested.emit)
 	camera_option.item_selected.connect(_on_camera_selected)
 	sens_slider.value_changed.connect(_on_sens_changed)
-	show_file("")
 
 
 ## Wire the camera option and the Renderer options to params. Call once.
@@ -144,17 +115,6 @@ func setup(params: FractalParams) -> void:
 	renderer.setup(params)
 	params.changed.connect(_refresh)
 	_refresh()
-
-
-## The current save's name, or an em dash when there is none.
-func show_file(display_name: String) -> void:
-	file_label.text = display_name if display_name != "" else "—"
-
-
-## One line about the last save or load; "" hides it.
-func show_status(text: String) -> void:
-	status_label.text = text
-	status_label.visible = text != ""
 
 
 ## Label the Fullscreen button for the layout in force.

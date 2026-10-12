@@ -109,7 +109,7 @@ func _build_toolbar() -> Control:
 	bar.add_theme_constant_override("separation", 6)
 	new_button = Button.new()
 	new_button.text = "New"
-	new_button.tooltip_text = "Discard this field and start from the default empty graph (Position and Output). The field is saved inside the level (the View tab's Save level…)."
+	new_button.tooltip_text = "Discard this field and start from the default empty graph (Position and Output). The field is saved inside the level (the Gameplay tab's Save level…)."
 	new_button.pressed.connect(func() -> void: new_requested.emit())
 	bar.add_child(new_button)
 

@@ -47,21 +47,18 @@ func run() -> void:
 	menu.queue_free()
 	await frames(1)
 
-	# --- the console's View tab: Save/Load/Camera/Sensitivity/Noise/Renderer/Menu ---
+	# --- View controls and Gameplay file actions ---
 	var params := FractalParams.new()
 	var vp := ViewPane.new()
 	root.add_child(vp)
 	vp.setup(params)
 	await frames(1)
 	check_eq(vp.name, &"View", "the tab is named View")
-	check_eq(vp.save_button.text, "Save level…", "View has a Save level button")
-	check_eq(vp.load_button.text, "Load level…", "View has a Load level button")
 	check_eq(vp.noise_button.text, "Noise editor…", "View has a Noise editor button")
 	check_eq(vp.menu_button.text, "Back to Menu", "View has a Back to Menu button")
 	check(vp.camera_option.item_count == 2, "View has a Camera option (Fly / Orbit)")
 	check(vp.renderer.fast_check != null, "and the Renderer options with Fast Controls")
-	# A focused button or checkbox takes Space (fly up): Reset camera would snap
-	# the camera back on every tap, so no Renderer control holds keyboard focus.
+	# A focused button takes Space (fly up), so Renderer controls avoid focus.
 	var focusable: Array[String] = []
 	for c in vp.renderer.find_children("*", "Control", true, false):
 		if (c as Control).focus_mode != Control.FOCUS_NONE:
@@ -85,23 +82,29 @@ func run() -> void:
 	check(sens.is_empty() and is_equal_approx(vp.sens_slider.value, 0.3), "set_sensitivity shows a value silently")
 	vp.sens_slider.value = 0.25
 	check(sens.size() == 1 and is_equal_approx(sens[0], 0.25), "dragging the slider emits sensitivity_changed")
+	var gp := GameplayPane.new()
+	root.add_child(gp)
+	gp.setup(params.gameplay)
+	check_eq(gp.save_button.text, "Save level…", "Gameplay has Save level")
+	check_eq(gp.load_button.text, "Load level…", "Gameplay has Load level")
 	# the file name and status helpers
-	vp.show_file("my_view.json")
-	check_eq(vp.file_label.text, "my_view.json", "show_file names the current save")
-	vp.show_status("Saved my_view.json")
-	check(vp.status_label.visible and vp.status_label.text.begins_with("Saved"), "show_status reports a line")
+	gp.show_file("my_view.json")
+	check_eq(gp.file_label.text, "my_view.json", "show_file names the current save")
+	gp.show_status("Saved my_view.json")
+	check(gp.status_label.visible and gp.status_label.text.begins_with("Saved"), "show_status reports a line")
 	# the buttons emit their signals
 	var fired := {}
-	vp.save_requested.connect(func(): fired["save"] = true)
-	vp.load_requested.connect(func(): fired["load"] = true)
+	gp.save_requested.connect(func(): fired["save"] = true)
+	gp.load_requested.connect(func(): fired["load"] = true)
 	vp.noise_requested.connect(func(): fired["noise"] = true)
 	vp.menu_requested.connect(func(): fired["menu"] = true)
-	vp.save_button.pressed.emit()
-	vp.load_button.pressed.emit()
+	gp.save_button.pressed.emit()
+	gp.load_button.pressed.emit()
 	vp.noise_button.pressed.emit()
 	vp.menu_button.pressed.emit()
 	check(fired.has("save") and fired.has("load") and fired.has("noise") and fired.has("menu"),
 		"Save/Load/Noise/Back to Menu emit their signals")
+	gp.queue_free()
 	vp.queue_free()
 	await frames(1)
 
