@@ -146,8 +146,7 @@ func _cursor_dir(pixel: Vector2) -> Vector3:
 
 
 func _look_from(eye: Vector3) -> void:
-	var t := Transform3D(Basis.IDENTITY, eye)
-	_camera.transform = t.looking_at(center, WORLD_UP)
+	_camera.transform = Transform3D(CameraState.facing_basis((center - eye).normalized()), eye)
 
 
 ## The scene's CPU march from `ro` along `rd` (DistanceEstimator.march, in

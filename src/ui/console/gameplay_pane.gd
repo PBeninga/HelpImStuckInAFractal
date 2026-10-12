@@ -5,10 +5,12 @@ extends ScrollContainer
 signal save_requested
 signal load_requested
 signal return_requested
+signal find_surface_requested
 
 var save_button: Button
 var load_button: Button
 var return_button: Button
+var find_surface_button: Button
 var file_label: Label
 var status_label: Label
 var scaling_check: CheckBox
@@ -46,6 +48,11 @@ func _init() -> void:
 	status_label.visible = false
 	_list.add_child(status_label)
 
+	_heading("CAMERA")
+	find_surface_button = _button("Find nearest surface", "Cast rays in all directions and face the closest surface hit, without moving the camera.")
+	find_surface_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_list.add_child(find_surface_button)
+
 	_heading("EXIT SPHERE")
 	_number(&"exit_radius", "Exit Radius", 0.001, 1000000.0, "World-space sphere centered at (0, 0, 0). Outside its radius, you escaped.")
 	_heading("SPAWN")
@@ -79,6 +86,7 @@ func _init() -> void:
 	save_button.pressed.connect(save_requested.emit)
 	load_button.pressed.connect(load_requested.emit)
 	return_button.pressed.connect(return_requested.emit)
+	find_surface_button.pressed.connect(find_surface_requested.emit)
 	scaling_check.toggled.connect(func(on):
 		if _settings != null:
 			_settings.distance_scaling = on)

@@ -107,6 +107,12 @@ func up() -> Vector3:
 	return transform.basis.y
 
 
+## +Z-up except at a pole, where +Y provides a nonparallel up hint.
+static func facing_basis(direction: Vector3) -> Basis:
+	var up_hint := Vector3(0, 0, 1) if absf(direction.z) < 0.9999 else Vector3(0, 1, 0)
+	return Basis.looking_at(direction, up_hint)
+
+
 ## The site's initial view: eye at DEFAULT_EYE, looking at the origin, +Z up.
 static func make_default() -> CameraState:
 	var c := CameraState.new()

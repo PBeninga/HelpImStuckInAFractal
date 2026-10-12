@@ -307,6 +307,7 @@ func _build_gameplay() -> void:
 	_gameplay_pane.save_requested.connect(_files.prompt_save)
 	_gameplay_pane.load_requested.connect(_files.prompt_load)
 	_gameplay_pane.return_requested.connect(return_to_spawn)
+	_gameplay_pane.find_surface_requested.connect(find_nearest_surface)
 	var hud := CanvasLayer.new()
 	hud.name = "GameplayHUD"
 	hud.layer = 5
@@ -565,6 +566,21 @@ func return_to_spawn() -> void:
 		_orbit.enter()
 	_update_escape()
 	_report("Returned to spawn")
+
+
+## Recover a lost shape without moving the eye or changing flight speed.
+func find_nearest_surface() -> void:
+	var hit := SurfaceFinder.find(params, camera)
+	if hit.is_empty():
+		_report("No surface found within the visible scene.")
+		return
+	var direction: Vector3 = hit.direction
+	camera.set_basis(CameraState.facing_basis(direction))
+	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
+		var distance: float = hit.distance
+		_orbit.recenter_on(Vector3(camera.eye_x() + direction.x * distance,
+			camera.eye_y() + direction.y * distance, camera.eye_z() + direction.z * distance))
+	_report("Facing nearest surface (distance %s)." % hit.distance)
 
 
 ## Cmd/Ctrl+P: put the fractal (without any UI) on the clipboard.
