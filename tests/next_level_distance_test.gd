@@ -5,6 +5,8 @@ func run() -> void:
 	root.add_child(main)
 	await frames(2)
 	main.set_process(false)
+	main.params.gameplay.distance_scaling = false
+	main._check_shape_progress()
 	main.shapes().set_stage(0, 20.0, [])
 	main.return_to_spawn()
 	var mat: ShaderMaterial = main.view._material
@@ -15,6 +17,7 @@ func run() -> void:
 	check_eq(DistanceEstimator.scene_bounds(0.0, 0.0, 0.0, Vector3.RIGHT, main.params), bounds,
 		"editing progression does not change CPU ray bounds")
 	main.camera.set_eye(0.6, 0.0, 0.0)
+	main._check_shape_progress()
 	check(main.shape_run.escaped, "the independent gameplay threshold still triggers completion")
 	main.return_to_spawn()
 	main.shapes().set_stage(0, 2.0, [])
@@ -26,6 +29,7 @@ func run() -> void:
 	check(pane._entries[1].threshold.text.contains("4.0 world units"), "editing an earlier field leaves later thresholds unchanged")
 	check_eq(main.shape_run.briefing().stages[1].next_level_threshold, 4.0, "agent briefing agrees with the UI threshold")
 	main.camera.set_eye(3.1, 0.0, 0.0)
+	main._check_shape_progress()
 	main.shape_run.step(1.0)
 	main.shape_run.step(0.1)
 	main.shape_run.step(1.0)
@@ -37,6 +41,7 @@ func run() -> void:
 	main.shapes().set_stage(1, 1.0, [])
 	check_eq(main.params.next_level_threshold, 1.0, "editing the active distance refreshes its cached threshold")
 	main.camera.set_eye(1.1, 0.0, 0.0)
+	main._check_shape_progress()
 	check(main.shape_run.escaped, "a later stage can finish at a smaller absolute distance")
 	main.shapes().remove(0)
 	check(pane._entries[0].threshold.text.contains("1.0 world units"), "removing a shape preserves the remaining shape's distance")

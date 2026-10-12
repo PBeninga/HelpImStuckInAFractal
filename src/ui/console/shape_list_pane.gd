@@ -280,7 +280,7 @@ func _make_entry(i: int) -> Dictionary:
 	distance.allow_greater = true
 	distance.step = 0.0
 	distance.value = _shapes.entry(i).next_level_distance
-	distance.tooltip_text = "Absolute distance in world units from the run origin (spawn) for this shape. 0 uses 20. Crossing this distance advances regardless of scripted commands and returns you to origin under a screen fade; does not affect rendering."
+	distance.tooltip_text = "Distance from run origin (spawn) in world units. One world unit is one second of travel at current player speed; the scene distance changes with speed. 0 uses 20. Crossing this distance advances regardless of scripted commands and returns you to origin under a screen fade; does not affect rendering."
 	distance_row.add_child(distance)
 	var threshold := Label.new()
 	threshold.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -387,7 +387,7 @@ func set_gameplay_active(index: int) -> void:
 
 
 func _threshold_text(i: int) -> String:
-	return "Advances beyond %s world units from run origin (spawn)." % _shapes.next_level_threshold(i)
+	return "Advances beyond %s world units from run origin (spawn); 1 unit = 1 second at current speed." % _shapes.next_level_threshold(i)
 
 
 func _refresh_stage_distances(_index: int) -> void:

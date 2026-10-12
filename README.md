@@ -68,8 +68,11 @@ results are labelled rather than reported as zero cost. CPU/GPU work can overlap
 Closing F3 stops its timers, sampling callbacks, and viewport timing queries.
 
 **F4** toggles a matching gameplay overlay with the current shape/level number
-and distance from the run origin (spawn). It refreshes once per second while
-visible, works from child windows and text fields, and does no polling while hidden.
+and distance from the run origin (spawn). One gameplay world unit is the distance
+travelled in one second at the current player speed, including wheel speed,
+sprint and the speed limiter. The scale is sampled every game frame and is shared
+by the readout and level advancement, including while stationary. The overlay
+works from child windows and text fields and does no readout work while hidden.
 Both overlays stay in the game window; their shortcuts also work from child windows.
 
 The console opens **beside** the main window — or on another monitor when
@@ -499,13 +502,17 @@ The View tab holds **Camera** mode (Fly / Orbit), **mouse sensitivity**, the
 
 **Save level…** / **Load level…** live here, with the current file and status.
 **Next level distance** in each shape’s level settings is its absolute distance
-from the run origin (spawn); 0 uses the default 20 world units. Subtext beneath
+from the run origin (spawn) in these speed-based world units; 0 uses the default
+20. At a speed of 2 scene units/second, a threshold of 20 means 40 scene units
+from spawn. Changing speed changes this boundary immediately on the next frame;
+slowing down can cross it without moving. Subtext beneath
 the field shows that shape’s threshold: for example, 10, 15 and 20 advance at
 10, 15 and 20 units from spawn. These gameplay
 thresholds are independent of shader bailout distances and the rendering-only
 clipping sphere. Old saves still load their legacy distance fields; new saves
-use `next_level_distance`. Complete each shape’s commands and cross
-its boundary to advance. The screen fades out, the player returns to the run
+use `next_level_distance`, with its numeric value interpreted in the current
+speed-based units. Scripted commands are optional; cross the boundary to advance.
+The screen fades out, the player returns to the run
 origin with their view direction preserved while the next shape loads under
 fully opaque fog, then the screen fades back in. Leaving the last shape’s
 boundary starts the escape animation:
@@ -527,7 +534,9 @@ never changes spawn; loading still restores the saved camera position.
 
 **Move speed** multiplies travel, and **Shift speed multiplier** applies while
 Shift is held (default 2). **Scale speed by camera-ray distance** defaults on;
-off gives fixed speed in world units per second. **Distance response power**
+off gives fixed speed in scene-coordinate units per second. Shape positions,
+sizes, spawn coordinates and rendering distances keep their scene-coordinate
+units; the speed-based conversion applies to gameplay progress. **Distance response power**
 (default 1) shapes the distance response, **Nearest-surface cap** (default 10)
 limits it near surrounding walls, and **Max distance speed** (default 20) caps
 it before movement, Shift, wheel and load-shed multipliers. The zoom-limit stop

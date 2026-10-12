@@ -10,6 +10,8 @@ func run() -> void:
 		await frames(1)
 		return
 	main.set_process(false)
+	main.params.gameplay.distance_scaling = false
+	main._check_shape_progress()
 	main.shapes().add({&"shape": FractalParams.Shape.MANDELBOX, &"pos_x": 100.0})
 	main.shapes().set_stage(0, 2.0, [])
 	main.shapes().set_stage(1, 4.0, [])
@@ -27,6 +29,7 @@ func run() -> void:
 	var n := DistanceEstimator.nearest_at(100.0, 0.0, 0.0, main.params)
 	check_eq(n.index, 0, "CPU geometry excludes inactive shape even when nearer")
 	main.camera.set_eye(12.1, 0.0, 0.0)
+	main._check_shape_progress()
 	var facing: Basis = main.camera.transform.basis
 	check(main.shape_run.transitioning(), "crossing stage boundary starts transition")
 	check(not main.view.is_escaped(), "intermediate stage does not start final animation")
@@ -52,6 +55,7 @@ func run() -> void:
 	main.shape_run.check_position()
 	check(not main.shape_run.transitioning() and not main.shape_run.escaped, "new level starts inside its own boundary")
 	main.camera.set_eye(14.1, 0.0, 0.0)
+	main._check_shape_progress()
 	check(main.view.is_escaped(), "last boundary triggers escape animation")
 	main.return_to_spawn()
 	check(not main.view.is_escaped(), "return to spawn resets escape")
@@ -59,6 +63,7 @@ func run() -> void:
 	main.params.gameplay.spawn_x = 1000000.0
 	main.return_to_spawn()
 	main.camera.set_eye(1000000.123456, 0.0, 0.0)
+	main._check_shape_progress()
 	check_approx(mat.get_shader_parameter("exit_eye").x, 0.123456, "shader boundary keeps precision near a distant spawn", 1e-7)
 	var planner := load("res://src/mcp/escape_planner.gd")
 	var target: Array = planner._exit_point([10.0, 0.0, 0.0], Vector3.RIGHT, 2.0, [10.0, 0.0, 0.0])

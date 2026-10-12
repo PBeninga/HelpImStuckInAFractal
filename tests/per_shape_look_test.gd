@@ -89,6 +89,7 @@ func _test_rendered_look() -> void:
 	root.add_child(main)
 	await frames(2)
 	main.set_process(false)
+	main.params.gameplay.distance_scaling = false
 	main.shapes().add()
 	main.shapes().set_stage(0, 2.0, [])
 	main.shapes().set_stage(1, 4.0, [])
@@ -108,6 +109,7 @@ func _test_rendered_look() -> void:
 	check_approx(mat.get_shader_parameter("light_yaw"), 17.0, "rendering uses gameplay shape lighting")
 	check(main.look_table() == main.shapes().look_table(1), "programmatic look edits target the selected shape")
 	main.camera.set_eye(2.1, 0.0, 0.0)
+	main._process(0.0)
 	main.shape_run.step(1.0)
 	check_eq(main.params.gameplay_active, 1, "the test advances to shape 2")
 	check_approx(mat.get_shader_parameter("roughness"), 0.69, "stage transition switches material")

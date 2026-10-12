@@ -55,12 +55,17 @@ var shapes: Array[ShapeParams] = []
 ## Gameplay selection, independent of the inspector's `active` selection.
 ## -1 preserves the union for standalone editor/test resources without a run.
 var gameplay_active := -1
-## Gameplay threshold; never used to clip geometry.
+## Gameplay threshold in speed-based world units; never used to clip geometry.
 var next_level_threshold := ShapeList.DEFAULT_NEXT_LEVEL_DISTANCE
+## Scene distance travelled in one second at the current player speed.
+var world_unit_size := 1.0
 ## Rendering-only clipping radius, independent of stage objectives.
 var render_escape_radius := 20.0
 var run_origin: Array = [0.0, 0.0, 0.0]
 var run_escaped := false
+
+func gameplay_boundary_scene_distance() -> float:
+	return next_level_threshold * world_unit_size
 
 func visible_shape_indices() -> Array:
 	return [clampi(gameplay_active, 0, shapes.size() - 1)] if gameplay_active >= 0 else range(shapes.size())
@@ -81,6 +86,7 @@ func is_escaped(camera: CameraState) -> bool:
 func copy_run_from(other: FractalParams) -> void:
 	gameplay_active = other.gameplay_active
 	next_level_threshold = other.next_level_threshold
+	world_unit_size = other.world_unit_size
 	render_escape_radius = other.render_escape_radius
 	run_origin = other.run_origin.duplicate()
 	run_escaped = other.run_escaped

@@ -19,6 +19,7 @@ func watch_game(game: Node) -> void:
 	game.tree_exiting.connect(_release_game, CONNECT_ONE_SHOT)
 	game.camera.changed.connect(_refresh_if_visible)
 	game.shape_run.changed.connect(_refresh_if_visible)
+	game.shape_run.units_changed.connect(_refresh_if_visible)
 	game.shapes().next_level_distance_changed.connect(_boundary_changed)
 	_refresh_if_visible()
 
@@ -28,6 +29,7 @@ func _release_game() -> void:
 			_game.tree_exiting.disconnect(_release_game)
 		_game.camera.changed.disconnect(_refresh_if_visible)
 		_game.shape_run.changed.disconnect(_refresh_if_visible)
+		_game.shape_run.units_changed.disconnect(_refresh_if_visible)
 		_game.shapes().next_level_distance_changed.disconnect(_boundary_changed)
 	_game = null
 	_refresh_if_visible()
@@ -52,14 +54,8 @@ func _refresh() -> void:
 		lines.append("No active run")
 	else:
 		var params: FractalParams = _game.params
-		var camera: CameraState = _game.camera
-		var origin := params.run_origin
-		var x: float = camera.eye_x() - origin[0]
-		var y: float = camera.eye_y() - origin[1]
-		var z: float = camera.eye_z() - origin[2]
-		var distance := sqrt(x * x + y * y + z * z)
-		# Deep-zoom flight can move by 1e-14 world units per frame. Keep those
-		# changes visible instead of rounding a moving camera to "0.000".
+		var distance: float = _game.shape_run.distance_from_origin()
+		# Retain small nonzero distances even when they fall below three decimals.
 		var distance_text := DecimalSpinBox.format(distance) if distance > 0.0 and distance < 0.001 else "%.3f" % distance
 		lines.append("Shape / level: %d / %d" % [params.gameplay_active + 1, _game.shapes().count()])
 		lines.append("Distance from origin (spawn): %s world units" % distance_text)
@@ -72,7 +68,8 @@ func _refresh() -> void:
 		else:
 			lines.append("Status: Fly beyond the level boundary")
 	lines.append("")
-	lines.append("F4 to close · updates on every move")
+	lines.append("1 world unit = 1 second of travel at current speed")
+	lines.append("F4 to close · updates with movement and speed")
 	readout.text = "\n".join(lines)
 	panel.reset_size()
 	_place_panel()

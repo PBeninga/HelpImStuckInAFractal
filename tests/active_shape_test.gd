@@ -88,6 +88,41 @@ func run() -> void:
 	default_run.reset()
 	check_eq(default_params.next_level_threshold, 20.0, "shape default ignores the obsolete Gameplay radius")
 	check_eq(default_run.briefing().stages[1].get("next_level_threshold"), 20.0, "last shape owns its default boundary")
+	_speed_units()
+
+func _speed_units() -> void:
+	var shapes := ShapeList.new()
+	shapes.set_stage(0, 3.0, [])
+	var params := FractalParams.new()
+	params.gameplay.spawn_x = 10.0
+	var camera := CameraState.new()
+	camera.set_eye(16.0, 0.0, 0.0)
+	var run := ShapeRun.new(shapes, params, camera)
+	run.reset()
+	run.check_position(2.0)
+	check_eq(run.distance_from_origin(), 3.0, "origin distance divides by current speed")
+	check(not run.escaped, "exact speed-based boundary stays inside")
+	check_eq(params.gameplay_boundary_scene_distance(), 6.0, "planner boundary converts back to scene distance")
+	run.check_position(4.0)
+	check_eq(run.distance_from_origin(), 1.5, "speed increase rescales distance without moving")
+	var copied := FractalParams.new()
+	copied.copy_run_from(params)
+	check_eq(copied.gameplay_boundary_scene_distance(), 12.0, "planner copies the live unit scale")
+	for invalid in [0.0, -2.0, INF, NAN]:
+		run.check_position(invalid)
+		check_eq(run.distance_from_origin(), 1.5, "invalid speed retains the last valid unit")
+	run.check_position(1.0)
+	check(run.escaped, "slowing down can cross a world-unit boundary without moving")
+	params.gameplay.spawn_x = 0.0
+	camera.set_eye(0.0, 0.0, 0.0)
+	run.reset()
+	camera.set_eye(2e-14, 0.0, 0.0)
+	run.check_position(1e-14)
+	check_eq(run.distance_from_origin(), 2.0, "deep-zoom scene distances become readable world units")
+	check(not run.escaped, "tiny-scale movement stays inside its normalized threshold")
+	camera.set_eye(4e-14, 0.0, 0.0)
+	run.check_position(1e-14)
+	check(run.escaped, "tiny-scale movement crosses the same normalized threshold")
 
 func _review_regressions(script: Script) -> void:
 	var shapes := ShapeList.new()

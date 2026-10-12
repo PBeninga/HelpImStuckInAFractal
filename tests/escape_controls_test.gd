@@ -16,6 +16,7 @@ func run() -> void:
 	check(main._marker.visible, "Julia ring is visible before escape")
 	main.console().open()
 	main.camera.set_eye(21.0, 0.0, 0.0)
+	main._process(0.0)
 	check(not main.console().visible, "escape hides the console")
 	check(not main.chat().visible, "escape hides the chat controls")
 	check(not main._axis_controller.is_processing(), "escape disables shape control keys")

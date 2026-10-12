@@ -31,7 +31,7 @@ func plan(game: Node, candidate_directions: Array = []) -> Dictionary:
 	_sprint = game.fly.sprinting
 	var start := Array(game.camera.eye64())
 	var forward: Vector3 = game.camera.forward()
-	var radius := _params.next_level_threshold
+	var radius := _params.gameplay_boundary_scene_distance()
 	var origin := _params.run_origin
 	if _params.is_escaped(game.camera):
 		return {"ok": true, "escaped": true, "points": [], "estimated_seconds": 0.0}
@@ -67,7 +67,15 @@ func plan(game: Node, candidate_directions: Array = []) -> Dictionary:
 		var exit_clear := bool(observation.get("exit_clear", false))
 		# Stop before the observed limit and look again. Only a whole patch
 		# reaching the exit allows a final leg across the boundary.
-		var end := _exit_point(start, dir, radius, origin) if exit_clear else _along(start, dir, clear_distance * 0.75)
+		var end := _along(start, dir, clear_distance * 0.75)
+		if exit_clear:
+			var boundary_end := _exit_point(start, dir, radius, origin)
+			# Scans measure to the rendering boundary. A speed-based gameplay
+			# boundary may be farther away. Only the existing tiny crossing
+			# margin may extend beyond measured clearance.
+			exit_clear = _distance(start, boundary_end) <= clear_distance + radius * 0.0001
+			if exit_clear:
+				end = boundary_end
 		var route := _route(start, forward, [end])
 		route.merge({"direction": observation.direction, "clear_distance": clear_distance,
 			"no_hit_fraction": observation.get("no_hit_fraction", 0.0), "exit_clear": exit_clear,
@@ -146,7 +154,7 @@ static func _distance(a: Array, b: Array) -> float:
 
 
 func _matches_scene(params: FractalParams) -> bool:
-	if _params.gameplay_active != params.gameplay_active or _params.next_level_threshold != params.next_level_threshold or _params.run_origin != params.run_origin:
+	if _params.gameplay_active != params.gameplay_active or _params.next_level_threshold != params.next_level_threshold or _params.world_unit_size != params.world_unit_size or _params.run_origin != params.run_origin:
 		return false
 	if _params.gameplay.to_dict() != params.gameplay.to_dict() or _params.shapes.size() != params.shapes.size():
 		return false

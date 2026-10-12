@@ -2,6 +2,7 @@ class_name ShapeRun
 extends RefCounted
 ## Transient objectives/overrides. Authoring data is never modified by an agent.
 signal changed
+signal units_changed
 signal fog_changed(alpha: float)
 signal stage_activated(index: int)
 const FADE_SECONDS := 0.7
@@ -93,16 +94,25 @@ func apply_command(command: String, expected_run: String, expected_stage: int, e
 	changed.emit()
 	return {"ok": true, "shape_index": i, "command": command, "attribute": result.id, "value": result.value}
 
-func check_position() -> void:
+## All gameplay distances share the current flight speed's one-second unit.
+func distance_from_origin() -> float:
+	var origin := _params.run_origin
+	var unit := _params.world_unit_size
+	var x: float = (_camera.eye_x() - origin[0]) / unit
+	var y: float = (_camera.eye_y() - origin[1]) / unit
+	var z: float = (_camera.eye_z() - origin[2]) / unit
+	return sqrt(x * x + y * y + z * z)
+
+func check_position(speed: float = -1.0) -> void:
+	# Main samples once per frame, even while stationary or the HUD is hidden.
+	# Retain the last valid unit if the supplied speed is zero or invalid.
+	if is_finite(speed) and speed > 0.0 and speed != _params.world_unit_size:
+		_params.world_unit_size = speed
+		units_changed.emit()
 	if escaped or transitioning() or _params.gameplay_active < 0:
 		return
 	var i := _params.gameplay_active
-	var origin := _params.run_origin
-	var radius := _params.next_level_threshold
-	var x: float = (_camera.eye_x() - origin[0]) / radius
-	var y: float = (_camera.eye_y() - origin[1]) / radius
-	var z: float = (_camera.eye_z() - origin[2]) / radius
-	if x * x + y * y + z * z <= 1.0:
+	if distance_from_origin() <= _params.next_level_threshold:
 		return
 	invalidate_human_message()
 	if i + 1 == _shapes.count():
@@ -150,7 +160,7 @@ func briefing() -> Dictionary:
 	return {"run_id": run_id(), "active_shape": index, "stages": stages,
 		"command_index": command_index, "human_turn": human_turn, "next_command": commands[command_index] if command_index < commands.size() else "",
 		"origin": _params.run_origin.duplicate(), "transitioning": transitioning(), "escaped": escaped,
-		"instructions": "Scripted commands are optional shape changes and never block level advancement. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never apply shape commands on startup, timers, stage changes or movement completion. Commands affect only the active shape. Flying beyond the active shape's absolute next_level_threshold from the run origin (spawn) advances automatically, regardless of commands. Advancing returns the player to origin under a screen fade before revealing the next shape. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
+		"instructions": "Scripted commands are optional shape changes and never block level advancement. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never apply shape commands on startup, timers, stage changes or movement completion. Commands affect only the active shape. One gameplay world unit is one second of travel at the current player speed; its scene-coordinate size changes with speed. next_level_threshold uses these units; camera coordinates and route distances remain in scene coordinates. Flying beyond the active shape's next_level_threshold from the run origin (spawn) advances automatically, regardless of commands. Advancing returns the player to origin under a screen fade before revealing the next shape. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
 
 
 func apply_request(args: Dictionary) -> Dictionary:

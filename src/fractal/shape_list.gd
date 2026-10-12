@@ -25,7 +25,7 @@ class Entry:
 	var label: String
 	var table: AttributeTable
 	var look := AttributeTable.new(ShapeCatalogue.scene_specs())
-	## Absolute distance from the run origin; zero uses the default 20 world units.
+	## Speed-based world units from the run origin; zero uses the default 20.
 	var next_level_distance := 0.0
 	var commands: Array[String] = []
 
@@ -56,7 +56,7 @@ func next_level_distance(i: int) -> float:
 	return distance if distance > 0.0 else DEFAULT_NEXT_LEVEL_DISTANCE
 
 
-## Absolute distance from the run origin needed to finish this stage.
+## Speed-based world units from the run origin needed to finish this stage.
 func next_level_threshold(i: int) -> float:
 	return next_level_distance(i)
 

@@ -146,7 +146,6 @@ func _ready() -> void:
 	params.gameplay.changed.connect(_refresh_shape_boundary)
 	_shapes.stage_changed.connect(func(_i): _restart_shape_run())
 	_shapes.next_level_distance_changed.connect(func(_i): _refresh_shape_boundary())
-	camera.changed.connect(_check_shape_progress)
 	var bridge := get_node_or_null("/root/McpBridge")
 	if bridge != null:
 		bridge.chat.message_added.connect(_on_run_chat_message)
@@ -520,8 +519,9 @@ func _build_workspace_files() -> void:
 func _process(_delta: float) -> void:
 	if shape_run != null and not preparing:
 		shape_run.step(_delta)
-		shape_run.check_position()
 	_resolve_once()
+	if shape_run != null:
+		_check_shape_progress()
 	if _escape_active:
 		governor.mark_changed()
 	# The fly camera's zoom limit reaches the Movement pane the way the shed
@@ -908,7 +908,7 @@ func _on_run_chat_message(message: Dictionary) -> void:
 
 func _check_shape_progress() -> void:
 	if not _loading and not preparing:
-		shape_run.check_position()
+		shape_run.check_position(fly.current_speed())
 
 
 func _refresh_shape_boundary() -> void:
