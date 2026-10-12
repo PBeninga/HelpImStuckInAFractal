@@ -119,6 +119,11 @@ func _ready() -> void:
 
 	params.changed.connect(_apply_mode)
 	camera.changed.connect(func(): governor.mark_changed())
+	# This portable pointer lives in project.godot so every checkout opens
+	# the same level, through the ordinary loader.
+	var default_level: String = ProjectSettings.get_setting("application/run/default_level", "")
+	if default_level != "":
+		load_level_from(default_level)
 	_resolve_once()
 	_apply_mode()
 	# After follow_size's handler, so a resize has refitted the scale first.

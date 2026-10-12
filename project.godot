@@ -5,6 +5,7 @@ config_version=5
 
 config/name="Help I'm Stuck In A Fractal"
 run/main_scene="res://src/ui/main_menu.tscn"
+run/default_level="res://saves/nestedEscape.json"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 
 [autoload]

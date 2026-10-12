@@ -472,9 +472,18 @@ id) applies those values onto the axes in hand and leaves the keys alone; a
 writes version 4. An exported build cannot write into the
 project, so it saves to `user://saves/` instead.
 
+**Play Game** opens the level named by `application/run/default_level` in
+`project.godot`, currently `res://saves/nestedEscape.json`. This Git-tracked
+pointer uses a project-relative path so teammates open the same level after
+pulling. Change that setting to choose
+another opening level; saving or loading a different level does not change it.
+An empty setting starts the built-in scene. If the configured file is missing
+or invalid, the built-in scene remains available and Gameplay reports the load
+failure.
+
 | file | what it is |
 |---|---|
-| `saves/default.json` | the opening level |
+| `saves/default.json` | the original default preset |
 | `saves/juliaIceField.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −2.29, Min 0, Fold 0.72, Fixed 0.29, Ice Fractal, precision 0.00002 |
 | `saves/juliaIceTerraces.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −1.88, Min 0.49, Fold 0.81, Fixed 0.53, Ice Fractal, precision 0.0001 |
 | `saves/noiseRidges.json` | the default Ice Fractal level with a noise field wired: value-noise ridges displacing the surface and tinting it blue (see **Noise fields**) |

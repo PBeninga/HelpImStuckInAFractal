@@ -11,6 +11,9 @@ var _checks := 0
 
 
 func _initialize() -> void:
+	# Most suites need a fresh, unsaved scene independent of the team's chosen
+	# opening level. Startup tests explicitly restore or replace this setting.
+	ProjectSettings.set_setting("application/run/default_level", "")
 	await run()
 	finish()
 
