@@ -7,6 +7,7 @@ extends "res://tests/test_case.gd"
 
 func run() -> void:
 	for v in SurfaceFixture.variants():
+		v[1].perturbation_enabled = true
 		var name: String = v[0]
 		var params: FractalParams = v[1]
 		var s := SurfaceFixture.surface_from(params, v[2])
@@ -25,6 +26,7 @@ func run() -> void:
 
 	# the magnification never falls on the spec's fixtures (every factor is >= 1 there)
 	for v in SurfaceFixture.variants():
+		v[1].perturbation_enabled = true
 		if not (v[0] in ["default box", "ice field", "terraces", "Menger", "Kleinian"]):
 			continue
 		var s := SurfaceFixture.surface_from(v[1], v[2])
@@ -36,9 +38,11 @@ func run() -> void:
 
 	# n: 32 for the Mandelbox, fewer for a KIFS eye whose orbit escapes
 	var box := FractalParams.new()
+	box.perturbation_enabled = true
 	var e := CameraState.DEFAULT_EYE
 	check_eq(ReferenceOrbit.build(box, e.x, e.y, e.z).n, 32, "the Mandelbox always runs 32 iterations")
 	var kifs := FractalParams.new()
+	kifs.perturbation_enabled = true
 	kifs.shape().shape = FractalParams.Shape.KIFS
 	var ko := ReferenceOrbit.build(kifs, 3.2, 2.4, 1.9)
 	check(ko.n < 32, "a KIFS eye outside the sponge escapes early (n %d)" % ko.n)
@@ -60,6 +64,7 @@ func run() -> void:
 	for i in mini(ko.n, ReferenceOrbit.PERT_MAX):
 		check_eq(ko.d[i], ko.points[i + 1], "KIFS d[%d] is X_%d" % [i, i + 1])
 	var kl := FractalParams.new()
+	kl.perturbation_enabled = true
 	kl.shape().shape = FractalParams.Shape.KLEINIAN
 	var ls := SurfaceFixture.surface_from(kl, Vector3(2.5, 1.6, 1.2))
 	var lo := ReferenceOrbit.build(kl, ls[0], ls[1], ls[2])

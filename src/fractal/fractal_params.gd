@@ -282,7 +282,7 @@ const SHADOW_STEPS := 48
 ## Work budgets shared by the CPU distance estimates, camera and shader.
 const FRACTAL_ITERATIONS_MIN := 8
 const FRACTAL_ITERATIONS_MAX := 32
-@export var perturbation_enabled: bool = true:
+@export var perturbation_enabled: bool = false:
 	set(v): perturbation_enabled = v; emit_changed()
 @export var perturbation_iterations: int = 20:
 	set(v): perturbation_iterations = clampi(v, 1, 20); emit_changed()

@@ -236,6 +236,7 @@ func run() -> void:
 	check(float(mat.get_shader_parameter("near_dist")) < 1e-7, "not the old 1e-6 clamp")
 	cam.transform = home   # back from the 1e-8 camera
 
+	params.perturbation_enabled = true
 	# a camera 1e-5 short of the surface perturbs: the record and the handoff points are pushed, once
 	# (the close camera above, 1e-3 short, already perturbed, so count from here)
 	var sdeep := SurfaceFixture.default_surface(params)

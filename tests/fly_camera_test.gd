@@ -329,6 +329,7 @@ func _surface_within(origin: PackedFloat64Array, dir: Vector3, length: float, pa
 func _deep_flight() -> void:
 	var ctx := _fresh()
 	var params: FractalParams = ctx[0]
+	params.perturbation_enabled = true
 	var cam: CameraState = ctx[1]
 	var fly: FlyCamera = ctx[2]
 	var s := SurfaceFixture.default_surface(params)

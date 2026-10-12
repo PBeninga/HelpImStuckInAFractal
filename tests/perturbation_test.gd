@@ -154,6 +154,7 @@ func _check_algebra() -> void:
 	rng.seed = 20261009
 	var by_shape := {}
 	for v in SurfaceFixture.variants():
+		v[1].perturbation_enabled = true
 		if not v[3]:
 			continue
 		var name: String = v[0]
@@ -215,8 +216,10 @@ func _check_algebra() -> void:
 ## mode), a KIFS (Menger) and a Kleinian. [name, params, surface point].
 func _fixtures() -> Array:
 	var box := FractalParams.new()
+	box.perturbation_enabled = true
 	var out := [["default box", box, SurfaceFixture.default_surface(box)]]
 	for v in SurfaceFixture.variants():
+		v[1].perturbation_enabled = true
 		if v[0] in ["ice field", "terraces", "Menger", "Kleinian"]:
 			out.append([v[0], v[1], SurfaceFixture.surface_from(v[1], v[2])])
 	return out
@@ -383,6 +386,7 @@ func _print_reference_floor() -> void:
 			line += " %s: %d / %d |" % [d, h128, h2000]
 		print(line)
 	var box := FractalParams.new()
+	box.perturbation_enabled = true
 	var cam := CameraState.make_default()
 	var ce := PackedFloat64Array([cam.eye().x, cam.eye().y, cam.eye().z])   # (eye64() arrives in Task 2)
 	for spread in [0.1, 0.3]:

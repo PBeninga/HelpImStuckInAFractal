@@ -297,6 +297,7 @@ func _perturbation() -> void:
 	# pert_iters: off at the default view and above PERT_ON x floor32; below it,
 	# every record the orbit has (each ray picks its own handoff on the GPU)
 	var pp := FractalParams.new()
+	pp.perturbation_enabled = true
 	var de := CameraState.DEFAULT_EYE
 	var home := ReferenceOrbit.build(pp, de.x, de.y, de.z)
 	check_eq(pp.pert_iters(home, home.distance), 0, "the default view does not perturb")
@@ -311,6 +312,7 @@ func _perturbation() -> void:
 	var o5 := ReferenceOrbit.build(pp, e5[0], e5[1], e5[2])
 	check_eq(pp.pert_iters(o5, o5.distance), mini(ReferenceOrbit.PERT_MAX, o5.n), "1e-5 from the surface: every record, min(PERT_MAX, n) = %d" % mini(ReferenceOrbit.PERT_MAX, o5.n))
 	var kifs := FractalParams.new()
+	kifs.perturbation_enabled = true
 	kifs.shape().shape = FractalParams.Shape.KIFS
 	var ko := ReferenceOrbit.build(kifs, 3.2, 2.4, 1.9)
 	check(ko.n < ReferenceOrbit.PERT_MAX, "precondition: a KIFS eye outside the sponge escapes early (n %d)" % ko.n)

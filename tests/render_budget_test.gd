@@ -5,6 +5,8 @@ func run() -> void:
 	check(p.get("perturbation_enabled") != null, "View exposes a perturbation toggle")
 	if p.get("perturbation_enabled") == null:
 		return
+	check(not p.perturbation_enabled, "perturbation defaults to off")
+	p.perturbation_enabled = true
 	p.set("fractal_iterations", 8)
 	p.set("perturbation_iterations", 3)
 	check(p.coarse_iters(1e-12) == 8, "coarse work respects the iteration budget")
@@ -51,5 +53,5 @@ func run() -> void:
 	check_eq(view.pert_iters(), 0, "GPU uses the direct march when disabled")
 	view.free()
 	ui.reset_defaults()
-	check(p.get("perturbation_enabled") == true and p.get("fractal_iterations") == 32 and p.get("perturbation_iterations") == 20, "reset restores existing quality")
+	check(p.get("perturbation_enabled") == false and p.get("fractal_iterations") == 32 and p.get("perturbation_iterations") == 20, "reset leaves perturbation off")
 	ui.free()
