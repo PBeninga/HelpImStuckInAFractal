@@ -1,12 +1,15 @@
 class_name Workspace
 extends RefCounted
-## Saving and loading a level as JSON, version 3: the shape as an AttributeTable
-## (defaults + active bindings), the keymap (its axes, keys, speeds and values),
-## the non-shape preference fields, the camera, and the noise graph. There is one
-## file type — the level — tagged `"kind": "level"`; `"kind": "sequence"` is
-## reserved for the level-sequence editor to come, and such a file is refused by
-## name here. The clock and anything derivable (the orbit centre, the governor's
-## render scale, rendered pixels) are not saved.
+## Saving and loading a level as JSON, version 4: the shapes as a list (each a
+## label and an AttributeTable over the per-shape catalogue: defaults + active
+## bindings, placement included), which one is active, the look as an
+## AttributeTable over the scene catalogue (light and material), the keymap
+## (its axes, keys, speeds and values), the non-shape preference fields, the
+## camera, and the noise graph. There is one file type — the level — tagged
+## `"kind": "level"`; `"kind": "sequence"` is reserved for the level-sequence
+## editor to come, and such a file is refused by name here. The clock and
+## anything derivable (the orbit centre, the governor's render scale, rendered
+## pixels) are not saved.
 ##
 ## The keys and axes travel with the level: `axes` is a list of entries
 ## {id, label, speed, positive, negative, value} (keys by name, "" for none),
@@ -21,14 +24,18 @@ extends RefCounted
 ## Loading never fails on unfamiliar content: an unknown shape id is skipped with
 ## a warning, and a key the file lacks leaves the current value alone — except
 ## the fractal (`shape`), which a file from before there was a choice lacks, and
-## which then loads as the Mandelbox it was saved from. Version 1 (the old flat
-## "fractal" section) and version 2 (axes as a dict of id→value, keys left alone)
-## both still load as levels, without warnings. A saved light_shininess (from
-## before Roughness replaced it) becomes roughness = sqrt(2 / (shininess + 2))
-## with no warning; a binding on light_shininess is dropped with one. Saving
-## always writes version 3.
+## which then loads as the Mandelbox it was saved from. Version 3 (one "shape"
+## table over the whole catalogue) loads as a one-shape scene at the identity
+## placement, its light and material rows going to the look table; version 1
+## (the old flat "fractal" section) and version 2 (axes as a dict of id→value,
+## keys left alone) still load the same way, all without warnings. A saved
+## light_shininess (from before Roughness replaced it) becomes roughness =
+## sqrt(2 / (shininess + 2)) with no warning; a binding on light_shininess is
+## dropped with one. Saving always writes version 4. The camera's eye is
+## written with 15 significant digits: a camera inside a nested shape sits at a
+## position the 7 digits the unit vectors get would not hold.
 
-const VERSION := 3
+const VERSION := 4
 
 ## The preference and renderer fields kept under "fractal" (everything that is
 ## not a shape knob), in file order.
@@ -40,7 +47,7 @@ const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
 
 
 ## Snapshot the level. Pure: it reads, it does not change anything.
-static func capture(table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Dictionary:
+static func capture(shapes: ShapeList, look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Dictionary:
 	var fractal := {}
 	for key in FRACTAL_KEYS:
 		var value: Variant = params.get(key)
@@ -50,11 +57,13 @@ static func capture(table: AttributeTable, keymap: Keymap, params: FractalParams
 	var out := {
 		"version": VERSION,
 		"kind": "level",
-		"shape": table.to_dict(),
+		"shapes": shapes.to_dict(),
+		"active": params.active,
+		"look": look.to_dict(),
 		"axes": keymap.to_list(),
 		"fractal": fractal,
 		"camera": {
-			"eye": _vec_to_array(camera.eye()),
+			"eye": [_tidy(camera.eye_x(), 15), _tidy(camera.eye_y(), 15), _tidy(camera.eye_z(), 15)],
 			"forward": _vec_to_array(camera.forward()),
 			"up": _vec_to_array(camera.up()),
 			"speed_factor": camera.speed_factor,
@@ -65,24 +74,47 @@ static func capture(table: AttributeTable, keymap: Keymap, params: FractalParams
 	return out
 
 
-## Apply a capture. Accepts version 3 ("axes" a list of entries, which replaces
-## the keymap) and version 2 ("axes" a dict of id→value, applied onto the axes in
-## hand, keys left alone). Returns the warnings.
-static func restore(data: Dictionary, table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState) -> Array:
+## Apply a capture. Accepts version 4 ("shapes" a list, "look" a table),
+## version 3 (one "shape" table, split here into one shape and the look) and
+## version 2 ("axes" a dict of id→value, applied onto the axes in hand, keys
+## left alone). Returns the warnings.
+static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState) -> Array:
 	var warnings: Array = []
 
-	var shape: Variant = data.get("shape", {})
-	if shape is Dictionary:
-		# An old save's light_shininess becomes the new roughness (see below).
-		shape = _migrate_shininess(shape as Dictionary, warnings)
-		# Levels saved before there was a choice of fractal are all Mandelboxes.
-		var defaults: Variant = (shape as Dictionary).get("defaults", {})
-		if defaults is Dictionary and not (defaults as Dictionary).has("shape") and table.has(&"shape"):
-			table.set_default(&"shape", FractalParams.Shape.MANDELBOX)
-		for w in table.apply_dict(shape):
+	if data.has("shape") and not data.has("shapes"):
+		data = _split_shape(data)
+	var saved_shapes: Variant = data.get("shapes", [])
+	if saved_shapes is Array:
+		var prepared: Array = []
+		for raw in saved_shapes:
+			if raw is Dictionary:
+				var entry: Dictionary = (raw as Dictionary).duplicate(true)
+				# Levels saved before there was a choice of fractal are all Mandelboxes.
+				var defaults: Variant = entry.get("defaults", {})
+				if defaults is Dictionary and not (defaults as Dictionary).has("shape"):
+					(defaults as Dictionary)["shape"] = FractalParams.Shape.MANDELBOX
+				prepared.append(entry)
+			else:
+				prepared.append(raw)
+		for w in shapes.apply_dict(prepared):
 			warnings.append(w)
 	else:
-		warnings.append("Malformed shape section ignored")
+		for w in shapes.apply_dict(saved_shapes):   # warns, keeps one default shape
+			warnings.append(w)
+	params.set_shape_count(shapes.count())
+	var active: Variant = data.get("active", 0)
+	if active is float or active is int:
+		params.active = clampi(int(active), 0, shapes.count() - 1)
+	else:
+		warnings.append("Malformed active shape ignored")
+
+	var saved_look: Variant = data.get("look", {})
+	if saved_look is Dictionary:
+		# An old save's light_shininess becomes the new roughness (see below).
+		for w in look.apply_dict(_migrate_shininess(saved_look as Dictionary, warnings)):
+			warnings.append(w)
+	else:
+		warnings.append("Malformed look section ignored")
 
 	var axis_data: Variant = data.get("axes", {})
 	if axis_data is Array:
@@ -128,19 +160,20 @@ static func restore(data: Dictionary, table: AttributeTable, keymap: Keymap, par
 	return warnings
 
 
-static func save_file(path: String, table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Error:
+static func save_file(path: String, shapes: ShapeList, look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Error:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(capture(table, keymap, params, camera, noise), "\t", false))
+	file.store_string(JSON.stringify(capture(shapes, look, keymap, params, camera, noise), "\t", false))
 	file.close()
 	return OK
 
 
 ## Read `path` and restore it as a level. Never throws. A version-1 file is
-## migrated before restoring, without a warning; a version-2 file loads as is. A
-## sequence save, or an old keymap file, is refused by name and changes nothing.
-static func load_file(path: String, table: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState) -> Dictionary:
+## migrated before restoring, without a warning; version-2 and -3 files load
+## through restore()'s own handling of their one "shape" table. A sequence
+## save, or an old keymap file, is refused by name and changes nothing.
+static func load_file(path: String, shapes: ShapeList, look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return _failure("No level at %s" % path)
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -164,16 +197,16 @@ static func load_file(path: String, table: AttributeTable, keymap: Keymap, param
 	var version := int((data as Dictionary).get("version", 0))
 	if version == 1:
 		data = _migrate_v1(data)
-	elif version != 2 and version != VERSION:
+	elif version < 2 or version > VERSION:
 		return _failure("Save version %d is not supported (this build reads up to version %d)" % [version, VERSION])
 	var noise: Variant = (data as Dictionary).get("noise", null)
 	if not (noise is Dictionary):
 		noise = null
-	return {"ok": true, "warnings": restore(data, table, keymap, params, camera), "noise": noise}
+	return {"ok": true, "warnings": restore(data, shapes, look, keymap, params, camera), "noise": noise}
 
 
 ## Classify parsed JSON by the one save family it belongs to: "level" (this
-## build's save, or a version-1/2 file with a shape/fractal section), "sequence"
+## build's save, or a version-1/2/3 file with a shape(s)/fractal section), "sequence"
 ## (reserved, tagged kind), "keymap" (an old keys-and-axes file: an "axes" list
 ## with no kind/shape/fractal) or "unknown". A version-3 level is distinguished
 ## from an old keymap by its "kind"/"shape"/"fractal", never by "axes" alone,
@@ -186,7 +219,7 @@ static func kind_of(data: Variant) -> String:
 	if kind == "level" or kind == "sequence":
 		return kind
 	if kind == "":
-		if d.has("shape") or d.has("fractal"):
+		if d.has("shape") or d.has("shapes") or d.has("fractal"):
 			return "level"
 		if d.get("axes") is Array:
 			return "keymap"
@@ -195,6 +228,40 @@ static func kind_of(data: Variant) -> String:
 
 static func _failure(message: String) -> Dictionary:
 	return {"ok": false, "warnings": [message]}
+
+
+## Turn a file with one "shape" table over the whole old catalogue (version 3
+## and earlier) into the version-4 sections: its per-shape ids become one
+## "shapes" entry at the identity placement, labelled Shape 1, and its look ids
+## the "look" table. Ids neither catalogue knows stay with the shape, so
+## apply_dict warns about them as before.
+static func _split_shape(data: Dictionary) -> Dictionary:
+	var out := data.duplicate()
+	out.erase("shape")
+	var shape: Variant = data.get("shape", {})
+	if not (shape is Dictionary):
+		out["shapes"] = shape   # restore() warns about it
+		out["look"] = {}
+		return out
+	var look_ids := {}
+	for id in ShapeCatalogue.scene_ids():
+		look_ids[String(id)] = true
+	look_ids["light_shininess"] = true   # migrated into roughness by restore()
+	var entry := {"label": "Shape 1", "defaults": {}, "bindings": {}}
+	var look := {"defaults": {}, "bindings": {}}
+	for section in ["defaults", "bindings"]:
+		var raw: Variant = (shape as Dictionary).get(section, {})
+		if not (raw is Dictionary):
+			continue
+		for key in raw:
+			if look_ids.has(String(key)):
+				look[section][key] = raw[key]
+			else:
+				entry[section][key] = raw[key]
+	out["shapes"] = [entry]
+	out["look"] = look
+	out["active"] = 0
+	return out
 
 
 ## Turn an old save's light_shininess into the new roughness, in place of
@@ -219,8 +286,9 @@ static func _migrate_shininess(shape: Dictionary, warnings: Array) -> Dictionary
 
 
 ## Turn a version-1 file (flat "fractal" section with the old ids) into the
-## version-3 shape. Unknown/new ids are mapped; v1 had no axes or keymap, so the
-## keymap in hand (the default) is left alone (an empty "axes" dict).
+## version-3 shape (one "shape" table, which restore() then splits). Unknown/new
+## ids are mapped; v1 had no axes or keymap, so the keymap in hand (the
+## default) is left alone (an empty "axes" dict).
 static func _migrate_v1(data: Dictionary) -> Dictionary:
 	var old: Dictionary = data.get("fractal", {}) if data.get("fractal", {}) is Dictionary else {}
 	var defaults := {}
@@ -242,7 +310,7 @@ static func _migrate_v1(data: Dictionary) -> Dictionary:
 		if old.has(k):
 			fractal[k] = old[k]
 	var out := {
-		"version": VERSION,
+		"version": 3,
 		"kind": "level",
 		"shape": {"defaults": defaults, "bindings": {}},
 		"axes": {},
@@ -273,16 +341,17 @@ static func _parse_fractal(key: String, raw: Variant) -> Variant:
 
 
 static func _restore_camera(cam: Dictionary, camera: CameraState, warnings: Array) -> void:
-	var eye: Variant = _array_to_vec(cam.get("eye", null))
+	var eye_raw: Variant = _array_to_floats(cam.get("eye", null))
 	var forward: Variant = _array_to_vec(cam.get("forward", null))
 	var up: Variant = _array_to_vec(cam.get("up", null))
-	if eye != null and forward != null and up != null:
+	if eye_raw != null and forward != null and up != null:
 		var f := (forward as Vector3).normalized()
 		var u := (up as Vector3).normalized()
 		if f.is_zero_approx() or u.is_zero_approx() or absf(f.dot(u)) > 0.999:
 			warnings.append("Malformed camera orientation ignored")
 		else:
-			camera.transform = Transform3D(Basis.IDENTITY, eye).looking_at(eye + f, u)
+			camera.set_basis(Basis.looking_at(f, u))
+			camera.set_eye(eye_raw[0], eye_raw[1], eye_raw[2])   # 64-bit, past Vector3
 	elif cam.has("eye") or cam.has("forward") or cam.has("up"):
 		warnings.append("Malformed camera position ignored")
 	if cam.has("speed_factor"):
@@ -297,18 +366,27 @@ static func _vec_to_array(v: Vector3) -> Array:
 	return [_tidy(v.x), _tidy(v.y), _tidy(v.z)]
 
 
-static func _tidy(x: float) -> float:
+## Round to `digits` significant digits, so the JSON stays readable.
+static func _tidy(x: float, digits := 7) -> float:
 	if x == 0.0 or not is_finite(x):
 		return x
-	var decimals := 7 - int(ceil(log(absf(x)) / log(10.0)))
+	var decimals := digits - int(ceil(log(absf(x)) / log(10.0)))
 	var p := pow(10.0, decimals)
 	return roundf(x * p) / p
 
 
-static func _array_to_vec(raw: Variant) -> Variant:
+## Three numbers as 64-bit floats, or null.
+static func _array_to_floats(raw: Variant) -> Variant:
 	if not (raw is Array) or raw.size() != 3:
 		return null
 	for n in raw:
 		if not (n is float or n is int):
 			return null
-	return Vector3(float(raw[0]), float(raw[1]), float(raw[2]))
+	return [float(raw[0]), float(raw[1]), float(raw[2])]
+
+
+static func _array_to_vec(raw: Variant) -> Variant:
+	var f: Variant = _array_to_floats(raw)
+	if f == null:
+		return null
+	return Vector3(f[0], f[1], f[2])

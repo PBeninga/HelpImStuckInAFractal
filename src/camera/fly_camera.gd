@@ -3,10 +3,11 @@ extends Node
 ## Free-fly camera: mouse-look (yaw about world +Z, pitch about the camera's own
 ## right, no roll) and WASD + Space/Backspace (up/down) movement whose speed
 ## follows how far away the surface straight ahead is (the CenterRay), capped
-## by the distance to the nearest surface in any direction. Holding Shift
+## by the distance to the nearest surface (of any shape) in any direction, so
+## inside a small nested shape it crawls at that shape's scale. Holding Shift
 ## doubles the speed. A move that would take the camera below the 32-bit zoom
-## floor (FractalParams.zoom_floor) is refused. Reads and writes a shared
-## CameraState.
+## floor of the nearest shape (FractalParams.zoom_floor) is refused. Reads and
+## writes a shared CameraState, moving its eye in 64-bit.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
@@ -78,13 +79,13 @@ func _physics_process(delta: float) -> void:
 	if dir.length() == 0.0:
 		at_zoom_limit = false
 		return
-	var t := _camera.transform
-	t.origin += dir * current_speed() * delta
-	if not move_allowed(_camera.eye(), t.origin):
+	var step := dir * current_speed() * delta
+	var to := [_camera.eye_x() + step.x, _camera.eye_y() + step.y, _camera.eye_z() + step.z]
+	if not move_allowed_at([_camera.eye_x(), _camera.eye_y(), _camera.eye_z()], to):
 		at_zoom_limit = true
 		return
 	at_zoom_limit = false
-	_camera.transform = t
+	_camera.move_by(step)   # accumulated in 64-bit
 
 
 ## Whether the camera may move from `from` to `to`: yes when `to` is at least
@@ -93,10 +94,15 @@ func _physics_process(delta: float) -> void:
 ## save, can leave). The speed already shrinks with the distance, so the last
 ## accepted step before the floor is tiny and the stop does not pop.
 func move_allowed(from: Vector3, to: Vector3) -> bool:
-	var d_to := DistanceEstimator.estimate(to, _params)
-	if d_to >= _params.zoom_floor(to):
+	return move_allowed_at([from.x, from.y, from.z], [to.x, to.y, to.z])
+
+
+## move_allowed() on 64-bit points ([x, y, z] each).
+func move_allowed_at(from: Array, to: Array) -> bool:
+	var d_to := DistanceEstimator.scene_estimate_at(to[0], to[1], to[2], _params)
+	if d_to >= _params.zoom_floor_at(to[0], to[1], to[2]):
 		return true
-	return d_to >= DistanceEstimator.estimate(from, _params)
+	return d_to >= DistanceEstimator.scene_estimate_at(from[0], from[1], from[2], _params)
 
 
 ## Rotate the view by a mouse delta (pixels). Yaw turns the heading about world
@@ -145,7 +151,7 @@ func current_speed() -> float:
 ## nearest surface (a miss, at infinity, takes the cap), times the speed factor
 ## and the load shedder's speed_limit.
 func base_speed() -> float:
-	var near := DistanceEstimator.estimate(_camera.eye(), _params)
+	var near := DistanceEstimator.scene_estimate_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _params)
 	var d := minf(_ray.distance(), near * NEAR_CAP)
 	return clampf(d, 1e-6, 20.0) * _camera.speed_factor * speed_limit
 
@@ -156,7 +162,6 @@ func scroll(up: bool) -> void:
 
 
 ## Rebuild the basis from a forward vector with +Z as the up hint (no roll),
-## keeping the eye where it is.
+## keeping the (64-bit) eye where it is.
 func _set_forward(fwd: Vector3) -> void:
-	var t := Transform3D(Basis.IDENTITY, _camera.eye())
-	_camera.transform = t.looking_at(_camera.eye() + fwd, WORLD_UP)
+	_camera.set_basis(Basis.looking_at(fwd, WORLD_UP))

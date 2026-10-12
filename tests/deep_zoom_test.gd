@@ -17,18 +17,18 @@ const BUDGET := COARSE + FINE
 ## The shader's march from `o` along unit `dir` with `coarse` iterations in the
 ## coarse pass. Returns [steps used, hit]: the step count the shader shades by.
 func _march(o: Array, dir: Array, params: FractalParams, coarse: int) -> Array:
-	var near := maxf(DistanceEstimator.estimate_at(o[0], o[1], o[2], params), FractalParams.NEAR_FLOOR)
+	var near := maxf(DistanceEstimator.scene_estimate_at(o[0], o[1], o[2], params), FractalParams.NEAR_FLOOR)
 	var t := 0.0
 	var n1 := COARSE
 	for i in COARSE:
-		var d := DistanceEstimator.estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t,
+		var d := DistanceEstimator.scene_estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t,
 			params, coarse)
 		if d < params.hit_epsilon(t, near) * 2.0:
 			n1 = i
 			break
 		t += d
 	for i in FINE:
-		var d := DistanceEstimator.estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
+		var d := DistanceEstimator.scene_estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
 		if d < params.hit_epsilon(t, near):
 			return [n1 + i, true]
 		t += d
@@ -39,11 +39,11 @@ func run() -> void:
 	var params := FractalParams.new()
 	var s := SurfaceFixture.default_surface(params)
 	var dir := [s[3], s[4], s[5]]
-	check(DistanceEstimator.estimate_at(s[0], s[1], s[2], params) < 1e-10, "the fixture point is on the surface")
+	check(DistanceEstimator.scene_estimate_at(s[0], s[1], s[2], params) < 1e-10, "the fixture point is on the surface")
 
 	for back in [1e-3, 1e-5]:
 		var o := [s[0] - dir[0] * back, s[1] - dir[1] * back, s[2] - dir[2] * back]
-		var near := DistanceEstimator.estimate_at(o[0], o[1], o[2], params)
+		var near := DistanceEstimator.scene_estimate_at(o[0], o[1], o[2], params)
 		var fixed := _march(o, dir, params, 16)
 		check(not fixed[1] or fixed[0] > 0.6 * BUDGET,
 			"backed off %s (near %s): the fixed 16-iteration coarse pass uses %d of %d steps (hit %s)"

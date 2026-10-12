@@ -5,14 +5,14 @@ extends "res://tests/test_case.gd"
 ## solid corners are solid, and it has the cube's symmetry.
 
 
-func _de(p: Vector3, params: FractalParams, expected: float, label: String) -> void:
+func _de(p: Vector3, params: ShapeParams, expected: float, label: String) -> void:
 	var got := KifsEstimator.estimate_at(p.x, p.y, p.z, params)
 	var tol := maxf(1e-9, 1e-5 * absf(expected))
 	check(absf(got - expected) <= tol, "%s: expected %s got %s (tol %s)" % [label, expected, got, tol])
 
 
-func _kifs() -> FractalParams:
-	var p := FractalParams.new()
+func _kifs() -> ShapeParams:
+	var p := ShapeParams.new()
 	p.shape = FractalParams.Shape.KIFS
 	return p
 

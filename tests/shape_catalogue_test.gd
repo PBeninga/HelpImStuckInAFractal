@@ -1,7 +1,7 @@
 extends "res://tests/test_case.gd"
 ## The shape catalogue: every spec has tooltip and effects, defaults in range,
-## ids unique, every group has a heading, and the id set is the expected 99
-## catalogue ids; the lighting defaults are the site's constants; the Palette
+## ids unique, every group has a heading, and the id set is the expected 106
+## catalogue ids (the seven Placement ids first); the lighting defaults are the site's constants; the Palette
 ## mode's rows show only in that mode; each shape's rows show only while that
 ## shape is drawn; the console's two tabs between them show every group
 ## exactly once; self_similarity() says which shapes are exactly self-similar
@@ -10,6 +10,7 @@ extends "res://tests/test_case.gd"
 ## never the Mandelbulb) and why. W hides on the Mandelbulb, which is 3D.
 
 const EXPECTED_IDS := [
+	&"pos_x", &"pos_y", &"pos_z", &"rot_x", &"rot_y", &"rot_z", &"size",
 	&"shape", &"w", &"box_scale", &"fold_limit", &"min_radius", &"fixed_radius", &"fold_order",
 	&"fold_shape", &"hybrid_mix", &"hybrid_every", &"scale_drift", &"julia_all", &"julia_0",
 	&"julia_1", &"julia_2", &"julia_3", &"c_0", &"c_1", &"c_2", &"c_3", &"iter_rot_xy",
@@ -37,7 +38,7 @@ func run() -> void:
 	var specs := ShapeCatalogue.specs()
 	var tips := ShapeCatalogue.group_tooltips()
 
-	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids are the expected 99, in order")
+	check_eq(ShapeCatalogue.catalogue_ids(), EXPECTED_IDS, "the catalogue ids are the expected 106, in order")
 
 	var seen := {}
 	for s in specs:
@@ -185,7 +186,21 @@ func run() -> void:
 	check(table.spec(&"kifs_scale").hard_min > 1.0, "the KIFS scale stays above 1")
 	check(table.spec(&"mandelbulb_power").hard_min > 1.0, "the Mandelbulb's power stays above 1")
 	check(table.spec(&"mandelbulb_phase_theta").wrap, "the Mandelbulb's phases wrap")
-	check_eq(ShapeCatalogue.SHAPE_GROUPS[0], "Fractal", "the Shape tab opens on the Fractal group")
+	check_eq(ShapeCatalogue.SHAPE_GROUPS[0], "Placement", "a shape's panel opens on its Placement")
+	check_eq(ShapeCatalogue.SHAPE_GROUPS[1], "Fractal", "then the Fractal group")
+	check_eq(ShapeCatalogue.PLACEMENT_IDS, [&"pos_x", &"pos_y", &"pos_z", &"rot_x", &"rot_y", &"rot_z", &"size"], "the seven placement ids")
+	var shape_ids := ShapeCatalogue.shape_ids()
+	var scene_ids := ShapeCatalogue.scene_ids()
+	check_eq(shape_ids.size() + scene_ids.size(), EXPECTED_IDS.size(), "the per-shape and the scene ids partition the catalogue")
+	check_eq(shape_ids.slice(0, 7), ShapeCatalogue.PLACEMENT_IDS, "the shape ids start with the placement")
+	check(shape_ids.has(&"precision") and shape_ids.has(&"kifs_scale") and not shape_ids.has(&"color_mode"), "render and fractal knobs are per shape, colour is not")
+	check(scene_ids.has(&"color_mode") and scene_ids.has(&"light_yaw") and scene_ids.has(&"palette_a_r"), "colour, light and palette are per scene")
+	check_eq(ShapeCatalogue.shader_ids().size(), shape_ids.size() - 7, "the shader ids are the shape ids without the placement")
+	check(not ShapeCatalogue.shader_ids().has(&"size"), "size is resolved on the CPU")
+	check(table.spec(&"size").log_scale and table.spec(&"size").hard_min > 0.0, "size is logarithmic and never 0")
+	check(table.spec(&"rot_x").wrap, "the rotations wrap")
+	check(table.spec(&"pos_x").bindable and table.spec(&"size").bindable, "the placement is bindable")
+	check(tips.has("Placement"), "the Placement group has a tooltip")
 
 	_self_similarity(table)
 

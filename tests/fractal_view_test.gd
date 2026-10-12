@@ -20,7 +20,7 @@ func run() -> void:
 	var names: Array = []
 	for u in view.shader_uniform_names():
 		names.append(String(u))
-	check(names.has("eye") and names.has("box_half"), "view's shader declares the uniforms")
+	check(names.has("local_eye") and names.has("box_half") and names.has("shape_count"), "view's shader declares the uniforms")
 
 	# project then unproject round-trips a point in front of the camera
 	var p := Vector3(0.5, 0.2, 0.1)   # near the origin, in view
@@ -62,7 +62,7 @@ func run() -> void:
 	var mat := view._material
 	check_eq(view.load_level, 0, "the view starts at full quality")
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "no fog at level 0")
-	var base_prec: float = mat.get_shader_parameter("precision")
+	var base_prec: float = _slot0(mat, "precision")
 	var base_coarse: int = mat.get_shader_parameter("coarse_steps")
 
 	# the shadow march's budget sheds with the ladder: 48, 24, 0
@@ -78,8 +78,8 @@ func run() -> void:
 	view.set_load_level(3)
 	var l3 := LoadShedder.settings(3)
 	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "level 3 pushes its fog distance")
-	check_approx(mat.get_shader_parameter("precision"), base_prec / l3["detail"],
-		"level 3 coarsens the precision by its detail factor", 1e-12)
+	check_approx(_slot0(mat, "precision"), base_prec / l3["detail"],
+		"level 3 coarsens the precision by its detail factor", 1e-10)
 	check(int(mat.get_shader_parameter("coarse_steps")) < base_coarse, "level 3 shrinks the step budget")
 	check(Vector3(mat.get_shader_parameter("fog_color")).is_equal_approx(params.fog_color()),
 		"the fog takes the colour mode's tint")
@@ -93,23 +93,23 @@ func run() -> void:
 	# a level drop eases in over RESTORE_FRAMES frames: the fog recedes (and when
 	# it is leaving entirely it thins as it goes) while the detail and step
 	# budget climb back
-	var l3_prec: float = mat.get_shader_parameter("precision")
+	var l3_prec: float = _slot0(mat, "precision")
 	var l3_coarse: int = mat.get_shader_parameter("coarse_steps")
 	view.set_load_level(2)
 	var l2 := LoadShedder.settings(2)
 	var mid := float(mat.get_shader_parameter("fog_dist"))
 	check(mid > l3["fog"] and mid < l2["fog"], "a drop to level 2 starts the fog receding (%s)" % mid)
 	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "a fog that stays does not thin")
-	var mid_prec := float(mat.get_shader_parameter("precision"))
+	var mid_prec := float(_slot0(mat, "precision"))
 	var l2_prec: float = base_prec / l2["detail"]
 	check(mid_prec < l3_prec and mid_prec > l2_prec, "and the detail starts climbing (%s)" % mid_prec)
 	check(view.restoring(), "and the view is still easing it")
 	await frames(FractalView.RESTORE_FRAMES / 2 + 1)
 	check(int(mat.get_shader_parameter("coarse_steps")) > l3_coarse, "half way the step budget has grown")
-	check(float(mat.get_shader_parameter("precision")) < mid_prec, "and the detail climbed further")
+	check(float(_slot0(mat, "precision")) < mid_prec, "and the detail climbed further")
 	await frames(FractalView.RESTORE_FRAMES)
 	check_approx(mat.get_shader_parameter("fog_dist"), l2["fog"], "it lands on level 2's fog")
-	check_approx(mat.get_shader_parameter("precision"), l2_prec, "and level 2's detail", 1e-12)
+	check_approx(_slot0(mat, "precision"), l2_prec, "and level 2's detail", 1e-12)
 	var l2_budget: int = maxi(FractalParams.MAX_STEPS_MIN, int(round(params.max_steps * l2["steps"])))
 	check_eq(int(mat.get_shader_parameter("coarse_steps")), params.coarse_steps(l2_budget),
 		"and level 2's step budget")
@@ -125,13 +125,13 @@ func run() -> void:
 	view.set_load_level(3)
 	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "a shed mid-ease snaps the fog straight in")
 	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "at full strength")
-	check_approx(mat.get_shader_parameter("precision"), l3_prec, "and the detail straight down", 1e-12)
+	check_approx(_slot0(mat, "precision"), l3_prec, "and the detail straight down", 1e-12)
 	check(not view.restoring(), "with no easing")
 	view.set_load_level(0)
 	await frames(FractalView.RESTORE_FRAMES)
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "back to level 0: no fog")
 	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "and nothing left to thin")
-	check_approx(mat.get_shader_parameter("precision"), base_prec, "and the original precision", 1e-12)
+	check_approx(_slot0(mat, "precision"), base_prec, "and the original precision", 1e-12)
 	check_eq(int(mat.get_shader_parameter("coarse_steps")), base_coarse, "and the original budget")
 
 	# the colour, lighting and palette values reach their uniforms
@@ -155,43 +155,90 @@ func run() -> void:
 	# the camera's distance to the surface sets the coarse pass's iteration
 	# count (the site's 16 at the default view, more up close, and a Detail
 	# change re-pushes it) and the shading crossfade (1 far, 0 up close)
-	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "the default view's coarse pass keeps 16 iterations")
+	check_eq(int(_slot0(mat, "coarse_iters")), 16, "the default view's coarse pass keeps 16 iterations")
 	check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and lights with the Ice Fractal probe alone")
 	var home := cam.transform
 	var close := home
 	close.origin = cam.eye() + cam.forward() * (view.center_ray().distance() - 1e-3)
 	cam.transform = close
 	var close_near := maxf(DistanceEstimator.estimate(cam.eye(), params), FractalParams.NEAR_FLOOR)
-	check_eq(int(mat.get_shader_parameter("coarse_iters")), params.coarse_iters(close_near),
+	check_eq(int(_slot0(mat, "coarse_iters")), params.coarse_iters(close_near),
 		"a camera 1e-3 short of the surface pushes its own count")
-	check(int(mat.get_shader_parameter("coarse_iters")) > 16, "which is above 16 (%s)" % mat.get_shader_parameter("coarse_iters"))
+	check(int(_slot0(mat, "coarse_iters")) > 16, "which is above 16 (%s)" % _slot0(mat, "coarse_iters"))
 	check_eq(float(mat.get_shader_parameter("nf_weight")), 0.0, "and the true normal alone lights it")
 	params.detail = 10.0
-	check_eq(int(mat.get_shader_parameter("coarse_iters")), params.coarse_iters(close_near), "a Detail change re-pushes it")
+	check_eq(int(_slot0(mat, "coarse_iters")), params.coarse_iters(close_near), "a Detail change re-pushes it")
 	params.detail = 1.0
 	cam.transform = home
-	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "and moving back restores 16")
+	check_eq(int(_slot0(mat, "coarse_iters")), 16, "and moving back restores 16")
 	check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and the probe's lighting")
 
+	# the shape uniforms are arrays of MAX_SHAPES entries; a second shape fills
+	# its slot, its frame is the eye mapped into it, and the camera's nearest
+	# shape sets the near distance and the coarse pass
+	var scales: PackedFloat32Array = mat.get_shader_parameter("box_scale")
+	check_eq(scales.size(), FractalParams.MAX_SHAPES, "box_scale is an array of MAX_SHAPES")
+	check_approx(scales[0], -2.09, "slot 0 holds the first shape's scale")
+	check_eq(int(mat.get_shader_parameter("shape_count")), 1, "shape_count is 1")
+	var eyes: PackedVector3Array = mat.get_shader_parameter("local_eye")
+	check(eyes[0].is_equal_approx(cam.eye()), "at the identity placement the local eye is the eye")
+	var second := params.add_shape()
+	second.pos_x = -4.0
+	second.pos_y = -4.0
+	second.pos_z = -4.0
+	second.rot_z = 90.0
+	second.size = 0.5
+	second.box_scale = 2.0
+	second.precision = 1e-4
+	await frames(1)
+	check_eq(int(mat.get_shader_parameter("shape_count")), 2, "a second shape raises shape_count")
+	scales = mat.get_shader_parameter("box_scale")
+	check_approx(scales[1], 2.0, "slot 1 holds its scale")
+	var sizes: PackedFloat32Array = mat.get_shader_parameter("shape_size")
+	check_approx(sizes[1], 0.5, "and its size")
+	var precs: PackedFloat32Array = mat.get_shader_parameter("precision")
+	check_approx(precs[1], 1e-4, "and its precision", 1e-10)
+	eyes = mat.get_shader_parameter("local_eye")
+	var expect_local := second.to_local_v(cam.eye())
+	check(eyes[1].is_equal_approx(expect_local), "its local eye is Rᵀ(eye − pos) / size (%s)" % eyes[1])
+	var fx: PackedVector3Array = mat.get_shader_parameter("frame_x")
+	check(fx[1].is_equal_approx(Vector3(0, 1, 0)), "rot_z 90 turns its local x axis to world +y (%s)" % fx[1])
+	var toggles: PackedInt32Array = mat.get_shader_parameter("julia_all")
+	check_eq(toggles.size(), FractalParams.MAX_SHAPES, "the toggles travel as int arrays")
+	# the camera (9.6 from the origin, 6.6 from the first shape) is far from the
+	# second shape's cube, which sits at (-4, -4, -4)
+	check_eq(view.nearest_shape(), 0, "the camera is nearest the first shape")
+	var far_near := float(mat.get_shader_parameter("near_dist"))
+	cam.set_eye(-4.0, -4.0, -3.4)   # inside the second shape's cube
+	await frames(1)
+	check_eq(view.nearest_shape(), 1, "moving into the second shape makes it the nearest")
+	check(float(mat.get_shader_parameter("near_dist")) < far_near, "and the near distance is to it (%s)" % mat.get_shader_parameter("near_dist"))
+	var iters: PackedInt32Array = mat.get_shader_parameter("coarse_iters")
+	check(iters[1] >= 16 and iters[0] >= 16, "each shape has its own coarse pass (%s, %s)" % [iters[0], iters[1]])
+	cam.transform = CameraState.make_default().transform
+	params.remove_shape(1)
+	await frames(1)
+	check_eq(int(mat.get_shader_parameter("shape_count")), 1, "removing it drops shape_count")
+
 	# the shape switch reaches the shader, and the bounding cube follows the shape
-	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbox marches in its cube of half-side 2")
-	params.apply_resolved({&"shape": FractalParams.Shape.KIFS, &"kifs_scale": 2.5, &"kifs_rot2_yz": 12.0})
-	check_eq(int(mat.get_shader_parameter("shape")), FractalParams.Shape.KIFS, "the shape reaches the shader")
-	check_approx(float(mat.get_shader_parameter("kifs_scale")), 2.5, "a KIFS knob reaches its uniform")
-	check_approx(float(mat.get_shader_parameter("kifs_rot2_yz")), 12.0, "so does a KIFS rotation")
-	check_approx(float(mat.get_shader_parameter("box_half")), params.bound_half(), "the KIFS's bound is pushed")
-	params.apply_resolved({&"shape": FractalParams.Shape.KLEINIAN, &"kleinian_view_distance": 7.0})
-	check_approx(float(mat.get_shader_parameter("kleinian_view_distance")), 7.0, "the view distance reaches the shader")
-	check_approx(float(mat.get_shader_parameter("box_half")), FractalParams.KLEINIAN_BOUND, "the Kleinian has no real cube")
-	check_eq(int(mat.get_shader_parameter("coarse_iters")), DistanceEstimator.ITERATIONS,
+	check_approx(float(_slot0(mat, "box_half")), 2.0, "the Mandelbox marches in its cube of half-side 2")
+	params.shape().apply_resolved({&"shape": FractalParams.Shape.KIFS, &"kifs_scale": 2.5, &"kifs_rot2_yz": 12.0})
+	check_eq(int(_slot0(mat, "shape")), FractalParams.Shape.KIFS, "the shape reaches the shader")
+	check_approx(float(_slot0(mat, "kifs_scale")), 2.5, "a KIFS knob reaches its uniform")
+	check_approx(float(_slot0(mat, "kifs_rot2_yz")), 12.0, "so does a KIFS rotation")
+	check_approx(float(_slot0(mat, "box_half")), params.bound_half(), "the KIFS's bound is pushed")
+	params.shape().apply_resolved({&"shape": FractalParams.Shape.KLEINIAN, &"kleinian_view_distance": 7.0})
+	check_approx(float(_slot0(mat, "kleinian_view_distance")), 7.0, "the view distance reaches the shader")
+	check_approx(float(_slot0(mat, "box_half")), FractalParams.KLEINIAN_BOUND, "the Kleinian has no real cube")
+	check_eq(int(_slot0(mat, "coarse_iters")), DistanceEstimator.ITERATIONS,
 		"and no steady magnification, so its coarse pass runs all 32 iterations")
-	params.apply_resolved({&"shape": FractalParams.Shape.MANDELBULB, &"mandelbulb_power": 5.0, &"mandelbulb_julia": true})
-	check_eq(int(mat.get_shader_parameter("shape")), FractalParams.Shape.MANDELBULB, "the Mandelbulb reaches the shader")
-	check_approx(float(mat.get_shader_parameter("mandelbulb_power")), 5.0, "and its power")
-	check(bool(mat.get_shader_parameter("mandelbulb_julia")), "and its Julia switch")
-	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbulb marches in the cube of half-side 2")
-	params.apply_resolved({&"shape": FractalParams.Shape.MANDELBOX, &"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL})
-	check_eq(int(mat.get_shader_parameter("fold_shape")), MandelboxShape.FoldShape.OCTAHEDRAL, "a fold option reaches the shader")
+	params.shape().apply_resolved({&"shape": FractalParams.Shape.MANDELBULB, &"mandelbulb_power": 5.0, &"mandelbulb_julia": true})
+	check_eq(int(_slot0(mat, "shape")), FractalParams.Shape.MANDELBULB, "the Mandelbulb reaches the shader")
+	check_approx(float(_slot0(mat, "mandelbulb_power")), 5.0, "and its power")
+	check(bool(_slot0(mat, "mandelbulb_julia")), "and its Julia switch")
+	check_approx(float(_slot0(mat, "box_half")), 2.0, "the Mandelbulb marches in the cube of half-side 2")
+	params.shape().apply_resolved({&"shape": FractalParams.Shape.MANDELBOX, &"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL})
+	check_eq(int(_slot0(mat, "fold_shape")), MandelboxShape.FoldShape.OCTAHEDRAL, "a fold option reaches the shader")
 	params.apply_resolved({&"fold_shape": MandelboxShape.FoldShape.BOX})
 
 	view.queue_free()
@@ -224,3 +271,11 @@ func run() -> void:
 	check_eq(hsub.render_target_update_mode, SubViewport.UPDATE_ONCE, "and requests a frame")
 	win.queue_free()
 	await frames(1)
+
+
+## A per-shape uniform's first slot.
+func _slot0(mat: ShaderMaterial, name: String) -> Variant:
+	var v: Variant = mat.get_shader_parameter(name)
+	if v is PackedFloat32Array or v is PackedInt32Array or v is PackedVector3Array:
+		return v[0]
+	return v

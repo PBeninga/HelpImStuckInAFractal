@@ -3,24 +3,35 @@ extends "res://tests/test_case.gd"
 
 func run() -> void:
 	var p := FractalParams.new()
+	var s := p.shape()
 
-	# defaults (the site's defaults, now by catalogue id)
-	check_approx(p.box_scale, -2.09, "box_scale default")
-	check_approx(p.min_radius, 0.7, "min_radius default")
-	check_approx(p.fold_limit, 1.0, "fold_limit default")
-	check_approx(p.fixed_radius, 1.0, "fixed_radius default")
-	check_eq(p.fold_order, 0, "fold_order default is Box -> Sphere")
-	check_approx(p.w, 0.0, "w default is 0 (today's 3D box)")
-	check_eq(p.julia_all, false, "julia_all off by default")
-	check_eq(p.julia_0, false, "julia_0 off")
-	check_approx(p.c_0, -0.23, "c_0 default")
-	check_approx(p.c_1, 1.512, "c_1 default")
-	check_approx(p.c_2, 1.892, "c_2 default")
-	check_approx(p.c_3, 0.0, "c_3 default")
-	check_approx(p.iter_rot_xy, 0.0, "iter_rot_xy default")
-	check_approx(p.iter_rot_zw, 0.0, "iter_rot_zw default")
+	# a new FractalParams holds one default shape at the identity placement
+	check_eq(p.shape_count(), 1, "one shape by default")
+	check_eq(p.active, 0, "and it is the active one")
+	check(p.active_shape() == s, "active_shape() is shape(0)")
+	check_approx(s.pos_x, 0.0, "pos_x default")
+	check_approx(s.rot_z, 0.0, "rot_z default")
+	check_approx(s.size, 1.0, "size default")
+	check_approx(s.bound_half(), 2.0, "bound_half is 2 outside Julia mode")
+
+	# defaults (the site's defaults, by catalogue id): the shape's on the shape,
+	# the look's on the params
+	check_approx(s.box_scale, -2.09, "box_scale default")
+	check_approx(s.min_radius, 0.7, "min_radius default")
+	check_approx(s.fold_limit, 1.0, "fold_limit default")
+	check_approx(s.fixed_radius, 1.0, "fixed_radius default")
+	check_eq(s.fold_order, 0, "fold_order default is Box -> Sphere")
+	check_approx(s.w, 0.0, "w default is 0 (today's 3D box)")
+	check_eq(s.julia_all, false, "julia_all off by default")
+	check_eq(s.julia_0, false, "julia_0 off")
+	check_approx(s.c_0, -0.23, "c_0 default")
+	check_approx(s.c_1, 1.512, "c_1 default")
+	check_approx(s.c_2, 1.892, "c_2 default")
+	check_approx(s.c_3, 0.0, "c_3 default")
+	check_approx(s.iter_rot_xy, 0.0, "iter_rot_xy default")
+	check_approx(s.iter_rot_zw, 0.0, "iter_rot_zw default")
 	check_eq(p.color_mode, 1, "color_mode default is Ice Fractal")
-	check_approx(p.precision, 0.000025, "precision default", 1e-9)
+	check_approx(s.precision, 0.000025, "precision default", 1e-9)
 	check_eq(p.fast_controls, true, "fast_controls on by default")
 	check_eq(p.camera_mode, FractalParams.CameraMode.FLY, "camera starts in fly mode")
 	check_approx(p.mouse_sensitivity, 0.1, "mouse_sensitivity default")
@@ -31,12 +42,15 @@ func run() -> void:
 	check_eq(p.max_steps, 128, "max_steps default")
 	check_eq([p.coarse_steps(), p.fine_steps()], [96, 32], "the default budget is the original 96 + 32")
 
-	# the helpers
-	check(p.julia_point().is_equal_approx(Vector3(-0.23, 1.512, 1.892)), "julia_point() is (c_0, c_1, c_2)")
-	check_eq(p.julia_enabled(), false, "julia_enabled() follows julia_all")
-	p.julia_all = true
-	check_eq(p.julia_enabled(), true, "julia_enabled() true when julia_all is on")
-	p.julia_all = false
+	# the helpers (the params' answer for the active shape)
+	check(s.julia_point().is_equal_approx(Vector3(-0.23, 1.512, 1.892)), "julia_point() is (c_0, c_1, c_2)")
+	check(p.julia_point().is_equal_approx(s.julia_point()), "the params' julia_point() is the active shape's")
+	check_eq(s.julia_enabled(), false, "julia_enabled() follows julia_all")
+	s.julia_all = true
+	check_eq(s.julia_enabled(), true, "julia_enabled() true when julia_all is on")
+	check_eq(p.julia_enabled(), true, "through the params too")
+	check_approx(s.bound_half(), 20.0, "bound_half is 20 in Julia mode")
+	s.julia_all = false
 
 	# the site's thirteen colour ids in dropdown order, then Palette
 	check_eq(p.COLOR_MODE_IDS, [0, 1, 2, 3, 4, 8, 15, 5, 6, 7, 16, 9, 14, 20], "colour id order")
@@ -44,15 +58,23 @@ func run() -> void:
 	check_eq(p.COLOR_MODE_NAMES[-1], "Palette", "the last is Palette")
 	check_eq(p.COLOR_MODE_IDS[-1], Palette.MODE_ID, "with the Palette's mode id")
 
-	# every resolved key is a catalogue id, and its field opens on the catalogue default
+	# every resolved key is a catalogue id, and its field opens on the catalogue
+	# default: the look keys on the params, the shape keys on the shape
 	var shape_table := AttributeTable.new(ShapeCatalogue.specs())
-	check_eq(FractalParams.RESOLVED_KEYS, ShapeCatalogue.catalogue_ids(), "RESOLVED_KEYS are the catalogue ids, in order")
+	check_eq(FractalParams.RESOLVED_KEYS, ShapeCatalogue.scene_ids(), "RESOLVED_KEYS are the scene (look) ids, in order")
+	check_eq(ShapeParams.RESOLVED_KEYS, ShapeCatalogue.shape_ids(), "ShapeParams.RESOLVED_KEYS are the shape ids, in order")
 	for k in FractalParams.RESOLVED_KEYS:
 		var want: Variant = shape_table.get_default(k)
 		if want is float:
 			check_approx(float(p.get(k)), want, "field '%s' opens on the catalogue default" % k, 1e-9)
 		else:
 			check_eq(p.get(k), want, "field '%s' opens on the catalogue default" % k)
+	for k in ShapeParams.RESOLVED_KEYS:
+		var want: Variant = shape_table.get_default(k)
+		if want is float:
+			check_approx(float(s.get(k)), want, "shape field '%s' opens on the catalogue default" % k, 1e-9)
+		else:
+			check_eq(s.get(k), want, "shape field '%s' opens on the catalogue default" % k)
 	for k in FractalParams.LOOK_KEYS:
 		check(FractalParams.RESOLVED_KEYS.has(k), "look key '%s' is resolved" % k)
 	check(not FractalParams.LOOK_KEYS.has(&"color_mode"), "color_mode is pushed on its own, not as a look key")
@@ -67,26 +89,73 @@ func run() -> void:
 	check(not FractalParams.RESOLVED_KEYS.has(&"light_shininess"), "light_shininess is gone")
 	check_eq(FractalParams.SHADOW_STEPS, 48, "the full shadow march is 48 steps")
 
-	# --- apply_resolved emits once, only on a difference ---
+	# --- apply_resolved emits once, only on a difference, and a shape's
+	# changed is relayed as the params' ---
 	var fires := [0]
 	var cb := func(): fires[0] += 1
 	p.changed.connect(cb)
 
-	p.apply_resolved({&"box_scale": -1.5, &"fold_limit": 2.0, &"color_mode": 2})
-	check_eq(fires[0], 1, "apply_resolved emits once for a batch of changes")
-	check_approx(p.box_scale, -1.5, "and wrote box_scale")
-	check_approx(p.fold_limit, 2.0, "and fold_limit")
-	check_eq(p.color_mode, 2, "and color_mode")
+	s.apply_resolved({&"box_scale": -1.5, &"fold_limit": 2.0, &"size": 0.5})
+	check_eq(fires[0], 1, "a shape's apply_resolved emits once for a batch of changes (relayed by params)")
+	check_approx(s.box_scale, -1.5, "and wrote box_scale")
+	check_approx(s.fold_limit, 2.0, "and fold_limit")
+	check_approx(s.size, 0.5, "and size")
+	fires[0] = 0
+	p.apply_resolved({&"color_mode": 2, &"exposure": 1.5})
+	check_eq(fires[0], 1, "the params' apply_resolved emits once for the look")
+	check_eq(p.color_mode, 2, "and wrote color_mode")
+	check_approx(p.exposure, 1.5, "and exposure")
 
 	fires[0] = 0
-	p.apply_resolved({&"box_scale": -1.5, &"fold_limit": 2.0, &"color_mode": 2})
+	s.apply_resolved({&"box_scale": -1.5, &"fold_limit": 2.0, &"size": 0.5})
+	p.apply_resolved({&"color_mode": 2, &"exposure": 1.5})
 	check_eq(fires[0], 0, "re-applying the same values emits nothing")
 
 	fires[0] = 0
-	p.apply_resolved({&"w": 0.5})
+	s.apply_resolved({&"w": 0.5})
 	check_eq(fires[0], 1, "a partial dict that changes one field emits once")
-	check_approx(p.w, 0.5, "and wrote only w")
-	check_approx(p.fold_limit, 2.0, "leaving the rest alone")
+	check_approx(s.w, 0.5, "and wrote only w")
+	check_approx(s.fold_limit, 2.0, "leaving the rest alone")
+
+	# --- the list: add, active, remove, the floor of one ---
+	fires[0] = 0
+	var second := p.add_shape()
+	check(second != null and p.shape_count() == 2, "add_shape appends a second shape")
+	check_eq(fires[0], 1, "and emits changed")
+	fires[0] = 0
+	second.pos_x = 3.0
+	check_eq(fires[0], 1, "an edit on the second shape is relayed too")
+	p.active = 1
+	check(p.active_shape() == second, "active picks the second")
+	check(p.shape(1) == second, "and shape(1) is it")
+	check_eq(fires[0], 2, "setting active emits")
+	p.active = 7
+	check_eq(p.active, 1, "active clamps to the list")
+	check(not p.remove_shape(5), "removing an index out of range does nothing")
+	check(p.remove_shape(1), "remove_shape drops the second")
+	check_eq(p.shape_count(), 1, "back to one")
+	check_eq(p.active, 0, "and active falls back")
+	fires[0] = 0
+	second.pos_x = 4.0
+	check_eq(fires[0], 0, "a removed shape no longer relays")
+	check(not p.remove_shape(0), "the last shape cannot be removed")
+	p.set_shape_count(3)
+	check_eq(p.shape_count(), 3, "set_shape_count grows the list")
+	p.set_shape_count(1)
+	check_eq(p.shape_count(), 1, "and shrinks it")
+	var full := FractalParams.new()
+	full.set_shape_count(FractalParams.MAX_SHAPES)
+	check(full.add_shape() == null, "add_shape refuses past MAX_SHAPES")
+	s.size = 0.0
+	check(s.size > 0.0, "size never reaches 0 (%s)" % s.size)
+	s.size = 1.0
+
+	# --- copy_from takes every resolved field ---
+	var copy := ShapeParams.new()
+	copy.copy_from(s)
+	check_approx(copy.box_scale, -1.5, "copy_from copies the Mandelbox knobs")
+	check_approx(copy.w, 0.5, "all of them")
+	check_eq(copy.shape, s.shape, "including the enums")
 
 	p.changed.disconnect(cb)
 
@@ -121,9 +190,11 @@ func run() -> void:
 	q.max_steps = 200
 	check_eq(q.coarse_steps() + q.fine_steps(), 200, "the budget splits without losing a step")
 
-	# hit_epsilon: the plain cone by default, coarsened past the range
+	# hit_epsilon: the plain cone by default, coarsened past the range; the
+	# precision is the hit shape's (the active one's unless given)
 	var e := FractalParams.new()
 	check_approx(e.hit_epsilon(4.0, 0.5), 0.000025 * 4.0, "defaults give precision * t", 1e-12)
+	check_approx(e.hit_epsilon(1.0, 0.5, 1e-4), 1e-4, "another shape's precision is used as given", 1e-12)
 	e.detail = 2.0
 	check_approx(e.hit_epsilon(4.0, 0.5), 0.000025 * 2.0, "detail 2 halves it", 1e-12)
 	e.detail = 1.0
@@ -160,10 +231,15 @@ func run() -> void:
 	ci_fine.detail = 10.0
 	check(ci_fine.coarse_iters(1e-2) > ci.coarse_iters(1e-2),
 		"Detail 10 raises the count at a given distance (%d over %d)" % [ci_fine.coarse_iters(1e-2), ci.coarse_iters(1e-2)])
-	ci.box_scale = 1.0
+	ci.shape().box_scale = 1.0
 	check_eq(ci.coarse_iters(6.5), 32, "|box_scale| = 1 has no shrinking detail: 32")
-	ci.box_scale = -0.8
+	ci.shape().box_scale = -0.8
 	check_eq(ci.coarse_iters(6.5), 32, "nor does a scale inside 1: 32")
+	# a smaller shape reaches the same count at a proportionally smaller distance
+	var small := FractalParams.new()
+	small.shape().size = 0.01
+	check_eq(small.coarse_iters(1e-5), FractalParams.new().coarse_iters(1e-3),
+		"a shape a hundredth the size takes at 1e-5 what the unit one takes at 1e-3")
 
 	# nf_weight: the Ice Fractal shading crossfades to the true normal up close
 	check_eq(FractalParams.nf_weight(6.5655845), 1.0, "the default view lights with the Ice Fractal probe alone (exactly 1)")
@@ -196,3 +272,14 @@ func run() -> void:
 	check(zf.zoom_floor(Vector3(8.18, 3.81, 3.28)) > zf.zoom_floor(near_box),
 		"larger coordinates have a coarser grid, so a further floor")
 	check(is_finite(zf.zoom_floor(Vector3.ZERO)) and zf.zoom_floor(Vector3.ZERO) >= 0.0, "the origin stays finite")
+	# the floor is the nearest shape's, in its own frame: a small shape far from
+	# the origin lets the camera come proportionally closer than its world
+	# coordinates would, because its local eye is small
+	var zs := FractalParams.new()
+	var tiny := zs.shape()
+	tiny.pos_x = 8.0; tiny.pos_y = 3.0; tiny.pos_z = 3.0
+	tiny.size = 0.001
+	var at := tiny.to_world_v(near_box)
+	check(zs.zoom_floor_at(at.x, at.y, at.z) < zf.zoom_floor(near_box) * 0.002,
+		"a thousandth-size shape has about a thousandth of the floor (%s vs %s)" % [zs.zoom_floor_at(at.x, at.y, at.z), zf.zoom_floor(near_box)])
+	check_approx(zs.zoom_floor_at(at.x, at.y, at.z), tiny.zoom_floor(at.x, at.y, at.z), "which is the shape's own zoom_floor at that eye", 1e-15)

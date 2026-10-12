@@ -150,35 +150,9 @@ func _look_from(eye: Vector3) -> void:
 	_camera.transform = t.looking_at(center, WORLD_UP)
 
 
-## Single-phase high-precision CPU march, with the shader's level-of-detail hit
-## threshold. Returns the hit Vector3 or null.
+## The scene's CPU march from `ro` along `rd` (DistanceEstimator.march, in
+## 64-bit from the camera's own eye): the hit Vector3 or null.
 func _march(ro: Vector3, rd: Vector3) -> Variant:
-	var tb := _box(ro, rd, _params.bound_half())
-	if _params.view_distance() > 0.0:
-		tb.y = minf(tb.y, _params.view_distance())   # the shader stops there too
-	if tb.y < maxf(tb.x, 0.0):
-		return null
-	var total := maxf(tb.x, 0.0)
-	var near := DistanceEstimator.estimate(ro, _params)
-	for i in 200:
-		var pos := ro + rd * total
-		var d := DistanceEstimator.estimate(pos, _params)
-		if d < _params.hit_epsilon(total, near):
-			return pos
-		total += d
-		if total > tb.y:
-			return null
-	return null
-
-
-func _box(ro: Vector3, rd: Vector3, half_size: float) -> Vector2:
-	var sgn := Vector3(1.0 if rd.x >= 0.0 else -1.0, 1.0 if rd.y >= 0.0 else -1.0, 1.0 if rd.z >= 0.0 else -1.0)
-	var safe := sgn * Vector3(maxf(absf(rd.x), 1e-9), maxf(absf(rd.y), 1e-9), maxf(absf(rd.z), 1e-9))
-	var inv := Vector3(1.0 / safe.x, 1.0 / safe.y, 1.0 / safe.z)
-	var n := inv * ro
-	var k := inv.abs() * half_size
-	var t1 := -n - k
-	var t2 := -n + k
-	var t_enter := maxf(maxf(t1.x, t1.y), t1.z)
-	var t_exit := minf(minf(t2.x, t2.y), t2.z)
-	return Vector2(t_enter, t_exit)
+	if ro == _camera.eye():
+		return DistanceEstimator.march(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), rd, _params)
+	return DistanceEstimator.march(ro.x, ro.y, ro.z, rd, _params)

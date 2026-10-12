@@ -1,9 +1,11 @@
 class_name Main
 extends Node
-## Wires the shape table, the keymap/axes, the clock and the console into every
-## child, selects the active camera from camera_mode, owns the mouse capture,
-## and is the single mouse-event dispatcher. Each frame it resolves the shape
-## table + axis values + clock into the params every consumer reads. Saving and
+## Wires the shape list and the look table, the keymap/axes, the clock and the
+## console into every child, selects the active camera from camera_mode, owns
+## the mouse capture, and is the single mouse-event dispatcher. Each frame it
+## resolves every shape's table (into its ShapeParams) and the look table (into
+## the params' look fields) + axis values + clock, which every consumer reads;
+## the ShapeList's structure is mirrored into params.shapes. Saving and
 ## loading a level: WorkspaceFiles picks the file, Workspace does the reading and
 ## writing, the console's View tab shows the result. Escape only frees the
 ## mouse; a Ctrl tap opens the console, whose View tab holds Save / Load, the
@@ -27,6 +29,11 @@ const OPEN_CONSOLE_AT_START := true
 ## Seconds to let the OS finish leaving fullscreen (macOS animates it) before a
 ## native console reopens beside the main window, or Reset window measures it.
 const WINDOW_SETTLE_DELAY := 0.8
+## A new shape is a tenth of the selected one's size, centred this many of its
+## own sizes in front of the camera: far enough for its whole cube (4 × size
+## across) to fit the 40° view with a margin.
+const NEW_SHAPE_SIZE_RATIO := 0.1
+const NEW_SHAPE_DISTANCE := 7.0
 
 var params: FractalParams
 var camera: CameraState
@@ -37,7 +44,8 @@ var camera: CameraState
 
 var _orbit: OrbitCamera
 var _marker: JuliaMarker
-var _table: AttributeTable
+var _shapes: ShapeList
+var _look: AttributeTable
 var _keymap: Keymap
 var _axis_controller: AxisController
 var _clock: Clock
@@ -61,6 +69,7 @@ var _text_viewports: Array = []
 ## Where Reset camera goes: the camera as the current file has it (as last
 ## loaded or saved), or the starting view while no file is current.
 var _home_transform: Transform3D
+var _home_eye: Array = [0.0, 0.0, 0.0]   # the 64-bit eye the transform's origin mirrors
 var _home_speed := 1.0
 ## The console is docked beside the view in one fullscreen window.
 var _docked := false
@@ -79,7 +88,9 @@ func _ready() -> void:
 	camera = CameraState.make_default()
 	_remember_home()
 
-	_table = AttributeTable.new(ShapeCatalogue.specs())
+	_shapes = ShapeList.new()
+	_shapes.changed.connect(_sync_shapes)
+	_look = AttributeTable.new(ShapeCatalogue.scene_specs())
 	_keymap = Keymap.new()
 	_keymap.reset_to_default()   # the shipped default (E / Q) until a level is loaded
 
@@ -93,7 +104,7 @@ func _ready() -> void:
 		_orbit.setup(params, camera, view)
 	_marker = get_node_or_null("JuliaMarker")
 	if _marker:
-		_marker.setup(params, camera, view, _table)
+		_marker.setup(params, camera, view, _shapes)
 
 	_build_clock()
 	_build_console()
@@ -146,8 +157,56 @@ func console() -> ConsoleWindow:
 	return _console
 
 
+## The scene's shapes (their tables).
+func shapes() -> ShapeList:
+	return _shapes
+
+
+## The scene's look table (light and material).
+func look_table() -> AttributeTable:
+	return _look
+
+
+## The active (console-selected) shape's table.
 func table() -> AttributeTable:
-	return _table
+	return _shapes.table(clampi(params.active, 0, _shapes.count() - 1))
+
+
+## The defaults for a shape added from the console: the active shape's knobs
+## (bindings aside) at NEW_SHAPE_SIZE_RATIO of its size, centred
+## NEW_SHAPE_DISTANCE of the new size in front of the camera, unrotated.
+func new_shape_defaults() -> Dictionary:
+	var defaults := table().defaults()
+	var size: float = float(defaults.get(&"size", 1.0)) * NEW_SHAPE_SIZE_RATIO
+	var f := camera.forward()
+	var d := NEW_SHAPE_DISTANCE * size
+	defaults[&"size"] = size
+	defaults[&"pos_x"] = camera.eye_x() + f.x * d
+	defaults[&"pos_y"] = camera.eye_y() + f.y * d
+	defaults[&"pos_z"] = camera.eye_z() + f.z * d
+	defaults[&"rot_x"] = 0.0
+	defaults[&"rot_y"] = 0.0
+	defaults[&"rot_z"] = 0.0
+	return defaults
+
+
+## Add a shape from the console's defaults and make it the active one.
+func add_shape() -> int:
+	var i := _shapes.add(new_shape_defaults())
+	if i >= 0:
+		if _console != null:
+			_console.shape_pane().set_expanded(i, true)
+			_console.shape_pane().select(i)
+		params.active = i
+	return i
+
+
+## Keep params.shapes the same length as the list (a load, an add, a remove);
+## the next resolve fills the values.
+func _sync_shapes() -> void:
+	params.set_shape_count(_shapes.count())
+	params.active = clampi(params.active, 0, _shapes.count() - 1)
+	_resolve_once()
 
 
 func keymap() -> Keymap:
@@ -165,9 +224,10 @@ func _build_clock() -> void:
 func _build_console() -> void:
 	_console = ConsoleWindow.new()
 	_console.name = "ConsoleWindow"
-	_console.setup(_table, _keymap, _clock, ShapeCatalogue.group_tooltips(),
-		func() -> float: return camera.speed_factor)
+	_console.setup(_shapes, _look, _keymap, _clock, ShapeCatalogue.group_tooltips(),
+		func() -> float: return camera.speed_factor, new_shape_defaults)
 	add_child(_console)
+	_console.shape_pane().selected_changed.connect(func(i: int): params.active = i)
 	_console.toggle_requested.connect(_on_console_toggle)
 	_console.unhandled_key.connect(_on_window_key)
 	_console.game_focus_requested.connect(return_to_game)
@@ -384,24 +444,32 @@ func _process(_delta: float) -> void:
 		_console.show_zoom_limit(fly.at_zoom_limit)
 
 
-## Resolve the shape table + axis values + clock into params, and feed the
-## console's readouts (the rows and the Shape tab's self-similarity line).
-## Cheap (about thirty scalars); apply_resolved emits at most once, and nothing
-## when no binding is active.
+## Resolve every shape's table (into its ShapeParams) and the look table (into
+## params) + axis values + clock, and feed the console's readouts (the rows and
+## the Shape tab's self-similarity line, for the active shape). Cheap (about a
+## hundred scalars per shape); apply_resolved emits at most once per shape, and
+## nothing when no binding is active.
 func _resolve_once() -> void:
-	var values := BindingResolver.resolve(_table, _keymap.axes().values(), _clock.t)
-	params.apply_resolved(values)
+	if params.shapes.size() != _shapes.count():
+		params.set_shape_count(_shapes.count())
+	var axis_values := _keymap.axes().values()
+	var all := _shapes.resolve(axis_values, _clock.t)
+	for i in all.size():
+		params.shapes[i].apply_resolved(all[i])
+	var look := BindingResolver.resolve(_look, axis_values, _clock.t)
+	params.apply_resolved(look)
 	if _console != null and _console.visible:
-		_console.set_resolved(values)
+		_console.set_resolved(all, look)
+		var active: Dictionary = all[clampi(params.active, 0, all.size() - 1)]
 		_console.show_self_similarity(ShapeCatalogue.self_similarity(
-			values, NoiseCompiler.displaces(view.noise_graph())))
+			active, NoiseCompiler.displaces(view.noise_graph())))
 
 
 # ------------------------------------------------------------- save / load
 
 func save_level_to(path: String) -> void:
 	var noise: Dictionary = _noise.to_dict() if _noise != null else {}
-	var err := Workspace.save_file(path, _table, _keymap, params, camera, noise)
+	var err := Workspace.save_file(path, _shapes, _look, _keymap, params, camera, noise)
 	if err != OK:
 		_report("Save failed (error %d): %s" % [err, path])
 		return
@@ -412,7 +480,7 @@ func save_level_to(path: String) -> void:
 
 func load_level_from(path: String) -> void:
 	_loading = true
-	var result := Workspace.load_file(path, _table, _keymap, params, camera)
+	var result := Workspace.load_file(path, _shapes, _look, _keymap, params, camera)
 	_loading = false
 	params.mouse_sensitivity = Settings.mouse_sensitivity
 	var warnings: Array = result["warnings"]
@@ -440,6 +508,7 @@ func load_level_from(path: String) -> void:
 ## the camera now looks at.
 func reset_camera() -> void:
 	camera.transform = _home_transform
+	camera.set_eye(_home_eye[0], _home_eye[1], _home_eye[2])
 	camera.speed_factor = _home_speed
 	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
 		_orbit.enter()
@@ -449,6 +518,7 @@ func reset_camera() -> void:
 
 func _remember_home() -> void:
 	_home_transform = camera.transform
+	_home_eye = [camera.eye_x(), camera.eye_y(), camera.eye_z()]
 	_home_speed = camera.speed_factor
 
 
@@ -589,7 +659,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	# 2. Julia marker drag, only while the mouse is free
+	# 2. Julia marker drag (of the active shape), only while the mouse is free
 	if _marker and params.julia_enabled() and not _captured:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:

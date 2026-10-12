@@ -86,10 +86,10 @@ func run() -> void:
 	var b := Binding.new(); b.source = &"a"; b.gain = 0.5
 	main.table().set_binding(&"box_scale", b)
 	await frames(1)
-	var before_scale: float = main.params.box_scale
+	var before_scale: float = main.params.shape().box_scale
 	await hold(&"axis_a_pos", 0.4)
-	check(main.params.box_scale > before_scale + 0.05,
-		"holding E pushes Axis A, which drives box_scale (%.3f -> %.3f)" % [before_scale, main.params.box_scale])
+	check(main.params.shape().box_scale > before_scale + 0.05,
+		"holding E pushes Axis A, which drives box_scale (%.3f -> %.3f)" % [before_scale, main.params.shape().box_scale])
 	main.table().set_binding(&"box_scale", Binding.new())   # clear it
 	main._keymap.axes().set_value(&"a", 0.0)
 
@@ -215,11 +215,49 @@ func run() -> void:
 	main.load_level_from(tmp)
 	check_approx(main.table().get_default(&"fold_limit"), 0.72, "loading restores the shape table")
 	await frames(1)
-	check_approx(main.params.fold_limit, 0.72, "and the resolve pushes it into params")
+	check_approx(main.params.shape().fold_limit, 0.72, "and the resolve pushes it into params")
 	check_approx(main.camera.speed_factor, 2.0, "and the camera")
 	check(vp.status_label.text.begins_with("Loaded"), "the View tab reports the load: %s" % vp.status_label.text)
 	main.load_level_from("user://no_such_view.json")
 	check_eq(files.current_path, tmp, "a failed load does not change the current file")
+
+	# the shape list: Add shape from the console places a tenth-size copy in
+	# front of the camera and makes it the active shape; the save carries both;
+	# removing it goes back to one
+	var pane: ShapeListPane = console.shape_pane()
+	check_eq(main.shapes().count(), 1, "the scene starts with one shape")
+	var eye_before: Vector3 = main.camera.eye()
+	var added: int = main.add_shape()
+	check_eq(added, 1, "add_shape appends a second shape")
+	check_eq(main.params.shape_count(), 2, "and params mirror the count")
+	check_eq(main.params.active, 1, "the new shape is the active one")
+	check_eq(pane.selected(), 1, "and the console selects it")
+	check(pane.is_expanded(1), "expanded")
+	var t2: AttributeTable = main.shapes().table(1)
+	check_approx(float(t2.get_default(&"size")), 0.1, "it is a tenth the size of the first", 1e-9)
+	var centre := Vector3(t2.get_default(&"pos_x"), t2.get_default(&"pos_y"), t2.get_default(&"pos_z"))
+	var expected_centre: Vector3 = eye_before + main.camera.forward() * main.NEW_SHAPE_DISTANCE * 0.1
+	check(centre.is_equal_approx(expected_centre), "and centred in front of the camera (%s)" % centre)
+	await frames(1)
+	check_approx(main.params.shape(1).size, 0.1, "the resolve pushed its size into params", 1e-9)
+	check(main.table() == t2, "table() is the active shape's table")
+	var tmp2 := "user://main_test_two.json"
+	main.save_level_to(tmp2)
+	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(tmp2))
+	check_eq(int(saved["version"]), Workspace.VERSION, "the save is version %d" % Workspace.VERSION)
+	check_eq((saved["shapes"] as Array).size(), 2, "and carries both shapes")
+	check(saved.has("look"), "and the look")
+	pane.remove_shape(1)
+	check_eq(main.shapes().count(), 1, "the pane's remove drops the shape")
+	check_eq(main.params.shape_count(), 1, "and params follow")
+	check_eq(main.params.active, 0, "the active index falls back to the first")
+	main.load_level_from(tmp2)
+	check_eq(main.shapes().count(), 2, "loading the save brings the second shape back")
+	check_eq(pane.entry_count(), 2, "and the console lists both")
+	check_approx(float(main.shapes().table(1).get_default(&"size")), 0.1, "with its size", 1e-9)
+	check_eq(main.params.active, 1, "and the active shape")
+	pane.remove_shape(1)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp2))
 
 	# Reset camera goes back to the current file's camera and speed factor, from
 	# the console's Movement pane and from the View tab's Renderer options

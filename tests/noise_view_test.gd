@@ -14,7 +14,9 @@ var BASE_UNIFORMS: Array = []
 
 func _base_uniforms() -> Array:
 	var out: Array = ShaderTest.RENDERER_UNIFORMS.duplicate()
-	for id in ShapeCatalogue.catalogue_ids():
+	for id in ShapeCatalogue.shader_ids():
+		out.append(String(id))
+	for id in ShapeCatalogue.scene_ids():
 		out.append(String(id))
 	return out
 

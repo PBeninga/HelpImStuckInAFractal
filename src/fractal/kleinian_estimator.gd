@@ -13,7 +13,7 @@ const ITERATIONS := 32
 
 
 ## `iters` is clamped to [0, ITERATIONS], as DistanceEstimator's.
-static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
+static func estimate_at(px: float, py: float, pz: float, params: ShapeParams,
 		iters: int = ITERATIONS) -> float:
 	var b := [params.kleinian_box_0, params.kleinian_box_1, params.kleinian_box_2, params.kleinian_box_3]
 	var shift := [params.kleinian_shift_0, params.kleinian_shift_1, params.kleinian_shift_2, params.kleinian_shift_3]

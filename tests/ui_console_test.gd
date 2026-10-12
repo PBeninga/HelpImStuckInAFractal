@@ -15,7 +15,9 @@ extends "res://tests/test_case.gd"
 ## run at that size.
 
 var ui: UiDriver
+var shapes: ShapeList
 var table: AttributeTable
+var look: AttributeTable
 var km: Keymap
 var console: ConsoleWindow
 var scroll: ScrollContainer
@@ -24,19 +26,21 @@ var scroll: ScrollContainer
 func run() -> void:
 	ui = UiDriver.new(self)
 	await ui.setup()
-	table = AttributeTable.new(ShapeCatalogue.specs())
+	shapes = ShapeList.new()
+	table = shapes.table(0)
 	km = Keymap.new()
 	km.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	console = ConsoleWindow.new()
-	console.setup(table, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
+	look = AttributeTable.new(ShapeCatalogue.scene_specs())
+	console.setup(shapes, look, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	# Shorter than the list, so there is real scroll range.
 	console.size = Vector2i(1000, 400)
 	console.open()
 	await ui.frames(3)
-	scroll = console.inspector().get_child(0) as ScrollContainer
+	scroll = console.shape_pane().scroll_container()
 
 	await _opens_on_screen()
 	await _wheel_scrolls_without_editing()
@@ -46,6 +50,7 @@ func run() -> void:
 	await _spin_typing()
 	await _layout_at_default_size()
 	await _slider_click_and_drag()
+	await _shape_list()
 	await _movement_pane()
 	await _zoom_keys()
 	await _wasd_leaves_for_game()
@@ -68,8 +73,9 @@ func _opens_on_screen() -> void:
 	check(bar.max_value > bar.page + 100.0,
 		"the Shape list is taller than the window, so it can scroll (range %.0f, page %.0f)" % [bar.max_value, bar.page])
 	var ss := console.self_similarity_label()
-	check(ss != null and ss.is_visible_in_tree() and ui.global_rect(scroll).encloses(ui.global_rect(ss)),
-		"the self-similarity line is on screen at the top of the Shape tab")
+	check(ss != null and ss.is_visible_in_tree() and ui.global_rect(ss).end.y <= ui.global_rect(scroll).position.y + 1.0
+		and ui.global_rect(console.shape_pane()).encloses(ui.global_rect(ss)),
+		"the self-similarity line is on screen at the top of the Shape tab, above the list")
 	check(ss != null and ss.text.begins_with("Self-similar: "), "and reads as one (%s)" % (ss.text if ss else "none"))
 
 
@@ -154,7 +160,7 @@ func _colour_dropdown() -> void:
 	var clicked := await ui.select_popup_item(popup, "Blue")
 	check(clicked, "the mouse finds and clicks Blue")
 	await ui.frames(1)
-	check_eq(int(table.get_default(&"color_mode")), 5, "clicking Blue sets color_mode to Blue (5)")
+	check_eq(int(look.get_default(&"color_mode")), 5, "clicking Blue sets color_mode to Blue (5) in the look table")
 	check_eq(option.get_item_text(option.selected), "Blue", "the dropdown now shows Blue")
 	check(not popup.visible, "and the list closed")
 	console.show_tab(0)
@@ -170,7 +176,7 @@ func _source_dropdown() -> void:
 	var b := table.binding(&"box_scale")
 	check(b != null and b.source == &"a", "selecting Axis A binds Scale to it")
 	km.axes().set_value(&"a", 0.5)
-	console.set_resolved(BindingResolver.resolve(table, km.axes().values(), 0.0))
+	console.set_resolved([BindingResolver.resolve(table, km.axes().values(), 0.0)])
 	await ui.frames(1)
 	check(row.readout().visible, "the row shows a readout of the value in use")
 	check(row.readout().text.contains("-1.59"), "…default -2.09 plus gain 1 x 0.5 (%s)" % row.readout().text)
@@ -183,16 +189,16 @@ func _layout_at_default_size() -> void:
 	await ui.frames(2)
 	var win := Rect2(ui.window_origin(console), Vector2(console.size))
 	check(root.get_visible_rect().encloses(win), "at its default size the console fits in the main window (%s)" % win)
-	var inspector := console.inspector()
+	var inspector := console.shape_pane()
 	var pane := console.movement_pane()
 	check(ui.global_rect(inspector).size.x >= console.size.x - 20.0,
-		"the Shape inspector spans the console's width (%.0f of %d)" % [ui.global_rect(inspector).size.x, console.size.x])
+		"the Shape pane spans the console's width (%.0f of %d)" % [ui.global_rect(inspector).size.x, console.size.x])
 	check(ui.global_rect(pane).position.y >= ui.global_rect(inspector).end.y,
 		"the Movement pane sits below it")
 	check(ui.global_rect(inspector).size.y > ui.global_rect(pane).size.y,
-		"and the inspector gets most of the height (%.0f over %.0f)" % [ui.global_rect(inspector).size.y, ui.global_rect(pane).size.y])
-	for id in [&"box_scale", &"fold_limit"]:
-		var c := inspector.row(id).value_control()
+		"and the Shape pane gets most of the height (%.0f over %.0f)" % [ui.global_rect(inspector).size.y, ui.global_rect(pane).size.y])
+	for id in [&"box_scale", &"fold_limit", &"size"]:
+		var c := console.inspector().row(id).value_control()
 		if c is HSlider:
 			check(c.size.x >= 200.0, "the %s slider is wide enough to drag (%.0f px)" % [id, c.size.x])
 	check(win.encloses(ui.global_rect(pane)),
@@ -235,6 +241,44 @@ func _spin_typing() -> void:
 	check_approx((row.value_control() as HSlider).value, 0.55, "and the slider follows")
 	spin.get_line_edit().release_focus()
 	await ui.frames(1)
+
+
+## The shape list by clicks: Add shape appends a second entry whose header sits
+## above its own panel; clicking its arrow collapses it (the panel hides) and
+## again expands it; clicking the first header selects the first shape; typing
+## a label renames it; its ✕ removes it.
+func _shape_list() -> void:
+	var pane := console.shape_pane()
+	await ui.click(pane.add_button())
+	await ui.frames(2)
+	check_eq(shapes.count(), 2, "a click on Add shape adds a shape")
+	check_eq(pane.entry_count(), 2, "with its own entry")
+	check_eq(pane.selected(), 1, "selected")
+	var w := pane.entry_widgets(1)
+	check(await ui.scroll_to(scroll, w["header"]), "the new entry's header scrolls into view")
+	var header_rect := ui.global_rect(w["header"])
+	var panel_rect := ui.global_rect(pane.inspector(1))
+	check(panel_rect.position.y >= header_rect.end.y - 1.0, "its panel sits below its header")
+	await ui.click(w["arrow"])
+	check(not pane.is_expanded(1), "a click on the arrow collapses it")
+	check(not pane.inspector(1).is_visible_in_tree(), "and its panel is hidden")
+	await ui.click(w["arrow"])
+	check(pane.is_expanded(1) and pane.inspector(1).is_visible_in_tree(), "another click expands it")
+	var first := pane.entry_widgets(0)
+	check(await ui.scroll_to(scroll, first["header"]), "the first header scrolls into view")
+	await ui.click_at(ui.global_point(first["header"], Vector2(0.9, 0.5)))   # the empty part of the header
+	check_eq(pane.selected(), 0, "a click on the first header selects the first shape")
+	check(console.inspector() == pane.inspector(0), "and inspector() follows")
+	check(await ui.scroll_to(scroll, w["label"]), "the second entry's label is in view")
+	await ui.type_text(w["label"], "Inner")
+	await ui.frames(1)
+	check_eq(shapes.label(1), "Inner", "typing a label and Enter renames the shape")
+	w = pane.entry_widgets(1)
+	check(await ui.scroll_to(scroll, w["remove"]), "its ✕ is in view")
+	await ui.click(w["remove"])
+	await ui.frames(2)
+	check_eq(shapes.count(), 1, "a click on ✕ removes the shape")
+	check_eq(pane.entry_count(), 1, "and its entry")
 
 
 func _movement_pane() -> void:

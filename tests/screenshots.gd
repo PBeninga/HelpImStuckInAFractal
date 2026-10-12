@@ -46,12 +46,12 @@ func _run() -> void:
 	# for one second (value 1.0) so box_scale resolves to -2.09 + 0.5 = -1.59.
 	# The picture must differ from the default view — the binding really drove
 	# the shape. Rendered through the same view, then the view is restored.
-	var bound_table := AttributeTable.new(ShapeCatalogue.specs())
+	var bound_table := AttributeTable.new(ShapeCatalogue.shape_specs())
 	var bind := Binding.new(); bind.source = &"a"; bind.gain = 0.5
 	bound_table.set_binding(&"box_scale", bind)
 	var bound_axes := Axes.new(); bound_axes.add(&"a", "Axis A", 1.0); bound_axes.set_value(&"a", 1.0)
 	var bound_params := FractalParams.new()
-	bound_params.apply_resolved(BindingResolver.resolve(bound_table, bound_axes.values(), 0.0))
+	bound_params.shape().apply_resolved(BindingResolver.resolve(bound_table, bound_axes.values(), 0.0))
 	view.setup(bound_params, cam)
 	view.set_render_scale(1.0)
 	await _render(view)
@@ -97,13 +97,14 @@ func _run() -> void:
 	params.color_mode = 1   # back to Ice Fractal before capturing the default again
 	var np := FractalParams.new()
 	var ncam := CameraState.make_default()
-	var ntable := AttributeTable.new(ShapeCatalogue.specs())
+	var nshapes := ShapeList.new()
+	var nlook := AttributeTable.new(ShapeCatalogue.scene_specs())
 	var nkm := Keymap.new()
-	var loaded := Workspace.load_file("res://saves/noiseRidges.json", ntable, nkm, np, ncam)
+	var loaded := Workspace.load_file("res://saves/noiseRidges.json", nshapes, nlook, nkm, np, ncam)
 	if not loaded["ok"]:
 		_fail("noise_ridges", "load_failed:%s" % loaded["warnings"])
 	else:
-		np.apply_resolved(BindingResolver.resolve(ntable, nkm.axes().values(), 0.0))
+		_apply_resolved(np, nshapes, nlook, nkm.axes())
 		view.setup(np, ncam)
 		view.set_render_scale(1.0)
 		var noise: Variant = loaded.get("noise", null)
@@ -132,8 +133,59 @@ func _run() -> void:
 		plain_view.queue_free()
 
 	await _shapes(view, def)
+	await _nested_escape(view)
 	await _capture_windows(view)
 	view.queue_free()
+
+
+## Resolve every shape's table and the look into the params, as Main does
+## each frame.
+func _apply_resolved(params: FractalParams, shapes: ShapeList, look: AttributeTable, axes: Axes) -> void:
+	params.set_shape_count(shapes.count())
+	var all := shapes.resolve(axes.values(), 0.0)
+	for i in all.size():
+		params.shapes[i].apply_resolved(all[i])
+	params.apply_resolved(BindingResolver.resolve(look, axes.values(), 0.0))
+
+
+## nested_escape: the committed three-shape level, with the camera inside the
+## innermost shape. Rendered through the same view; it must not be blank and
+## must differ from the outermost shape alone seen from the same camera.
+func _nested_escape(view: FractalView) -> void:
+	var ep := FractalParams.new()
+	var ecam := CameraState.make_default()
+	var eshapes := ShapeList.new()
+	var elook := AttributeTable.new(ShapeCatalogue.scene_specs())
+	var eloaded := Workspace.load_file("res://saves/nestedEscape.json", eshapes, elook, Keymap.new(), ep, ecam)
+	if not eloaded["ok"] or eshapes.count() < 2:
+		_fail("nested_escape", "load_failed:%s" % eloaded["warnings"])
+		return
+	_apply_resolved(ep, eshapes, elook, Axes.new())
+	view.set_noise_graph(null)
+	view.setup(ep, ecam)
+	view.set_render_scale(1.0)
+	await _render(view)
+	var nested := view._viewport.get_texture().get_image()
+	var single := FractalParams.new()
+	single.shape().copy_from(ep.shape(0))
+	single.apply_resolved(BindingResolver.resolve(elook, {}, 0.0))
+	var single_view: FractalView = load("res://src/fractal/fractal_view.tscn").instantiate()
+	root.add_child(single_view)
+	single_view.size = Vector2(800, 600)
+	single_view.setup(single, ecam)
+	single_view.set_render_scale(1.0)
+	await _render(single_view)
+	var plain := single_view._viewport.get_texture().get_image()
+	if nested == null:
+		_fail("nested_escape", "no_image")
+	else:
+		nested.save_png(ProjectSettings.globalize_path(SHOT_DIR + "/nested_escape.png"))
+		var lit := _lit_fraction(nested)
+		if lit < 0.03:
+			_fail("nested_escape", "blank (%.3f lit)" % lit)
+		else:
+			_check_differs("nested_escape", nested, plain)
+	single_view.queue_free()
 
 
 ## One frame per new fractal and Mandelbox fold option: shape_<name>.png. Each
@@ -160,7 +212,7 @@ func _shapes(view: FractalView, def: Image) -> void:
 	for shot in shots:
 		var id: String = "shape_" + shot[0]
 		var sp := FractalParams.new()
-		sp.apply_resolved(shot[1])
+		sp.shape().apply_resolved(shot[1])
 		var scam := CameraState.new()
 		var eye: Vector3 = shot[2]
 		scam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
@@ -200,13 +252,14 @@ func _lit_fraction(img: Image) -> float:
 func _capture_windows(view: FractalView) -> void:
 	root.gui_embed_subwindows = true
 
-	var table := AttributeTable.new(ShapeCatalogue.specs())
+	var shapes := ShapeList.new()
+	shapes.add({&"size": 0.1}, "Inner")
 	var keymap := Keymap.new()
 	keymap.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	var console := ConsoleWindow.new()
-	console.setup(table, keymap, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
+	console.setup(shapes, AttributeTable.new(ShapeCatalogue.scene_specs()), keymap, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	console.open()
 	console.position = Vector2i.ZERO

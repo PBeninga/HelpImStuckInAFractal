@@ -1,34 +1,35 @@
 // Mandelbulb distance estimate (White and Nylander's triplex power), included
 // by mandelbox.gdshader. MandelbulbEstimator is the CPU copy and explains the
 // formula. 3D: w is not read. Uniform names are the catalogue ids
-// (src/fractal/mandelbulb_shape.gd).
+// (src/fractal/mandelbulb_shape.gd), one array entry per shape.
 
-uniform float mandelbulb_power;
-uniform float mandelbulb_phase_theta;   // degrees
-uniform float mandelbulb_phase_phi;     // degrees
-uniform bool mandelbulb_julia;
-uniform float mandelbulb_c_0;
-uniform float mandelbulb_c_1;
-uniform float mandelbulb_c_2;
+uniform float mandelbulb_power[MAX_SHAPES];
+uniform float mandelbulb_phase_theta[MAX_SHAPES];   // degrees
+uniform float mandelbulb_phase_phi[MAX_SHAPES];     // degrees
+uniform int mandelbulb_julia[MAX_SHAPES];           // 0 off, 1 on
+uniform float mandelbulb_c_0[MAX_SHAPES];
+uniform float mandelbulb_c_1[MAX_SHAPES];
+uniform float mandelbulb_c_2[MAX_SHAPES];
 
 // The radius past which every orbit escapes, at least 2
 // (MandelbulbEstimator.bailout).
-float mandelbulb_bailout() {
-	float n = mandelbulb_power;
+float mandelbulb_bailout(int s) {
+	float n = mandelbulb_power[s];
 	float r = n <= 1.0 ? 20.0 : min(pow(2.0, 1.0 / (n - 1.0)), 20.0);
-	if (mandelbulb_julia) {
-		r = max(r, length(vec3(mandelbulb_c_0, mandelbulb_c_1, mandelbulb_c_2)));
+	if (mandelbulb_julia[s] != 0) {
+		r = max(r, length(vec3(mandelbulb_c_0[s], mandelbulb_c_1[s], mandelbulb_c_2[s])));
 	}
 	return max(2.0, r);
 }
 
-float mandelbulb_de(vec3 p, int iters) {
-	float n = mandelbulb_power;
-	vec3 c = mandelbulb_julia ? vec3(mandelbulb_c_0, mandelbulb_c_1, mandelbulb_c_2) : p;
-	float add = mandelbulb_julia ? 0.0 : 1.0;
-	float a = radians(mandelbulb_phase_theta);
-	float b = radians(mandelbulb_phase_phi);
-	float bail = mandelbulb_bailout();
+float mandelbulb_de(int s, vec3 p, int iters) {
+	float n = mandelbulb_power[s];
+	bool julia = mandelbulb_julia[s] != 0;
+	vec3 c = julia ? vec3(mandelbulb_c_0[s], mandelbulb_c_1[s], mandelbulb_c_2[s]) : p;
+	float add = julia ? 0.0 : 1.0;
+	float a = radians(mandelbulb_phase_theta[s]);
+	float b = radians(mandelbulb_phase_phi[s]);
+	float bail = mandelbulb_bailout(s);
 	vec3 z = p;
 	float dr = 1.0;
 	float r = length(z);

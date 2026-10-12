@@ -235,7 +235,7 @@ func _zoom_floor_guard() -> void:
 ## first surface and slows as it goes, and it never stalls far out.
 func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
 	var params := FractalParams.new()
-	params.apply_resolved(knobs)
+	params.shape().apply_resolved(knobs)
 	var cam := CameraState.new()
 	cam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
 	var fly := FlyCamera.new()
@@ -263,7 +263,7 @@ func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
 		travelled += step
 		cam.transform = t
 		var e := cam.eye()
-		if DistanceEstimator.estimate_at(e.x, e.y, e.z, params) < 0.0:
+		if DistanceEstimator.scene_estimate_at(e.x, e.y, e.z, params) < 0.0:
 			inside = true
 	check_eq(tunnels, 0, "%s: no frame's step jumps a surface" % label)
 	check(not inside, "%s: the eye never ends up inside" % label)
@@ -281,7 +281,7 @@ func _surface_within(origin: Vector3, dir: Vector3, length: float, params: Fract
 	var t := 0.0
 	for i in 400:
 		var p := origin + dir * t
-		var d := DistanceEstimator.estimate_at(p.x, p.y, p.z, params)
+		var d := DistanceEstimator.scene_estimate_at(p.x, p.y, p.z, params)
 		if d < params.hit_epsilon(maxf(t, near), near):
 			return t < length
 		t += 0.25 * d

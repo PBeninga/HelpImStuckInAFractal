@@ -1,14 +1,17 @@
 class_name ConsoleWindow
 extends Window
-## The console ("Fractacular embedded") for the one Mandelbox shape being flown
+## The console ("Fractacular embedded") for the scene of shapes being flown
 ## through in the main window: four tabs stacked above the Movement pane in a
-## VSplit. The Shape tab is the inspector for the Box, Julia, Iteration rotation
-## and Render groups, headed by a read-only line saying whether the shape is
-## self-similar (ShapeCatalogue.self_similarity, fed by Main); the Light tab is
+## VSplit. The Shape tab is the ShapeListPane: Add shape and a read-only line
+## saying whether the selected shape is self-similar
+## (ShapeCatalogue.self_similarity, fed by Main) over one collapsible panel per
+## shape (its Placement, Fractal, Box, Julia, Iteration rotation, KIFS,
+## Kleinian, Mandelbulb and Render groups); the Light tab is
 ## the lamp, its scattering and the picture's exposure and saturation; the
 ## Material tab is Fractacular's Colour window (the cosine palette's sliders,
 ## curves and strip) above the Colour, Surface, Texture and Palette rows, in one
-## scrolling list; the View tab is Save / Load view, the camera
+## scrolling list (the Light and Material tabs edit the scene's one look
+## table); the View tab is Save / Load view, the camera
 ## mode, the mouse sensitivity, the Noise editor button, the Renderer options
 ## and Back to Menu. Stacked, the tabs get the full width, so the sliders have
 ## room (side by side, the panes' minimum widths overflowed the
@@ -69,7 +72,7 @@ var zoom := 1.0
 var remembered_rect := Rect2i()
 
 var _tabs: TabContainer
-var _inspector: AttributeInspector
+var _shape_pane: ShapeListPane
 var _light_inspector: AttributeInspector
 var _material_inspector: AttributeInspector
 var _palette: Palette
@@ -84,7 +87,11 @@ var _docked := false
 var _dock_rect := Rect2i()
 
 
-func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable()) -> void:
+## `shapes` is the scene's list of per-shape tables, `look` the one table of
+## light and material knobs they share. `placement_source` returns the defaults
+## (id -> value) for a shape the Add shape button creates; Main supplies one
+## that places it in front of the camera.
+func setup(shapes: ShapeList, look: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: Dictionary, speed_source: Callable = Callable(), placement_source: Callable = Callable()) -> void:
 	_keymap = keymap
 	title = "Console"
 	visible = false   # force_native cannot change while a window is shown
@@ -111,15 +118,15 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_self_similar.name = "SelfSimilar"
 	_self_similar.mouse_filter = Control.MOUSE_FILTER_STOP   # so its tooltip shows
 	_self_similar.tooltip_text = SELF_SIMILAR_TOOLTIP
-	show_self_similarity(ShapeCatalogue.self_similarity(table.defaults()))
-	_inspector = AttributeInspector.new()
-	_inspector.name = "Shape"
-	_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_tabs.add_child(_inspector)
-	_inspector.setup(table, group_tooltips, ShapeCatalogue.SHAPE_GROUPS, _self_similar)
+	show_self_similarity(ShapeCatalogue.self_similarity(shapes.table(0).defaults()))
+	_shape_pane = ShapeListPane.new()
+	_shape_pane.name = "Shape"
+	_shape_pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_shape_pane.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tabs.add_child(_shape_pane)
+	_shape_pane.setup(shapes, group_tooltips, placement_source, _self_similar)
 
-	_palette = Palette.new(table)
+	_palette = Palette.new(look)
 	_palette_window = PaletteWindow.new()
 	_palette_window.setup(_palette)
 	_palette_window.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -129,14 +136,14 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_light_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_light_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.add_child(_light_inspector)
-	_light_inspector.setup(table, group_tooltips, ShapeCatalogue.LIGHT_GROUPS)
+	_light_inspector.setup(look, group_tooltips, ShapeCatalogue.LIGHT_GROUPS)
 
 	_material_inspector = AttributeInspector.new()
 	_material_inspector.name = "Material"
 	_material_inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_material_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.add_child(_material_inspector)
-	_material_inspector.setup(table, group_tooltips, ShapeCatalogue.MATERIAL_GROUPS, _palette_window)
+	_material_inspector.setup(look, group_tooltips, ShapeCatalogue.MATERIAL_GROUPS, _palette_window)
 
 	_view = ViewPane.new()
 	_tabs.add_child(_view)
@@ -154,9 +161,15 @@ func setup(table: AttributeTable, keymap: Keymap, clock: Clock, group_tooltips: 
 	_refresh_sources()
 
 
-## The Shape tab's inspector (Box, Julia, Iteration rotation, Render).
+## The Shape tab: one collapsible panel per shape.
+func shape_pane() -> ShapeListPane:
+	return _shape_pane
+
+
+## The selected (active) shape's panel on the Shape tab (Placement, Fractal,
+## Box, Julia, Iteration rotation, KIFS, Kleinian, Mandelbulb, Render).
 func inspector() -> AttributeInspector:
-	return _inspector
+	return _shape_pane.active_inspector()
 
 
 ## The Light tab's inspector (Light, Scattering, Picture).
@@ -219,17 +232,17 @@ func show_zoom_limit(on: bool) -> void:
 	_movement.show_zoom_limit(on)
 
 
-## Feed one frame of resolved values to the three inspectors' readouts and the
-## palette's curves and strip.
-func set_resolved(values: Dictionary) -> void:
-	if _inspector != null:
-		_inspector.set_resolved(values)
+## Feed one frame of resolved values — one Dictionary per shape, and the
+## scene's look — to the panels' readouts and the palette's curves and strip.
+func set_resolved(shape_values: Array, look_values: Dictionary = {}) -> void:
+	if _shape_pane != null:
+		_shape_pane.set_resolved(shape_values)
 	if _light_inspector != null:
-		_light_inspector.set_resolved(values)
+		_light_inspector.set_resolved(look_values)
 	if _material_inspector != null:
-		_material_inspector.set_resolved(values)
+		_material_inspector.set_resolved(look_values)
 	if _palette_window != null:
-		_palette_window.set_resolved(values)
+		_palette_window.set_resolved(look_values)
 
 
 func open() -> void:
@@ -381,12 +394,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _refresh_sources() -> void:
-	if _inspector == null or _keymap == null:
+	if _shape_pane == null or _keymap == null:
 		return
 	var axis_list: Array = []
 	for axis in _keymap.axes().list():
 		axis_list.append({"id": axis.id, "label": axis.label})
-	_inspector.set_sources(axis_list)
+	_shape_pane.set_sources(axis_list)
 	_light_inspector.set_sources(axis_list)
 	_material_inspector.set_sources(axis_list)
 

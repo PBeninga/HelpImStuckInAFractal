@@ -5,11 +5,13 @@ extends RefCounted
 ## that is. The fly camera's speed follows the distance; the view paints a dot
 ## at the hit point when the probe is shown.
 ##
-## The result is cached and only re-marched after the camera or the shape
+## The result is cached and only re-marched after the camera or a shape
 ## changes, so the fly camera and the view share one march per frame. The march
-## mirrors the shader's: clipped to the same bounding cube, stopping below the
-## same hit threshold (FractalParams.hit_epsilon). It does not see a noise
-## field's displacement, which only the shader evaluates.
+## mirrors the shader's: clipped to the union of the shapes' bounding cubes
+## (each met in its own frame), stepping by the scene distance, stopping below
+## the hit shape's threshold (FractalParams.hit_epsilon), from the camera's
+## 64-bit eye. It does not see a noise field's displacement, which only the
+## shader evaluates.
 
 ## Step budget. A grazing ray that runs out keeps the distance it reached: a
 ## lower bound on the hit, so the speed it gives errs slow.
@@ -57,46 +59,33 @@ func _update() -> void:
 	if not _dirty:
 		return
 	_dirty = false
-	var r := march(_camera.eye(), _camera.forward(), _params)
+	var r := march_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _camera.forward(), _params)
 	_distance = r[0]
 	_hit = r[1]
 
 
 ## Sphere-trace from `origin` along unit `dir`. Returns [distance, hit]:
-## [t, true] on a hit, [INF, false] when the ray leaves the shape's cube (or
-## passes the Kleinian's view distance), and
+## [t, true] on a hit, [INF, false] when the ray leaves every shape's cube (or
+## passes a Kleinian's view distance), and
 ## [t_reached, false] when the step budget runs out first.
 static func march(origin: Vector3, dir: Vector3, params: FractalParams) -> Array:
-	var tb := _box_intersect(origin, dir, params.bound_half())
-	if params.view_distance() > 0.0:
-		tb.y = minf(tb.y, params.view_distance())   # the shader stops there too
-	if tb.y < maxf(tb.x, 0.0):
+	return march_at(origin.x, origin.y, origin.z, dir, params)
+
+
+## march() from a 64-bit origin.
+static func march_at(ox: float, oy: float, oz: float, dir: Vector3, params: FractalParams) -> Array:
+	var bounds: Variant = DistanceEstimator.scene_bounds(ox, oy, oz, dir, params)
+	if bounds == null:
 		return [INF, false]
-	var near := maxf(DistanceEstimator.estimate(origin, params), FractalParams.NEAR_FLOOR)
-	var t := maxf(tb.x, 0.0)
+	var t_exit: float = bounds[1]
+	var near := maxf(DistanceEstimator.scene_estimate_at(ox, oy, oz, params), FractalParams.NEAR_FLOOR)
+	var t: float = bounds[0]
 	for _i in MAX_STEPS:
-		var p := origin + dir * t
-		var d := DistanceEstimator.estimate_at(p.x, p.y, p.z, params)
-		if d < params.hit_epsilon(t, near):
+		var n := DistanceEstimator.nearest_at(ox + dir.x * t, oy + dir.y * t, oz + dir.z * t, params)
+		var d: float = n["distance"]
+		if d < params.hit_epsilon(t, near, params.shapes[n["index"]].precision):
 			return [t, true]
 		t += d
-		if t > tb.y:
+		if t > t_exit:
 			return [INF, false]
 	return [t, false]
-
-
-## Ray vs the origin-centred cube of half-size `half`: (t_enter, t_exit); a miss
-## has t_exit < max(t_enter, 0). Mirrors box_intersect() in the shader.
-static func _box_intersect(ro: Vector3, rd: Vector3, half: float) -> Vector2:
-	var t_enter := -INF
-	var t_exit := INF
-	for i in 3:
-		var r := rd[i]
-		if absf(r) < 1e-9:
-			r = 1e-9 if r >= 0.0 else -1e-9
-		var inv := 1.0 / r
-		var t1 := (-ro[i] - half) * inv
-		var t2 := (-ro[i] + half) * inv
-		t_enter = maxf(t_enter, minf(t1, t2))
-		t_exit = minf(t_exit, maxf(t1, t2))
-	return Vector2(t_enter, t_exit)

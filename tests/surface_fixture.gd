@@ -18,7 +18,7 @@ static func default_surface(params: FractalParams) -> Array:
 	var y: float = e.y + f.y * t
 	var z: float = e.z + f.z * t
 	for _i in 400:
-		var d := DistanceEstimator.estimate_at(x, y, z, params)
+		var d := DistanceEstimator.scene_estimate_at(x, y, z, params)
 		if d < 1e-10:
 			break
 		x += f.x * d

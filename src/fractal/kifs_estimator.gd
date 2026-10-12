@@ -21,7 +21,7 @@ const PLANES := DistanceEstimator.PLANES
 
 enum FoldSet { COORDINATE, DIAGONAL, POLYFOLD }
 
-## The FractalParams fields of R1 and R2, in PLANES order.
+## The ShapeParams fields of R1 and R2, in PLANES order.
 const ROT_IDS := [
 	[&"kifs_rot1_xy", &"kifs_rot1_xz", &"kifs_rot1_xw", &"kifs_rot1_yz", &"kifs_rot1_yw", &"kifs_rot1_zw"],
 	[&"kifs_rot2_xy", &"kifs_rot2_xz", &"kifs_rot2_xw", &"kifs_rot2_yz", &"kifs_rot2_yw", &"kifs_rot2_zw"],
@@ -29,7 +29,7 @@ const ROT_IDS := [
 
 
 ## `iters` is clamped to [0, ITERATIONS], as DistanceEstimator's.
-static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
+static func estimate_at(px: float, py: float, pz: float, params: ShapeParams,
 		iters: int = ITERATIONS) -> float:
 	var s := params.kifs_scale
 	var fold_set := params.kifs_fold
@@ -83,7 +83,7 @@ static func estimate_at(px: float, py: float, pz: float, params: FractalParams,
 ## pairs in PLANES order, or [] when every angle is 0 (the rotation is skipped).
 ## The fly camera's centre ray calls this every estimate, so the field names
 ## are prebuilt rather than formatted each time.
-static func _angles(params: FractalParams, which: int) -> Array:
+static func _angles(params: ShapeParams, which: int) -> Array:
 	var ids: Array = ROT_IDS[which]
 	var out := []
 	var any := false
