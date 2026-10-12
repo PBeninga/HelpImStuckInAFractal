@@ -28,6 +28,19 @@ func run() -> void:
 	check(rect.size.y > 700.0, "down the full height")
 	check(chat._state.text.contains("no agent"), "with no agent listening yet")
 
+	# Docked (fullscreen), the console takes the right-hand strip and the chat
+	# moves beside it rather than under it.
+	main.set_docked(true)
+	await ui.frames(2)
+	var dock := Rect2(main._dock_rect())
+	check(ui.global_rect(chat).end.x <= dock.position.x, "docked, the chat sits left of the console")
+	# Hidden first: headless the console is embedded and would take Enter (and
+	# undocking an open console reopens it once the window settles).
+	main.console().hide_console()
+	main.set_docked(false)
+	await ui.frames(2)
+	check_approx(ui.global_rect(chat).end.x, 1280.0 - ChatPanel.MARGIN, "and undocked it hugs the edge again", 1.0)
+
 	# Enter focuses; WASD falls silent while typing.
 	await ui.tap(KEY_ENTER)
 	check(chat.input.has_focus(), "Enter focuses the chat input")

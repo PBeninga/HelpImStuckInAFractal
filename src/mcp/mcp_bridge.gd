@@ -257,8 +257,7 @@ func _start_game() -> Dictionary:
 	var main := _main()
 	if main == null:
 		return {"error": "the game scene did not load"}
-	if get_tree().paused:
-		main.resume()
+	get_tree().paused = false
 	return _status()
 
 
@@ -480,7 +479,7 @@ func _load_view(main: Main, args: Dictionary) -> Dictionary:
 	var path := _view_path(args)
 	if path.is_empty() or not FileAccess.file_exists(path):
 		return {"error": "no such view: %s" % args.get("name", "")}
-	main.load_view_from(path)
+	main.load_level_from(path)
 	return _camera_json(main)
 
 
@@ -488,7 +487,7 @@ func _save_view(main: Main, args: Dictionary) -> Dictionary:
 	var path := _view_path(args)
 	if path.is_empty():
 		return {"error": "save_view needs a name"}
-	main.save_view_to(path)
+	main.save_level_to(path)
 	return {"path": path}
 
 

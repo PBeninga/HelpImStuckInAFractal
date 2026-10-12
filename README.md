@@ -595,7 +595,7 @@ Elsewhere: `claude mcp add fractal -- node /path/to/repo/mcp/server.mjs`.
 | tool | what it does |
 |---|---|
 | `launch_game` | start the game straight into the explorer and wait for the bridge (see below) |
-| `status`, `start_game` | where things stand; leave the title or pause menu |
+| `status`, `start_game` | where things stand; leave the title menu |
 | `get_camera`, `set_camera` | eye / look_at / forward / up, optionally animated (`duration`) |
 | `move` | move in the camera's frame, in **surface units** by default (multiples of the distance to the nearest surface, so `forward: 0.5` always halves the gap at any zoom depth); `safe` stops short of walls |
 | `rotate` | yaw (about +Z) / pitch / roll in degrees |

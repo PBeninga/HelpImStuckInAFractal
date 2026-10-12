@@ -58,8 +58,7 @@ func _build() -> void:
 	anchor_right = 1.0
 	anchor_top = 0.0
 	anchor_bottom = 1.0
-	offset_left = -WIDTH - MARGIN
-	offset_right = -MARGIN
+	set_right_inset(0.0)
 	offset_top = MARGIN
 	offset_bottom = -MARGIN
 
@@ -104,6 +103,13 @@ func _build() -> void:
 	input.text_submitted.connect(_on_submit)
 	input.gui_input.connect(_on_input_key)
 	col.add_child(input)
+
+
+## Keep `inset` clear at the window's right edge (the docked console's strip),
+## so the panel sits beside it rather than under it.
+func set_right_inset(inset: float) -> void:
+	offset_left = -WIDTH - MARGIN - inset
+	offset_right = -MARGIN - inset
 
 
 ## Focus the input (Enter), from wherever the keyboard was.

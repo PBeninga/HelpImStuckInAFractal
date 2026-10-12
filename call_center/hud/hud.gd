@@ -3,8 +3,7 @@ extends CanvasLayer
 ## where the conversation itself shows, has the right): ship status, the
 ## scrolling SHIP DIAGNOSTICS log, the SUB-DIMENSIONAL SUPPORT panel (the
 ## number to call, the call's state), the feature overlay's brackets, and a
-## banner for big moments. Drawn under the game's pause menu (layer 10) and
-## never takes the mouse.
+## banner for big moments. Never takes the mouse.
 
 const Features := preload("res://call_center/features.gd")
 const FeatureOverlay := preload("res://call_center/hud/feature_overlay.gd")
