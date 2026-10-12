@@ -7,9 +7,9 @@ extends Resource
 ## catalogue id (src/fractal/shape_catalogue.gd, the per-shape specs) and
 ## written once per frame by apply_resolved() from the shape's AttributeTable;
 ## setters emit Resource's built-in `changed`, and apply_resolved batches a
-## frame's writes into at most one emit. The scene's look (colour, light,
-## material) and preferences live on FractalParams, which holds the list of
-## these.
+## frame's writes into at most one emit. Each ShapeList entry owns a separate
+## look table (colour, light, material); the gameplay-active look resolves into
+## FractalParams, which also holds preferences and the list of these.
 ##
 ## Placement: a world point p maps into the shape as
 ##   q = Rᵀ (p − position) / size

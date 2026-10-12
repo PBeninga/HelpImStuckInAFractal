@@ -2,9 +2,9 @@ class_name FractalParams
 extends Resource
 ## Every value the renderer, cameras and governor read: the list of shapes in
 ## the scene (each a ShapeParams of resolved shape knobs and placement, written
-## once per frame from its AttributeTable by Main), the scene's LOOK (the
+## once per frame from its AttributeTable by Main), the rendered shape's LOOK (the
 ## RESOLVED colour, light and material knobs, named by catalogue id and written
-## once per frame by apply_resolved() from the look table) and the preference
+## once per frame by apply_resolved() from that shape's look table) and the preference
 ## and renderer fields (fast_controls, camera_mode, mouse_sensitivity, the level
 ## of detail, step and iteration budgets and minimum render scale), edited directly.
 ## Setters emit Resource's built-in `changed`; apply_resolved batches a frame's
@@ -30,7 +30,7 @@ const COLOR_MODE_NAMES: Array[String] = [
 	"Palette",
 ]
 
-## The resolved LOOK fields (the scene-wide colour, light and material knobs),
+## The resolved LOOK fields (the rendered shape's colour, light and material knobs),
 ## in catalogue order (ShapeCatalogue.scene_ids()). apply_resolved writes these;
 ## the per-shape fields are ShapeParams.RESOLVED_KEYS.
 const RESOLVED_KEYS: Array[StringName] = [

@@ -34,6 +34,11 @@ func run() -> void:
 	check_approx(first.get_default(&"roughness"), 0.23, "editing shape 2 preserves shape 1 material")
 	check_approx(first.get_default(&"light_yaw"), 31.0, "editing shape 2 preserves shape 1 lighting")
 	check_approx(second.get_default(&"palette_a_r"), 0.19, "palette writes shape 2")
+	second.set_binding(&"palette_a_r", binding)
+	console.set_resolved([{}, {}], {&"palette_a_r": 0.83}, 1)
+	check_approx(console.palette().color_at(0.25).r, 0.83, "rendered palette previews its resolved binding")
+	console.set_resolved([{}, {}], {&"palette_a_r": 0.64}, 0)
+	check_approx(console.palette().color_at(0.25).r, 0.19, "inactive palette previews its own default")
 	pane.set_expanded(1, false)
 	check(not console.material_inspector().visible and not console.light_inspector().visible,
 		"closing every shape hides both editors")
