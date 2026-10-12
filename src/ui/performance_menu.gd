@@ -1,22 +1,9 @@
-extends CanvasLayer
+extends "res://src/ui/debug_overlay.gd"
 ## F3 is global, including while a child window or text field owns keyboard focus.
 ## Only the game window draws the overlay, below embedded windows (layer 1024).
 
 const REFRESH_SECONDS := 0.25
 
-## A handler in each window's viewport, before focused Controls consume keys.
-class WindowShortcut extends Node:
-	var toggle: Callable
-
-	func _input(event: InputEvent) -> void:
-		if event is InputEventKey and event.pressed and not event.echo \
-				and (event.keycode == KEY_F3 or event.physical_keycode == KEY_F3):
-			toggle.call()
-			get_viewport().set_input_as_handled()
-
-
-var panel: PanelContainer
-var readout: Label
 var measured_viewport: SubViewport
 var _elapsed := 0.0
 var _frames := 0
@@ -27,53 +14,8 @@ var _render_gpu := 0.0
 
 
 func _ready() -> void:
-	layer = 1023
-	process_mode = Node.PROCESS_MODE_ALWAYS
+	super._ready()
 	process_priority = 1000
-	visible = false
-	set_process(false)
-	panel = PanelContainer.new()
-	panel.position = Vector2(12, 12)
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.035, 0.045, 0.065, 1.0)
-	style.content_margin_left = 16
-	style.content_margin_right = 16
-	style.content_margin_top = 12
-	style.content_margin_bottom = 12
-	panel.add_theme_stylebox_override("panel", style)
-	add_child(panel)
-	readout = Label.new()
-	readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	readout.add_theme_color_override("font_color", Color(0.92, 0.95, 1.0))
-	readout.add_theme_font_size_override("font_size", 16)
-	panel.add_child(readout)
-	visibility_changed.connect(_visibility_changed)
-	_watch_windows(get_tree().root)
-	get_tree().node_added.connect(_watch_window)
-
-
-func _watch_windows(node: Node) -> void:
-	_watch_window(node)
-	for child in node.get_children():
-		_watch_windows(child)
-
-
-func _watch_window(node: Node) -> void:
-	if node is Window:
-		# A transient popup may be freed before this deferred call gets its turn.
-		_add_shortcut.call_deferred(node.get_instance_id())
-
-
-func _add_shortcut(window_id: int) -> void:
-	var window := instance_from_id(window_id) as Window
-	if window == null or not window.is_inside_tree():
-		return
-	var shortcut := WindowShortcut.new()
-	shortcut.name = "PerformanceShortcut"
-	shortcut.process_mode = Node.PROCESS_MODE_ALWAYS
-	shortcut.toggle = func() -> void: visible = not visible
-	window.add_child(shortcut)
 
 
 func watch_viewport(viewport: SubViewport) -> void:

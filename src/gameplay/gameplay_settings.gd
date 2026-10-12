@@ -1,25 +1,20 @@
 class_name GameplaySettings
 extends Resource
-## Level-owned spawn, flight tuning and a spherical exit boundary at world
-## origin. Escape reveals an equirectangular sky around the camera.
+## Level-owned spawn, flight tuning and escape animation settings.
+## ShapeList owns cumulative gameplay thresholds; escape reveals a sky around the camera.
 ## Spawn and escape detection use doubles, never the camera's Vector3 mirror.
 
 const DEFAULT_SKYBOX := preload("res://Assets/sky_82_2k.png")
 const DURATION_KEYS := [&"escape_sky_duration", &"escape_fog_duration",
 	&"escape_ground_duration", &"escape_fractal_duration"]
 
-const NUMERIC_KEYS := [&"exit_radius", &"spawn_x", &"spawn_y", &"spawn_z",
+const NUMERIC_KEYS := [&"spawn_x", &"spawn_y", &"spawn_z",
 	&"move_speed", &"shift_multiplier", &"distance_power", &"near_cap", &"max_distance_speed",
 	&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval",
 	&"escape_sky_duration", &"escape_fog_duration",
 	&"escape_ground_duration", &"escape_fractal_duration"]
 const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval"]
 
-@export var exit_radius := 20.0:
-	set(v):
-		if _positive(v) and v != exit_radius:
-			exit_radius = v
-			emit_changed()
 @export var spawn_x := 0.0:
 	set(v):
 		if is_finite(v) and v != spawn_x:
@@ -109,14 +104,6 @@ const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_sc
 			emit_changed()
 
 
-func is_outside(camera: CameraState) -> bool:
-	# Scale before squaring, avoiding overflow for large world coordinates.
-	var x := camera.eye_x() / exit_radius
-	var y := camera.eye_y() / exit_radius
-	var z := camera.eye_z() / exit_radius
-	return x * x + y * y + z * z > 1.0
-
-
 func return_to_spawn(camera: CameraState) -> void:
 	camera.set_eye(spawn_x, spawn_y, spawn_z)
 	camera.speed_factor = 1.0
@@ -143,6 +130,9 @@ func apply_dict(raw: Variant) -> Array:
 	if not raw is Dictionary:
 		return ["Malformed gameplay section ignored"]
 	for key in raw:
+		# Older levels may still contain the removed, independent exit radius.
+		if key == "exit_radius":
+			continue
 		var value: Variant = raw[key]
 		if NUMERIC_KEYS.has(StringName(key)):
 			var valid := (value is float or value is int) and is_finite(float(value))

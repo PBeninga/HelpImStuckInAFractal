@@ -1,0 +1,38 @@
+extends "res://tests/test_case.gd"
+
+func run() -> void:
+	var main: Node = load("res://src/main.tscn").instantiate()
+	root.add_child(main)
+	await frames(2)
+	main.set_process(false)
+	main.shapes().set_stage(0, 20.0, [])
+	main.return_to_spawn()
+	var mat: ShaderMaterial = main.view._material
+	var render_radius: float = mat.get_shader_parameter("exit_radius")
+	var bounds: Variant = DistanceEstimator.scene_bounds(0.0, 0.0, 0.0, Vector3.RIGHT, main.params)
+	main.shapes().set_stage(0, 0.5, [])
+	check_eq(mat.get_shader_parameter("exit_radius"), render_radius, "editing progression does not change shader clipping")
+	check_eq(DistanceEstimator.scene_bounds(0.0, 0.0, 0.0, Vector3.RIGHT, main.params), bounds,
+		"editing progression does not change CPU ray bounds")
+	main.camera.set_eye(0.6, 0.0, 0.0)
+	check(main.shape_run.escaped, "the independent gameplay threshold still triggers completion")
+	main.return_to_spawn()
+	main.shapes().set_stage(0, 2.0, [])
+	main.shapes().add()
+	main.shapes().set_stage(1, 4.0, [])
+	var pane: ShapeListPane = main.console().shape_pane()
+	check(pane._entries[1].threshold.text.contains("6.0 world units"), "subtext includes preceding stages")
+	(pane._entries[0].distance as SpinBox).value = 3.0
+	check(pane._entries[1].threshold.text.contains("7.0 world units"), "editing an earlier field updates later subtext")
+	check_eq(main.shape_run.briefing().stages[1].next_level_threshold, 7.0, "agent briefing agrees with the UI threshold")
+	main.shapes().remove(0)
+	check(pane._entries[0].threshold.text.contains("4.0 world units"), "removing a shape recalculates the threshold")
+	var legacy := ShapeList.new()
+	check_eq(legacy.apply_dict([{"escape_distance": 3.0, "commands": []}, {"escape_distance": 4.0, "commands": []}]), [], "old distance fields still load")
+	check_eq(legacy.next_level_threshold(1), 7.0, "old save distances become additive contributions")
+	var saved: Array = legacy.to_dict()
+	check(saved[0].has("next_level_distance") and not saved[0].has("escape_distance"), "new saves use the unambiguous gameplay name")
+	legacy.set_stage(0, 0.0, [])
+	check_eq(legacy.next_level_threshold(1), 24.0, "automatic distance contributes 20 units")
+	main.queue_free()
+	await frames(1)

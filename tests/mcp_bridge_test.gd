@@ -82,14 +82,14 @@ func run() -> void:
 	check_eq(main.camera.eye64(), recovery_eye, "MCP recovery preserves the eye")
 	check(r.get("distance", 0.0) > 0.0, "MCP reports the confirmed hit distance")
 	var recovery_basis: Basis = main.camera.transform.basis
-	main.params.gameplay.exit_radius = 0.000001
+	main.shapes().set_stage(0, 0.000001, [])
 	main.shapes().table(0).set_default(&"pos_x", 100.0)
 	main._resolve_once()
 	r = await bridge.handle("find_nearest_surface", {})
 	check(r.get("ok") == false and r.get("message", "").contains("No surface"),
 		"MCP reports a miss honestly")
 	check_eq(main.camera.transform.basis, recovery_basis, "MCP miss keeps the heading")
-	main.params.gameplay.exit_radius = 20.0
+	main.shapes().set_stage(0, 20.0, [])
 	main.shapes().table(0).set_default(&"pos_x", 0.0)
 	main._resolve_once()
 

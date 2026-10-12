@@ -102,6 +102,17 @@ func table() -> AttributeTable:
 	return _table
 
 
+## Switch the editor without carrying driven values over from the old shape.
+func set_table(value: AttributeTable) -> void:
+	if value == _table:
+		return
+	_table.changed.disconnect(_on_table_changed)
+	_table = value
+	_live.clear()
+	_table.changed.connect(_on_table_changed)
+	changed.emit()
+
+
 ## The colour at position t along the gradient, with the values the shader is
 ## drawn with. t is not wrapped here: the shader has already taken `fract()`
 ## of it and the strip only asks for [0, 1]. Clamped, because A + B can reach

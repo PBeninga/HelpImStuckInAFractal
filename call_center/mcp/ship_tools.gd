@@ -18,7 +18,7 @@ func definitions() -> Array:
 	var direction := {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
 		"description": "Nonzero world-space direction [x,y,z], normalized by the tool; not a destination point."}
 	var out := [
-		_tool("get_ship_status", "Compact telemetry: position, player facing, Gameplay speed, autopilot and real exit-sphere boundary. Includes shape_run: required commands, active stage, run_id and escape distances. Read it on startup."),
+		_tool("get_ship_status", "Compact telemetry: position, player facing, Gameplay speed, autopilot and current cumulative gameplay boundary. Includes shape_run: required commands, active stage, run_id and next level distances. Read it on startup."),
 		_tool("apply_shape_command", "Apply the next required scripted command ONLY to the gameplay-active shape, ONLY in response to a new human utterance (one command per utterance). Never invoke on startup, timers, stage events or movement completion. Read shape_run in get_ship_status; refresh it after the human speaks and pass run_id, active_shape, command_index, human_turn and next_command. Rejects stale stages, duplicates and unsolicited edits. Inversion is a delta to the existing radius; other commands set a numeric attribute.", {
 			"command": {"type": "string"}, "run_id": {"type": "string"},
 			"shape_index": {"type": "integer", "minimum": 0},
@@ -30,7 +30,7 @@ func definitions() -> Array:
 			"cone_degrees": {"type": "number", "minimum": 15, "maximum": 180, "default": 90, "description": "Full cone angle; requires direction."},
 			"include_rays": {"type": "boolean", "default": false},
 			"ray_count": {"type": "integer", "minimum": 24, "maximum": 256, "default": 96},
-			"max_distance": {"type": "number", "exclusiveMinimum": 0, "description": "Maximum depth in world units; defaults to twice the Gameplay exit radius."}}),
+			"max_distance": {"type": "number", "exclusiveMinimum": 0, "description": "Maximum depth in world units; defaults to twice the render clipping radius."}}),
 		_tool("get_depth_scan", "Read the latest locally cached screen depth scan. Returns a small summary and broad far-distance patches by default. Set include_grid=true only when the 2D array is needed. Refreshes locally every few frames; nothing is pushed to you. Requests are throttled for two seconds. Use after_frame to suppress duplicates. Censored range/step limits are NOT open space; inspect the captured pose and age.", {
 			"include_grid": {"type": "boolean", "default": false},
 			"after_frame": {"type": "integer", "minimum": 0},

@@ -151,6 +151,9 @@ func _ready() -> void:
 	if bridge != null:
 		bridge.chat.message_added.connect(_on_run_chat_message)
 	_restart_shape_run()
+	var gameplay_menu := get_node_or_null("/root/GameplayMenu")
+	if gameplay_menu != null:
+		gameplay_menu.watch_game(self)
 	# After follow_size's handler, so a resize has refitted the scale first.
 	get_window().size_changed.connect(_on_window_resized)
 	# Keys now come to the main window, so a field left focused in the console

@@ -32,6 +32,8 @@ var _last_cost_values: Dictionary = {}
 ## false the rows are laid out directly (no ScrollContainer of their own), for
 ## a pane that stacks several inspectors in one scrolling list.
 func setup(table: AttributeTable, group_tooltips: Dictionary, groups: Array = [], header: Control = null, scrolling: bool = true) -> void:
+	if _table != null and _table.changed.is_connected(_on_table_changed):
+		_table.changed.disconnect(_on_table_changed)
 	_table = table
 	_group_tooltips = group_tooltips
 	_groups = groups
@@ -68,8 +70,6 @@ func _build() -> void:
 
 func _populate() -> void:
 	_last_cost_values.clear()
-	if _table == null:
-		return
 	_rows.clear()
 	_headings.clear()
 	for c in _list.get_children():
@@ -78,6 +78,8 @@ func _populate() -> void:
 			c.queue_free()
 	if _header != null:
 		_list.add_child(_header)
+	if _table == null:
+		return
 
 	var last_group := "￿"  # a value no real group can equal
 	for spec in _table.specs:
@@ -153,6 +155,11 @@ func row(id: StringName) -> AttributeRow:
 
 func table() -> AttributeTable:
 	return _table
+
+
+func set_table(value: AttributeTable) -> void:
+	if value != _table:
+		setup(value, _group_tooltips, _groups, _header, _scrolling)
 
 
 ## This inspector's ScrollContainer, or null when it was built without one.

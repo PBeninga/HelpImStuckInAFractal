@@ -53,8 +53,6 @@ func _init() -> void:
 	find_surface_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_list.add_child(find_surface_button)
 
-	_heading("EXIT SPHERE")
-	_number(&"exit_radius", "Exit Radius", 0.001, 1000000.0, "World-space sphere centered at (0, 0, 0). Outside its radius, you escaped.")
 	_heading("SPAWN")
 	for axis in ["x", "y", "z"]:
 		_number(StringName("spawn_" + axis), "Spawn " + axis.to_upper(), -1000000.0, 1000000.0,

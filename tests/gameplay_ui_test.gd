@@ -23,13 +23,7 @@ func run() -> void:
 	check_eq(console.tabs().current_tab, 4, "clicking Gameplay opens the tab")
 	check(pane.save_button.is_visible_in_tree() and pane.load_button.is_visible_in_tree(),
 		"Save and Load are visible on Gameplay")
-	var radius: DecimalSpinBox = pane.controls[&"exit_radius"]
-	check(await ui.scroll_to(pane, radius), "the exit radius control is reachable")
-	await ui.type_text(radius.get_line_edit(), "0.0001")
-	check_eq(game.exit_radius, 0.0001, "typing a tiny radius updates gameplay without rounding")
-	await ui.type_text(radius.get_line_edit(), "0")
-	check_eq(game.exit_radius, 0.0001, "zero cannot remove the sphere")
-	check_eq(radius.value, 0.0001, "a rejected value restores the displayed radius")
+	check(not pane.controls.has(&"exit_radius"), "Gameplay no longer exposes an exit radius")
 	var spawn: SpinBox = pane.controls[&"spawn_x"]
 	check(await ui.scroll_to(pane, spawn), "spawn can be reached by scrolling")
 	await ui.type_text(spawn.get_line_edit(), "-1.23456789012345")

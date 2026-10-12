@@ -64,7 +64,11 @@ viewport's latest available CPU submission and GPU ray-march/shading times are
 shown separately; an idle cached image is marked idle, and unavailable timer
 results are labelled rather than reported as zero cost. CPU/GPU work can overlap.
 Closing F3 stops its timers, sampling callbacks, and viewport timing queries.
-Separate native windows show the same readout above their own controls.
+
+**F4** toggles a matching gameplay overlay with the current shape/level number
+and distance from the run origin (spawn). It refreshes once per second while
+visible, works from child windows and text fields, and does no polling while hidden.
+Both overlays stay in the game window; their shortcuts also work from child windows.
 
 The console opens **beside** the main window — or on another monitor when
 there is no room beside it — and can be dragged anywhere. Keep it off the main
@@ -488,14 +492,20 @@ The View tab holds **Camera** mode (Fly / Orbit), **mouse sensitivity**, the
 ### Gameplay tab (console)
 
 **Save level…** / **Load level…** live here, with the current file and status.
-**Exit Radius** sizes the sphere centered at world origin (default 20). Its
-surface bounds the rendered scene. Crossing outside starts the escape animation:
+**Next level distance** in each shape’s level settings adds to the distances of
+all previous shapes (0 contributes the default 20 world units). Subtext beneath
+the field shows the cumulative distance tested from the run origin (spawn):
+for example, 10, 15 and 20 advance at 10, 25 and 45 units. These gameplay
+thresholds are independent of shader bailout distances and the rendering-only
+clipping sphere. Old saves still load their legacy distance fields; new saves
+use `next_level_distance`. Complete each shape’s commands and cross
+its cumulative boundary to advance; leaving the last shape’s boundary starts the escape animation:
 the sky and wind-blown grass fade in beneath the player, distance fog clears,
 and the fractal dissolves with ordered dithering. **Escape Animation** sets each
 transition’s duration independently (default 3 seconds; 0 is instant). Controls
 hide and movement locks while mouse look remains available, including after
 the fades finish. Escape releases the mouse and clicking the view recaptures it.
-Returning inside, including a return to spawn, resets the effects and controls. `params.gameplay.exit_skybox` accepts an
+Return to spawn resets the run, effects and controls. `params.gameplay.exit_skybox` accepts an
 optional equirectangular `Texture2D` for the sphere's background; no sky picker
 is included yet. With no texture it uses the current colour mode's background.
 

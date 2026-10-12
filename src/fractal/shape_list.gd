@@ -12,6 +12,8 @@ extends RefCounted
 ## list replaced by a load); `relabelled(index)` an entry's new label;
 ## `entry_changed(index, id)` relays a table edit with the entry it came from.
 
+const DEFAULT_NEXT_LEVEL_DISTANCE := 20.0
+
 signal changed
 signal stage_changed(index: int)
 signal relabelled(index: int)
@@ -21,8 +23,9 @@ signal entry_changed(index: int, id: StringName)
 class Entry:
 	var label: String
 	var table: AttributeTable
-	## Zero inherits (index + 1) × Gameplay exit radius.
-	var escape_distance := 0.0
+	var look := AttributeTable.new(ShapeCatalogue.scene_specs())
+	## Zero contributes the default 20 world units to the cumulative gameplay threshold.
+	var next_level_distance := 0.0
 	var commands: Array[String] = []
 
 	func _init(p_label: String, p_table: AttributeTable) -> void:
@@ -47,8 +50,25 @@ func entry(i: int) -> Entry:
 	return _entries[i]
 
 
+func next_level_distance(i: int) -> float:
+	var distance := _entries[i].next_level_distance
+	return distance if distance > 0.0 else DEFAULT_NEXT_LEVEL_DISTANCE
+
+
+## Absolute distance from the run origin needed to finish this stage.
+func next_level_threshold(i: int) -> float:
+	var total := 0.0
+	for index in range(i + 1):
+		total += next_level_distance(index)
+	return total
+
+
 func table(i: int) -> AttributeTable:
 	return _entries[i].table
+
+
+func look_table(i: int) -> AttributeTable:
+	return _entries[i].look
 
 
 func label(i: int) -> String:
@@ -74,7 +94,7 @@ func tables() -> Array:
 ## Append a shape at the catalogue defaults, overridden by `defaults` (id ->
 ## value, sanitized through the specs). Returns its index, or -1 when the scene
 ## is full.
-func add(defaults: Dictionary = {}, p_label: String = "") -> int:
+func add(defaults: Dictionary = {}, p_label: String = "", look_defaults: Dictionary = {}) -> int:
 	if _entries.size() >= FractalParams.MAX_SHAPES:
 		push_warning("ShapeList.add: already holds %d shapes" % FractalParams.MAX_SHAPES)
 		return -1
@@ -85,9 +105,13 @@ func add(defaults: Dictionary = {}, p_label: String = "") -> int:
 	var name := p_label if p_label != "" else "Shape %d" % _next_number
 	_next_number += 1
 	var e := Entry.new(name, t)
+	for id in look_defaults:
+		if e.look.has(StringName(id)):
+			e.look.set_default(StringName(id), look_defaults[id])
 	e.commands = default_commands(t)
 	_entries.append(e)
 	t.changed.connect(_on_table_changed.bind(e))
+	e.look.changed.connect(_on_table_changed.bind(e))
 	changed.emit()
 	return _entries.size() - 1
 
@@ -98,6 +122,7 @@ func remove(i: int) -> bool:
 		return false
 	var e := _entries[i]
 	e.table.changed.disconnect(_on_table_changed)
+	e.look.changed.disconnect(_on_table_changed)
 	_entries.remove_at(i)
 	changed.emit()
 	return true
@@ -115,7 +140,7 @@ func resolve(axis_values: Dictionary, t: float) -> Array:
 ## Whether any shape has a binding driving a knob.
 func has_active_binding() -> bool:
 	for e in _entries:
-		if e.table.has_active_binding():
+		if e.table.has_active_binding() or e.look.has_active_binding():
 			return true
 	return false
 
@@ -126,7 +151,8 @@ func to_dict() -> Array:
 	for e in _entries:
 		var d := e.table.to_dict()
 		d["label"] = e.label
-		d["escape_distance"] = e.escape_distance
+		d["look"] = e.look.to_dict()
+		d["next_level_distance"] = e.next_level_distance
 		d["commands"] = Array(e.commands)
 		out.append(d)
 	return out
@@ -157,11 +183,17 @@ func apply_dict(saved: Variant) -> Array[String]:
 			name = "Shape %d" % number
 		number += 1
 		var e := Entry.new(name, t)
-		var distance: Variant = raw.get("escape_distance", 0.0)
-		if (distance is float or distance is int) and is_finite(float(distance)) and float(distance) >= 0.0:
-			e.escape_distance = float(distance)
+		var look: Variant = raw.get("look", {})
+		if look is Dictionary:
+			for warning in e.look.apply_dict(look):
+				warnings.append("%s look: %s" % [name, warning])
 		else:
-			warnings.append("Invalid escape distance for %s; inherited Gameplay radius" % name)
+			warnings.append("Malformed look for %s ignored" % name)
+		var distance: Variant = raw.get("next_level_distance", raw.get("escape_distance", 0.0))
+		if (distance is float or distance is int) and is_finite(float(distance)) and float(distance) >= 0.0:
+			e.next_level_distance = float(distance)
+		else:
+			warnings.append("Invalid next level distance for %s; using automatic stage distance" % name)
 		var commands: Variant = raw.get("commands", default_commands(t))
 		var error := validate_commands(t, commands)
 		if error == "":
@@ -175,10 +207,12 @@ func apply_dict(saved: Variant) -> Array[String]:
 		fresh.append(Entry.new("Shape 1", AttributeTable.new(ShapeCatalogue.shape_specs())))
 	for e in _entries:
 		e.table.changed.disconnect(_on_table_changed)
+		e.look.changed.disconnect(_on_table_changed)
 	_entries = fresh
 	_next_number = _entries.size() + 1
 	for e in _entries:
 		e.table.changed.connect(_on_table_changed.bind(e))
+		e.look.changed.connect(_on_table_changed.bind(e))
 	changed.emit()
 	return warnings
 
@@ -195,7 +229,7 @@ func set_stage(i: int, distance: float, commands: Array) -> bool:
 		return false
 	if validate_commands(table(i), commands) != "":
 		return false
-	_entries[i].escape_distance = distance
+	_entries[i].next_level_distance = distance
 	_entries[i].commands.assign(commands)
 	stage_changed.emit(i)
 	return true
