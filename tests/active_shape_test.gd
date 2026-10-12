@@ -65,7 +65,7 @@ func run() -> void:
 	check(not shapes.set_stage(0, 2.0, ["inversion -100"]), "impossible inversion rejected")
 	var legacy := ShapeList.new()
 	check_eq(legacy.apply_dict([{"label": "Legacy", "defaults": {}, "bindings": {}}]), [], "legacy level migrates without warnings")
-	check_eq(legacy.entry(0).commands, ["inversion -0.5"], "legacy shapes acquire a required default command")
+	check_eq(legacy.entry(0).commands, [], "legacy shapes preserve distance-only escape")
 	var invalid := legacy.to_dict()
 	invalid[0]["commands"] = ["inversion -100"]
 	check(not legacy.apply_dict(invalid).is_empty(), "invalid saved script warns")
@@ -73,7 +73,7 @@ func run() -> void:
 	for kind in [FractalParams.Shape.KIFS, FractalParams.Shape.KLEINIAN, FractalParams.Shape.MANDELBULB]:
 		var list := ShapeList.new()
 		var index := list.add({&"shape": kind})
-		check(not list.entry(index).commands.is_empty(), "new stage has a default command")
+		check(list.entry(index).commands.is_empty(), "new stage has no example commands")
 		check_eq(ShapeList.validate_commands(list.table(index), Array(list.entry(index).commands)), "", "default stage command is supported")
 	_review_regressions(script)
 

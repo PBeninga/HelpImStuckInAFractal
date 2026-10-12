@@ -6,7 +6,7 @@ extends "res://call_center/adapter/ship_adapter.gd"
 ## changes no game file. If those names change, this file is what to update.
 ##
 ## Controls: smooth turns, direct thrusts and an autopilot that turns to a
-## point and cruises there without collision bounds. One manoeuvre at a time;
+## point and cruises there with the player's collision clearance. One manoeuvre at a time;
 ## a new one replaces the old; WASD cancels it (manual override); a paused tree
 ## freezes it (this node is PAUSABLE even under the always-on CallCenter).
 
@@ -21,6 +21,8 @@ const DIRECTIONS := ["forward", "back", "left", "right", "up", "down"]
 const SLOWDOWN_RATIO := 0.9
 const SLOWDOWN_HOLD_SECONDS := 0.75
 const SLOWDOWN_COOLDOWN_MS := 5000
+## Never leap over a wall between endpoint checks, even on a long frame.
+const COLLISION_STEP_FRACTION := 0.8
 
 ## The game scene (duck-typed: camera, params, view, fly, table()).
 var game: Node
@@ -189,7 +191,7 @@ func fly_to(point: Vector3, standoff: float, info: Dictionary = {}) -> Dictionar
 	return fly_to_point([target.x, target.y, target.z], info)
 
 
-## Preserve doubles for nested fractals. No collision or zoom-floor gate.
+## Preserve doubles for nested fractals. Movement checks collision each tick.
 func fly_to_point(point: Array, info: Dictionary = {}) -> Dictionary:
 	var leg := _leg(point)
 	_stop_quietly()
@@ -302,17 +304,34 @@ func step(delta: float) -> void:
 		_m.phase = "move"
 	if _m.phase == "move":
 		var leg := _leg(_m.target)
-		var speed := travel_speed()
-		var distance := minf(speed * maxf(delta, 0.0), leg.distance)
-		if distance >= leg.distance:
-			_camera().set_eye(_m.target[0], _m.target[1], _m.target[2])
+		if leg.distance == 0.0:
 			_complete()
 			return
+		if delta <= 0.0:
+			return
+		var speed := travel_speed()
+		var gap := clearance()
+		if not is_finite(gap) or gap <= 0.0 or not is_finite(speed):
+			stop("collision: no reliable surface clearance; rescan before moving")
+			return
+		var distance := minf(minf(speed * delta, leg.distance), gap * COLLISION_STEP_FRACTION)
 		var c := _camera()
+		var from := Array(c.eye64())
 		var f: float = distance / leg.distance
-		c.set_eye(c.eye_x() + leg.dx * f, c.eye_y() + leg.dy * f, c.eye_z() + leg.dz * f)
+		var to: Array = _m.target.duplicate() if distance >= leg.distance else [
+			c.eye_x() + leg.dx * f, c.eye_y() + leg.dy * f, c.eye_z() + leg.dz * f]
+		if to == from or not game.fly.move_allowed_at(from, to):
+			stop("collision: movement blocked; rescan and choose another direction")
+			return
+		c.set_eye(to[0], to[1], to[2])
+		# Moving may synchronously finish a stage and cancel this instruction.
+		if _m.is_empty():
+			return
+		if distance >= leg.distance:
+			_complete()
+			return
 		_m.last_eye = Array(c.eye64())
-		_observe_speed(speed, delta, leg.direction, leg.distance - distance)
+		_observe_speed(distance / delta, delta, leg.direction, leg.distance - distance)
 
 
 ## Observe the speed actually used for this translation, before arrival clamps

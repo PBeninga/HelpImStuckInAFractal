@@ -74,7 +74,7 @@ func _capture() -> void:
 		"eye": Array(_camera.eye64()), "forward": _array(_camera.forward()),
 		"right": _array(_camera.right()), "up": _array(_camera.up()),
 		"status_codes": STATUS, "approximate": true,
-		"note": "Scene depth, excluding HUD. Range/step limits are censored observations, not open space. Log depth precision is about 0.2%."}
+		"note": "Scene depth, excluding HUD. range_limit means no hit up to that distance and is useful for steering; beyond it is unknown. step_limit/unknown are not clear rays. Log depth precision is about 0.2%."}
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 func _publish() -> void:
@@ -128,7 +128,8 @@ static func direction_at(scan: Dictionary, u: float, v: float) -> Vector3:
 	return (f + (2.0 * u - 1.0) * float(scan.aspect) * float(scan.tan_half_fov) * r
 		+ (1.0 - 2.0 * v) * float(scan.tan_half_fov) * up).normalized()
 
-## Prefer a whole 3x3 patch of far samples to a lone far pixel. No censored cells.
+## Prefer broad distant patches, including no-hit rays reaching the range cap.
+## Their distances are lower bounds, not permission to fly beyond the cap.
 static func open_patches(scan: Dictionary) -> Array:
 	var candidates: Array = []
 	for y in range(1, int(scan.height) - 1):
@@ -136,13 +137,20 @@ static func open_patches(scan: Dictionary) -> Array:
 			var minimum := INF
 			var total := 0.0
 			var valid := true
+			var no_hit := 0
+			var exit_rays := 0
 			for dy in range(-1, 2):
 				for dx in range(-1, 2):
 					var flag: int = scan.status[y + dy][x + dx]
-					if flag != 1 and flag != 2:
+					if flag != 1 and flag != 2 and flag != 3:
 						valid = false
 						continue
 					var d: float = scan.distances[y + dy][x + dx]
+					if not is_finite(d) or d <= 0.0:
+						valid = false
+						continue
+					no_hit += int(flag == 2 or flag == 3)
+					exit_rays += int(flag == 2)
 					minimum = minf(minimum, d)
 					total += d
 			if valid:
@@ -150,8 +158,13 @@ static func open_patches(scan: Dictionary) -> Array:
 				var v := (y + 0.5) / float(scan.height)
 				candidates.append({"column": x, "row": y, "uv": [u, v], "cell_count": 9,
 					"min_distance": minimum, "mean_distance": total / 9.0,
+					"no_hit_fraction": no_hit / 9.0, "exit_clear": exit_rays == 9,
+					"center_status": STATUS.get(scan.status[y][x], "unknown"),
 					"direction": _array(direction_at(scan, u, v))})
-	candidates.sort_custom(func(a, b): return a.min_distance > b.min_distance)
+	candidates.sort_custom(func(a, b):
+		if is_equal_approx(a.min_distance, b.min_distance):
+			return a.no_hit_fraction > b.no_hit_fraction
+		return a.min_distance > b.min_distance)
 	var best: Array = []
 	for candidate in candidates:
 		if best.any(func(p): return abs(p.column - candidate.column) < 3 and abs(p.row - candidate.row) < 3):

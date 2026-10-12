@@ -12,7 +12,10 @@ func run() -> void:
 		await frames(1)
 		return
 	var briefing: Dictionary = adapter.shape_briefing()
-	check_eq(briefing.next_command, "inversion -0.5", "new run briefs the example command")
+	check_eq(briefing.next_command, "", "new run has no example command")
+	# Command-tool coverage uses an explicitly authored objective.
+	main.shapes().set_stage(0, 0.0, ["inversion -0.5"])
+	briefing = adapter.shape_briefing()
 	var args := {"run_id": briefing.run_id, "shape_index": 0, "command": briefing.next_command, "command_index": 0, "human_turn": 0}
 	check(not adapter.apply_shape_command(args).ok, "agent cannot act on startup")
 	var bridge: Node = root.get_node("McpBridge")

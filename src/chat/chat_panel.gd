@@ -164,10 +164,18 @@ func _on_submit(text: String) -> void:
 	if _log.chat_agent_state == "connecting":
 		return
 	text = text.strip_edges()
+	if text.is_empty():
+		return
+	if _log.chat_agent_state == "off" and _log.agent_state() == ChatLog.AgentState.OFFLINE:
+		if not _log.chat_agent_requested.has_connections():
+			_log.add("system", "Text mode needs a linked server with OPENAI_API_KEY configured.")
+			return
+		_log.chat_agent_requested.emit("start")
+		if _log.chat_agent_state == "off":
+			return # Keep the draft if the connection could not be started.
 	input.clear()
 	input.release_focus()
-	if not text.is_empty():
-		_log.add("human", text, "typed")
+	_log.add("human", text, "typed")
 
 
 func _on_message(m: Dictionary) -> void:
@@ -190,6 +198,7 @@ func _show_state() -> void:
 	_state.add_theme_color_override("font_color", s[1])
 	_agent_button.text = "Start text agent"
 	if _log.chat_agent_state == "connecting":
+		_state.text = "○  connecting text agent…"
 		_agent_button.text = "Connecting… Cancel"
 	elif _log.chat_agent_state == "ready":
 		_agent_button.text = "End text agent"

@@ -84,8 +84,11 @@ one-time token its webhook issued.
 
 Set `OPENAI_API_KEY` and `GAME_LINK_TOKEN` on the server. Link the game with
 `FRACTAL_SERVER_URL` and the same `GAME_LINK_TOKEN`, using the game's built-in
-ServerLink. Start a flight and click **Start text agent** in the pilot chat.
-Type messages and read its replies there. **End text agent**, leaving the
+ServerLink. Start a flight and send a message in the pilot chat. If no agent
+is listening, this automatically starts a text session and sends that message
+once the connection is ready. You can also click **Start text agent** first.
+If connection fails or is cancelled, the unsent message returns to the input
+for retry. Type messages and read replies there. **End text agent**, leaving the
 cockpit, or losing the game link closes the session.
 
 This uses the same support agent, model, ship tools and events as phone mode,

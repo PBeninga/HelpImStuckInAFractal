@@ -1,6 +1,6 @@
 extends RefCounted
-## Bounded, receding-horizon route search. Costs integrate the player's speed;
-## this is the fastest sampled route, never a guarantee of a global optimum.
+## Choose a bounded flight leg from existing measured clearances. Favor the
+## furthest observed corridor, then no-hit support and estimated travel time.
 const SAMPLES := 12
 const TURN_SPEED := 110.0
 const DepthScan := preload("res://src/mcp/ship_depth_scan.gd")
@@ -35,51 +35,66 @@ func plan(game: Node, candidate_directions: Array = []) -> Dictionary:
 	var origin := _params.escape_origin()
 	if _params.is_escaped(game.camera):
 		return {"ok": true, "escaped": true, "points": [], "estimated_seconds": 0.0}
-	var radial := Vector3(start[0] - origin[0], start[1] - origin[1], start[2] - origin[2]).normalized()
-	if radial == Vector3.ZERO:
-		radial = forward
-	var directions: Array = [radial, forward]
-	# Wide cone scans supply additional measured candidates for the same
-	# travel-time integration used by the ordinary escape search.
-	for candidate in extra:
-		directions.append(candidate)
-	var scan: Dictionary = game.view.depth_scan()
-	if scan.get("available", false) and not scan.get("scene_or_pose_changed", true):
-		for patch in scan.get("open_patches", []):
-			directions.append(Vector3(patch.direction[0], patch.direction[1], patch.direction[2]))
-	# Spread the rest of the search around the player, including behind them.
-	for i in 8:
-		var z := 1.0 - 2.0 * (float(i) + 0.5) / 8.0
-		var r := sqrt(1.0 - z * z)
-		var angle := float(i) * 2.399963229728653
-		directions.append(Vector3(cos(angle) * r, sin(angle) * r, z))
+	var observed: Array = []
+	var scanner: Variant = game.get("ship_depth_scanner")
+	if scanner != null:
+		for recommendation in scanner.cached_recommendations(game):
+			var candidate: Dictionary = recommendation.duplicate(true)
+			candidate["clear_distance"] = candidate.neighbour_min_depth
+			candidate["observation_source"] = "ship_depth_scan"
+			observed.append(candidate)
+	# A current deeper CPU scan takes precedence over display-depth samples.
+	if observed.is_empty():
+		var scan: Dictionary = game.view.depth_scan()
+		if scan.get("available", false) and not scan.get("scene_or_pose_changed", true):
+			for patch in scan.get("open_patches", []):
+				var candidate: Dictionary = patch.duplicate(true)
+				candidate["clear_distance"] = candidate.min_distance
+				candidate["observation_source"] = "screen_depth_scan"
+				observed.append(candidate)
 	var candidates: Array = []
-	var near := DistanceEstimator.scene_estimate_at(start[0], start[1], start[2], _params)
-	for direction in directions:
-		var dir: Vector3 = direction
-		var end := _exit_point(start, dir, radius, origin)
-		candidates.append(_route(start, forward, [end]))
-		# A short first leg can leave a slow pocket before turning outward.
-		var distance := _distance(start, end)
-		var step := minf(distance * 0.35, maxf(near * 4.0, radius * 0.001))
-		var via := _along(start, dir, step)
-		var outward := Vector3(via[0] - origin[0], via[1] - origin[1], via[2] - origin[2]).normalized()
-		if outward == Vector3.ZERO:
-			outward = dir
-		candidates.append(_route(start, forward, [via, _exit_point(via, outward, radius, origin)]))
-		# Let rendering/input continue between candidates; never flood the agent.
+	for observation in observed:
+		var dir := DepthScan.unit_direction(observation.direction)
+		if dir == Vector3.ZERO:
+			continue
+		# Requested vectors restrict the measured candidates; they never create
+		# an unobserved shortcut through the fractal or extend a measured ray.
+		if not extra.is_empty() and not extra.any(func(d): return d.dot(dir) > 0.999999):
+			continue
+		var clear_distance := float(observation.clear_distance)
+		if not is_finite(clear_distance) or clear_distance <= 0.0:
+			continue
+		var exit_clear := bool(observation.get("exit_clear", false))
+		# Stop before the observed limit and look again. Only a whole patch
+		# reaching the exit allows a final leg across the boundary.
+		var end := _exit_point(start, dir, radius, origin) if exit_clear else _along(start, dir, clear_distance * 0.75)
+		var route := _route(start, forward, [end])
+		route.merge({"direction": observation.direction, "clear_distance": clear_distance,
+			"no_hit_fraction": observation.get("no_hit_fraction", 0.0), "exit_clear": exit_clear,
+			"center_status": observation.get("center_status", "unknown"),
+			"observation_source": observation.observation_source})
+		candidates.append(route)
 		await game.get_tree().process_frame
 		if not is_instance_valid(game) or not game.is_inside_tree():
 			return {"ok": false, "message": "Flight ended during route estimation."}
-	candidates.sort_custom(func(a, b): return a.estimated_seconds < b.estimated_seconds)
+	if candidates.is_empty():
+		return {"ok": false, "scan_required": true, "points": [],
+			"message": "No current measured corridor matches. Request get_depth_scan or scan_ship_depth while stopped, then plan again. Do not fly toward an unmeasured exit point."}
+	candidates.sort_custom(func(a, b):
+		if not is_equal_approx(a.clear_distance, b.clear_distance):
+			return a.clear_distance > b.clear_distance
+		if not is_equal_approx(a.no_hit_fraction, b.no_hit_fraction):
+			return a.no_hit_fraction > b.no_hit_fraction
+		return a.estimated_seconds < b.estimated_seconds)
 	var best: Dictionary = candidates[0].duplicate(true)
 	best.merge({"ok": true, "start": start, "facing": [forward.x, forward.y, forward.z],
 		"units": "world", "candidate_count": candidates.size(), "approximate": true,
 		"extra_direction_count": candidate_directions.size(),
 		"sprint": _sprint, "speed_factor": _speed_factor, "speed_limit": _speed_limit,
 		"scene_or_pose_changed": start != Array(game.camera.eye64()) or not forward.is_equal_approx(game.camera.forward()) or not _matches_scene(game.params) or _speed_factor != game.camera.speed_factor or _speed_limit != game.fly.speed_limit or _sprint != game.fly.sprinting,
-		"speed_model": "Player Gameplay speed, including CPU center ray; shader-only noise displacement does not affect player speed.",
-		"message": "Fastest sampled route by estimated travel time. Fly one leg, wait for completion, then replan. Samples may miss narrow slow regions; this is not a global optimum."})
+		"planning_mode": "observed_clearance", "replan_after_arrival": true,
+		"speed_model": "Player Gameplay speed; autopilot additionally limits movement by collision clearance. Timing is approximate and covers this leg only.",
+		"message": "One leg toward the furthest observed corridor, favoring no-hit rays on depth ties. Stops at 75% of observed clearance unless the patch reaches the exit. Fly this leg, wait for completion/collision cancellation, then observe and replan. No unobserved wall-crossing routes."})
 	best["alternatives"] = candidates.slice(1, mini(4, candidates.size()))
 	return best
 

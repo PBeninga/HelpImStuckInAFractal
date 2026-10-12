@@ -231,7 +231,7 @@ relay(
   "get_depth_scan",
   "Read the cached screen depth scan. Compact summary by default; set include_grid for a bounded 2D " +
     "distance array and status mask. Local capture runs every few frames, but agent delivery is request-only, " +
-    "rate-limited to once per two seconds. Use after_frame to avoid repeats. Respect captured pose, age and censored cells.",
+    "rate-limited to once per two seconds. Use after_frame to avoid repeats. Respect captured pose and age. Range-limit rays are useful up to their reported distance; step-limit and unknown rays are inconclusive.",
   {
     include_grid: z.boolean().optional(),
     after_frame: z.number().int().nonnegative().optional(),
@@ -245,8 +245,8 @@ relay(
   "EXPENSIVE on-demand raycast scan. Supply direction for a wide cone around a candidate (default 90 degrees); " +
     "omit it for the full ship sphere. Compact depth recommendations and status counts by default; " +
     "include_rays=true requests per-ray depths. Pass recommended directions to the ship tool " +
-    "plan_escape.candidate_directions for travel-time ranking. CPU geometry excludes shader-only " +
-    "displacement. 96 rays by default; max 256, 8-second work budget, 5-second cooldown. " +
+    "plan_escape.candidate_directions for bounded legs toward the furthest observed corridors. CPU geometry excludes shader-only " +
+    "displacement. 96 rays by default; max 256. Twice the display horizon up to the exit, 1,200 steps per ray, 8-second work cutoff, 5-second cooldown. Range-limit rays are useful clear-distance lower bounds; exhausted rays are excluded. " +
     "Partial coverage and stale pose are explicit. Do not poll; nothing is streamed. " +
     "Recommended look_at points are for turning, not flight destinations.",
   {

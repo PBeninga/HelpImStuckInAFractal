@@ -25,24 +25,24 @@ func definitions() -> Array:
 			"command_index": {"type": "integer", "minimum": 0}, "human_turn": {"type": "integer", "minimum": 1}},
 			["command", "run_id", "shape_index", "command_index", "human_turn"]),
 		_tool("scan_surroundings", "Request a low-fidelity multidirectional raycast around the player. Fidelity is tunable in Gameplay. Includes world directions and measured distances; misses are unknown, not proof of open space."),
-		_tool("scan_ship_depth", "EXPENSIVE on-demand raycast scan. Supply direction to refine a candidate with a wide cone (default 90 degrees); omit it for a full-ship sphere when no good direction is visible. Default 96 rays, maximum 256. Returns compact broad-depth recommendations and status counts; include_rays=true explicitly requests raw depths. Pass recommended direction vectors to plan_escape.candidate_directions for travel-time ranking. Shared 5-second cooldown and 8-second work budget; partial coverage and stale pose are explicit. Stop before scanning to keep the snapshot useful. No polling. CPU geometry excludes shader-only displacement; unknown/step-limited rays are not open space. look_at is for turning only.", {
+		_tool("scan_ship_depth", "EXPENSIVE on-demand CPU scan. Supply direction for a wide cone (default 90 degrees); omit for full sphere. Default 96 rays, maximum 256; 1,200 steps per ray; twice the display horizon, capped at the exit. Shared 5-second cooldown and 8-second work cutoff. Returns recommendations ranked by neighbour_min_depth, then no_hit_fraction. range_limit means no hit up to that distance; step_limit/budget_limit/unknown are excluded. Pass recommended vectors to plan_escape.candidate_directions for bounded legs using this cached scan. Check stale pose and partial coverage. CPU geometry excludes shader-only displacement. No polling. look_at is for turning only.", {
 			"direction": direction,
 			"cone_degrees": {"type": "number", "minimum": 15, "maximum": 180, "default": 90, "description": "Full cone angle; requires direction."},
 			"include_rays": {"type": "boolean", "default": false},
 			"ray_count": {"type": "integer", "minimum": 24, "maximum": 256, "default": 96},
 			"max_distance": {"type": "number", "exclusiveMinimum": 0, "description": "Maximum depth in world units; defaults to twice the Gameplay exit radius."}}),
-		_tool("get_depth_scan", "Read the latest locally cached screen depth scan. Returns a small summary and broad far-distance patches by default. Set include_grid=true only when the 2D array is needed. Refreshes locally every few frames; nothing is pushed to you. Requests are throttled for two seconds. Use after_frame to suppress duplicates. Censored range/step limits are NOT open space; inspect the captured pose and age.", {
+		_tool("get_depth_scan", "Read the locally cached screen depth. Compact broad patches by default; include_grid=true returns a bounded grid. Prefer large min_distance, then no_hit_fraction. Range-limit rays are useful clear-distance lower bounds; space past the limit is unknown. Step-limit and unknown cells are excluded. Local captures do not send events. Requests are throttled for two seconds; use after_frame to suppress duplicates and inspect captured pose and age.", {
 			"include_grid": {"type": "boolean", "default": false},
 			"after_frame": {"type": "integer", "minimum": 0},
 			"max_columns": {"type": "integer", "minimum": 8, "maximum": 64, "default": 32}}),
-		_tool("plan_escape", "Estimate the fastest sampled path outside the actual exit sphere, integrating player Gameplay speed and turn time. Supply up to six candidate_directions from a wide cone scan to refine the search. Uses these plus nearby geometry and locally cached far-depth patches, without returning grids. Returns points in world units; execute one leg, wait for completion or a slowdown alert, then reassess. Approximate, not a global shortest-time guarantee.", {
+		_tool("plan_escape", "Choose one bounded flight leg toward the furthest currently measured corridor, favoring no-hit rays on depth ties, then travel time. Uses a current CPU scan or screen patches; never adds unobserved routes. Optional candidate_directions restricts to matching measured vectors (at most six). Stops at 75% of observed clearance unless the patch reaches the exit. Returns scan_required if observations are unavailable or stale. estimated_seconds covers this leg only. Check scene_or_pose_changed, fly its point, wait for completion or collision cancellation, then observe and replan.", {
 			"candidate_directions": {"type": "array", "items": direction, "maxItems": 6}}),
 		_tool("face_point", "Turn to face world coordinates. Wait for instruction_completed or instruction_cancelled.", {"point": point}, ["point"]),
-		_tool("fly_to_point", "Turn and fly directly to world coordinates at the SAME speed as player Gameplay movement, including distance slowdown, wheel and current Shift state. Ignores collision and movement bounds. Speed varies along the path; wait for instruction_completed or instruction_cancelled.", {"point": point}, ["point"]),
+		_tool("fly_to_point", "Turn and fly to world coordinates at Gameplay speed, with collision checks and steps capped by local clearance. A blocked move reports instruction_cancelled with a collision reason; choose a different measured direction. Wait for instruction_completed or instruction_cancelled.", {"point": point}, ["point"]),
 		_tool("turn_ship", "Turn in place. Positive yaw is right, positive pitch is up. Completion is reported with the resulting facing direction.", {
 			"yaw_degrees": {"type": "number", "minimum": -180, "maximum": 180},
 			"pitch_degrees": {"type": "number", "minimum": -85, "maximum": 85}}, ["yaw_degrees"]),
-		_tool("thrust", "Move relative to the player's facing at Gameplay speed, ignoring collision and movement bounds. Completion/cancellation is reported.", {
+		_tool("thrust", "Move relative to the player facing at Gameplay speed, respecting collision clearance. A blocked move reports instruction_cancelled with a collision reason. Completion/cancellation is reported.", {
 			"direction": {"type": "string", "enum": DIRECTIONS},
 			"meters": {"type": "number", "exclusiveMinimum": 0, "maximum": 2000}}, ["direction", "meters"]),
 		_tool("full_stop", "Cancel the active instruction and hold position. Cancellation is reported."),
@@ -162,7 +162,7 @@ func status() -> Dictionary:
 	out.merge(adapter.navigation_pose())
 	out.merge({"paused": adapter.is_paused(), "autopilot": adapter.autopilot_state(),
 		"speed_world_per_second": adapter.travel_speed(), "escape": adapter.escape_state(),
-		"world": adapter.world_info(), "shape_run": adapter.shape_briefing(), "message": "Use plan_escape for estimated travel times; request scans only when needed."})
+		"world": adapter.world_info(), "shape_run": adapter.shape_briefing(), "message": "Use current depth observations with plan_escape for bounded collision-aware legs; request scans only when needed."})
 	return out
 
 func scan() -> Dictionary:

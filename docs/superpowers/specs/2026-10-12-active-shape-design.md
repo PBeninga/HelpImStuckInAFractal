@@ -22,21 +22,18 @@ other system events must never authorize a shape change.
   increase by the existing Gameplay exit radius for each entry.
 - Editor selection remains independent of gameplay-active shape. Selecting a
   different inspector must not advance the run or reveal that shape.
-- Commands are required stage objectives as well as geometry edits. Agent
-  movement currently bypasses collision, so geometry changes alone cannot
-  enforce their necessity. A stage advances only after its commands are applied
-  and its radius is exceeded.
+- Explicitly authored commands are stage objectives as well as geometry edits.
+  A scripted stage advances only after its commands are applied and its radius
+  is exceeded. Unscripted stages advance on distance alone; autopilot obeys collision.
 - `inversion -0.5` means a delta of -0.5 to the existing inversion radius:
   `kleinian_radius` for Kleinian, `fixed_radius` for Mandelbox. It is not a new
   distance estimator. Reject unsupported fractal types and out-of-range changes
   explicitly. Other commands name an existing numeric shape attribute and its
   absolute target value. Scripts must be editable and saved with each entry.
-- New entries and old levels missing commands receive a supported default:
-  inversion reduces an existing Mandelbox/Kleinian radius by half (normally
-  `inversion -0.5`); KIFS changes scale to 2.5 and Mandelbulb changes power to 6
-  (alternate values ensure a change if already equal). Explicit empty lists
-  retain an unscripted stage. Invalid saved scripts remain blocked with a warning,
-  rather than silently dropping required objectives.
+- New entries and old levels missing commands have empty command lists.
+  `inversion -0.5` is an example only, never an automatic gameplay requirement.
+  Scripts run only when explicitly authored into a level. Invalid saved scripts
+  remain blocked with a warning rather than silently dropping required objectives.
 - Return to spawn and loading a level restart the sequence and restore scripted
   runtime edits. Saving stores authoring data, not partially completed progress.
 

@@ -85,7 +85,6 @@ func add(defaults: Dictionary = {}, p_label: String = "") -> int:
 	var name := p_label if p_label != "" else "Shape %d" % _next_number
 	_next_number += 1
 	var e := Entry.new(name, t)
-	e.commands = default_commands(t)
 	_entries.append(e)
 	t.changed.connect(_on_table_changed.bind(e))
 	changed.emit()
@@ -162,7 +161,8 @@ func apply_dict(saved: Variant) -> Array[String]:
 			e.escape_distance = float(distance)
 		else:
 			warnings.append("Invalid escape distance for %s; inherited Gameplay radius" % name)
-		var commands: Variant = raw.get("commands", default_commands(t))
+		# Older saves predate scripted objectives: preserve their distance-only exit.
+		var commands: Variant = raw.get("commands", [])
 		var error := validate_commands(t, commands)
 		if error == "":
 			e.commands.assign(commands)
@@ -213,18 +213,3 @@ static func validate_commands(t: AttributeTable, commands: Variant) -> String:
 			return result.message
 		values[result.id] = result.value
 	return ""
-
-
-static func default_commands(t: AttributeTable) -> Array[String]:
-	match int(t.get_default(&"shape")):
-		FractalParams.Shape.MANDELBOX, FractalParams.Shape.KLEINIAN:
-			var id := &"kleinian_radius" if int(t.get_default(&"shape")) == FractalParams.Shape.KLEINIAN else &"fixed_radius"
-			var radius: float = t.get_default(id)
-			var target := maxf(radius * 0.5, t.spec(id).hard_min)
-			if target != radius:
-				return ["inversion %s" % (target - radius)]
-		FractalParams.Shape.KIFS:
-			return ["kifs_scale %s" % (2.5 if float(t.get_default(&"kifs_scale")) != 2.5 else 3.0)]
-		FractalParams.Shape.MANDELBULB:
-			return ["mandelbulb_power %s" % (6.0 if float(t.get_default(&"mandelbulb_power")) != 6.0 else 8.0)]
-	return ["w %s" % (-0.5 if float(t.get_default(&"w")) != -0.5 else 0.0)]

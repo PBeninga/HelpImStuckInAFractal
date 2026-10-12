@@ -84,7 +84,8 @@ func _ready() -> void:
 
 	_shapes = ShapeList.new()
 	_shapes.table(0).set_default(&"shape", FractalParams.Shape.KLEINIAN)
-	_shapes.set_stage(0, 0.0, ["inversion -0.5"])
+	# The default flight is escaped by flying out; scripts belong to authored levels.
+	_shapes.set_stage(0, 0.0, [])
 	_shapes.changed.connect(_sync_shapes)
 	_look = AttributeTable.new(ShapeCatalogue.scene_specs())
 	_keymap = Keymap.new()

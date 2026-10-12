@@ -41,6 +41,7 @@ var _retry_in := -1.0
 var _was_open := false
 var _chat_agent_id := ""
 var _chat_agent_wait := 0.0
+var _pending_chat_messages: Array[String] = []
 
 
 func _chat_log() -> ChatLog:
@@ -251,10 +252,17 @@ func _on_event(e: Dictionary) -> void:
 		"chat_agent_ready":
 			if _chat_agent_id.is_empty() or str(e.get("callSid", "")) != _chat_agent_id:
 				return
+			if _chat_log().chat_agent_state != "connecting":
+				return
 			_chat_agent_wait = 0.0
-			_chat_log().set_chat_agent_state("ready")
 			await _call_center({"call_state": "connected"})
+			if str(e.get("callSid", "")) != _chat_agent_id:
+				return
+			_chat_log().set_chat_agent_state("ready")
 			_chat_log().add("system", "Text agent connected. Type below to test support and ship tools.")
+			for pending in _pending_chat_messages:
+				_send({"type": "chat", "text": pending})
+			_pending_chat_messages.clear()
 		"chat_agent_error":
 			if str(e.get("callSid", "")) != _chat_agent_id or _chat_agent_id.is_empty():
 				return
@@ -279,7 +287,6 @@ func _on_event(e: Dictionary) -> void:
 					return
 				_reset_chat_agent()
 				await _call_center({"call_state": "ended"})
-				bridge.handle("chat_draft", {"text": ""})
 				bridge.handle("chat_post", {"role": "system", "text": str(e.get("reason", "Text agent disconnected"))})
 				return
 			await _call_center({"call_state": "ended"})
@@ -302,7 +309,10 @@ func _on_chat_message(m: Dictionary) -> void:
 	if role == "agent" and source not in ["phone", "chatbox"]:
 		_send({"type": "say", "text": m["text"]})
 	elif role == "human" and source == "typed":
-		_send({"type": "chat", "text": m["text"]})
+		if _chat_log().chat_agent_state == "connecting":
+			_pending_chat_messages.append(str(m["text"]))
+		else:
+			_send({"type": "chat", "text": m["text"]})
 
 
 func _on_chat_agent_request(action: String) -> void:
@@ -317,7 +327,6 @@ func _on_chat_agent_request(action: String) -> void:
 		if was_active:
 			if was_ready:
 				_call_center({"call_state": "ended"})
-			chat.set_draft("")
 			chat.add("system", "Text agent disconnected")
 	elif action == "start" and chat.chat_agent_state == "off":
 		if state != "linked" or not chat.chat_agent_available:
@@ -334,6 +343,10 @@ func _reset_chat_agent() -> void:
 	_chat_agent_wait = 0.0
 	if _chat_log() != null:
 		_chat_log().set_chat_agent_state("off")
+		if not _pending_chat_messages.is_empty():
+			_chat_log().set_draft("\n".join(_pending_chat_messages))
+			_chat_log().add("system", "Your message wasn't sent. It has been restored below so you can retry.")
+	_pending_chat_messages.clear()
 
 
 ## Follow the call centre's ship events (waypoints, questions for the pilot,

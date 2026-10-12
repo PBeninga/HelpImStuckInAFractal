@@ -6,8 +6,28 @@ const MAX_RAYS := 256
 const COOLDOWN_MS := 5000
 const BUDGET_MS := 8000
 const BATCH_SIZE := 4
+const MAX_STEPS := 1200
+const HORIZON_MULTIPLIER := 2.0
 var _busy := false
 var _last_finished_ms := -COOLDOWN_MS
+var _source: FractalParams
+var _revision := 0
+var _cached: Dictionary = {}
+
+
+func _invalidate() -> void:
+	_revision += 1
+	_cached = {}
+
+
+## Reuse measured world directions only while their geometry and pose match.
+## No extra scans are triggered by the planner.
+func cached_recommendations(game: Node) -> Array:
+	if _cached.is_empty() or _source != game.params or _cached.revision != _revision:
+		return []
+	if _cached.position != Array(game.camera.eye64()) or _cached.facing != _vector(game.camera.forward()) or _cached.up != _vector(game.camera.up()):
+		return []
+	return _cached.recommended_directions.duplicate(true)
 
 func scan(game: Node, args: Dictionary = {}) -> Dictionary:
 	var raw_count: Variant = args.get("ray_count", DEFAULT_RAYS)
@@ -43,10 +63,17 @@ func scan(game: Node, args: Dictionary = {}) -> Dictionary:
 	params.set_shape_count(game.params.shapes.size())
 	for i in game.params.shapes.size():
 		params.shapes[i].copy_from(game.params.shapes[i])
+		# Extend the navigation copy's horizon only; rendering stays unchanged.
+		if params.shapes[i].shape == FractalParams.Shape.KLEINIAN:
+			params.shapes[i].kleinian_view_distance *= HORIZON_MULTIPLIER
 	var source: FractalParams = game.params
-	var changed := [false]
-	var mark_changed := func(): changed[0] = true
-	source.changed.connect(mark_changed)
+	if _source != source:
+		if _source != null and _source.changed.is_connected(_invalidate):
+			_source.changed.disconnect(_invalidate)
+		_source = source
+		_source.changed.connect(_invalidate)
+		_invalidate()
+	var revision := _revision
 	var eye := Array(game.camera.eye64())
 	var forward: Vector3 = game.camera.forward()
 	var right: Vector3 = game.camera.right()
@@ -60,7 +87,7 @@ func scan(game: Node, args: Dictionary = {}) -> Dictionary:
 	var near := DistanceEstimator.scene_estimate_at(eye[0], eye[1], eye[2], params)
 	var rays: Array = []
 	for i in count:
-		var ray := _depth(eye, directions[i], params, near, float(raw_range))
+		var ray := _depth(eye, directions[i], params, near, float(raw_range), started + BUDGET_MS)
 		ray["direction"] = _vector(directions[i])
 		rays.append(ray)
 		if Time.get_ticks_msec() - started >= BUDGET_MS:
@@ -68,26 +95,28 @@ func scan(game: Node, args: Dictionary = {}) -> Dictionary:
 		if (i + 1) % BATCH_SIZE == 0 and i + 1 < count:
 			await tree.process_frame
 			if not is_instance_valid(game) or not game.is_inside_tree():
-				source.changed.disconnect(mark_changed)
 				_finish()
 				return {"ok": false, "message": "Flight ended during the depth scan."}
-	source.changed.disconnect(mark_changed)
-	var stale: bool = changed[0] or source != game.params or eye != Array(game.camera.eye64()) or not forward.is_equal_approx(game.camera.forward()) or not up.is_equal_approx(game.camera.up())
+	var stale: bool = revision != _revision or source != game.params or eye != Array(game.camera.eye64()) or not forward.is_equal_approx(game.camera.forward()) or not up.is_equal_approx(game.camera.up())
 	var counts := {}
 	for ray in rays:
 		counts[ray.status] = int(counts.get(ray.status, 0)) + 1
 	var result := {"ok": true, "expensive": true, "units": "world", "coverage": "directional cone" if directional else "full sphere around the ship",
 		"scan_direction": _vector(direction if directional else forward), "cone_degrees": float(cone) if directional else 360.0,
-		"requested_rays": count, "ray_count": rays.size(), "coverage_complete": rays.size() == count,
-		"max_distance": float(raw_range), "max_steps_per_ray": FractalProbe.MAX_STEPS,
+		"requested_rays": count, "ray_count": rays.size(), "coverage_complete": rays.size() == count and not counts.has("budget_limit"),
+		"max_distance": float(raw_range), "max_steps_per_ray": MAX_STEPS,
+		"navigation_horizon": params.scene_view_distance(), "view_range_multiplier": HORIZON_MULTIPLIER,
 		"captured_at_ms": started, "frame_id": frame, "elapsed_ms": Time.get_ticks_msec() - started,
 		"position": eye, "facing": _vector(forward), "right": _vector(right), "up": _vector(up),
 		"scene_or_pose_changed": stale, "status_counts": counts, "rays_included": bool(args.get("include_rays", false)),
 		"recommended_directions": _recommend(rays, eye),
 		"status_legend": {"surface": "approximate surface depth", "exit_background": "no surface found before exit sphere",
-			"range_limit": "scan range or scene horizon reached; further depth unknown", "step_limit": "ray exhausted its steps; distance unknown",
+			"range_limit": "no hit up to scan range or navigation horizon; useful clear-distance lower bound", "step_limit": "ray exhausted its steps; further distance unknown",
+			"budget_limit": "scan time budget exhausted; incomplete ray, not a clear corridor",
 			"unknown": "invalid estimate or no forward exit-sphere intersection"},
-		"note": "CPU geometry estimate; excludes shader-only noise displacement. Sample gaps may hide obstacles. Pass recommended directions to plan_escape.candidate_directions to rank routes by Gameplay travel time. Depth alone does not establish the fastest route. look_at points are for turning, not flight destinations. No data is pushed automatically."}
+		"note": "CPU geometry estimate; excludes shader-only noise displacement. Prefer the largest neighbour_min_depth, with no-hit fraction breaking ties. range_limit is useful up to its reported distance, not beyond. Pass recommended direction vectors to plan_escape for bounded flight legs using this cached observation. step_limit/budget_limit/unknown are excluded. Sample gaps may hide obstacles; autopilot checks collision. look_at is for turning only."}
+	_cached = {} if stale else {"position": eye, "facing": _vector(forward), "up": _vector(up),
+		"revision": revision, "recommended_directions": result.recommended_directions.duplicate(true)}
 	if result.rays_included:
 		result["rays"] = rays
 	_finish()
@@ -139,7 +168,7 @@ func _finish() -> void:
 
 ## Unlike FractalProbe.march's picking API, preserve the reason a ray ended.
 ## No normals are computed: this call only needs depth.
-static func _depth(eye: Array, dir: Vector3, params: FractalParams, near: float, max_distance: float) -> Dictionary:
+static func _depth(eye: Array, dir: Vector3, params: FractalParams, near: float, max_distance: float, deadline_ms := 0) -> Dictionary:
 	var origin := params.escape_origin()
 	var x: float = eye[0] - origin[0]
 	var y: float = eye[1] - origin[1]
@@ -162,7 +191,9 @@ static func _depth(eye: Array, dir: Vector3, params: FractalParams, near: float,
 		return {"distance": far, "status": end_status, "steps": 0}
 	var total: float = bounds[0]
 	var end := minf(float(bounds[1]), far)
-	for step in FractalProbe.MAX_STEPS:
+	for step in MAX_STEPS:
+		if deadline_ms > 0 and Time.get_ticks_msec() >= deadline_ms:
+			return {"distance": null, "traced_distance": total, "status": "budget_limit", "steps": step}
 		var n := DistanceEstimator.nearest_at(eye[0] + dir.x * total, eye[1] + dir.y * total, eye[2] + dir.z * total, params)
 		var d: float = n.distance
 		if not is_finite(d):
@@ -175,7 +206,7 @@ static func _depth(eye: Array, dir: Vector3, params: FractalParams, near: float,
 		if next <= total:
 			break
 		total = next
-	return {"distance": null, "traced_distance": total, "status": "step_limit", "steps": FractalProbe.MAX_STEPS}
+	return {"distance": null, "traced_distance": total, "status": "step_limit", "steps": MAX_STEPS}
 
 ## Rank each ray with its four nearest angular neighbours. Reject incomplete
 ## rays, so an isolated long ray or an exhausted march is not an open corridor.
@@ -190,16 +221,28 @@ static func _recommend(rays: Array, eye: Array) -> Array:
 		neighbours.sort_custom(func(a, b): return a.alignment > b.alignment)
 		var depth := INF
 		var valid := neighbours.size() >= 5
+		var no_hit := 0
+		var exit_rays := 0
 		for neighbour in neighbours.slice(0, 5):
 			var ray: Dictionary = rays[neighbour.index]
-			if ray.status != "surface" and ray.status != "exit_background":
+			if ray.status not in ["surface", "exit_background", "range_limit"]:
 				valid = false
 				break
+			if not _number(ray.distance) or float(ray.distance) <= 0.0:
+				valid = false
+				break
+			no_hit += int(ray.status != "surface")
+			exit_rays += int(ray.status == "exit_background")
 			depth = minf(depth, float(ray.distance))
 		if valid and depth > 0:
 			candidates.append({"ray_index": i, "direction": center, "neighbour_min_depth": depth,
+				"no_hit_fraction": no_hit / 5.0, "exit_clear": exit_rays == 5,
+				"center_status": rays[i].status,
 				"supporting_rays": 5, "look_at": [eye[0] + center[0], eye[1] + center[1], eye[2] + center[2]]})
-	candidates.sort_custom(func(a, b): return a.neighbour_min_depth > b.neighbour_min_depth)
+	candidates.sort_custom(func(a, b):
+		if is_equal_approx(a.neighbour_min_depth, b.neighbour_min_depth):
+			return a.no_hit_fraction > b.no_hit_fraction
+		return a.neighbour_min_depth > b.neighbour_min_depth)
 	var best: Array = []
 	for candidate in candidates:
 		var dir: Array = candidate.direction

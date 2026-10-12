@@ -109,9 +109,9 @@ or `server/.env`).
 | `scan_surroundings` | tunable multidirectional raycast geometry, requested explicitly |
 | `scan_ship_depth` | **expensive**, full sphere or a wide cone around `direction`; compact recommendations by default, raw depths with `include_rays: true`; 96 rays, configurable 24–256 |
 | `get_depth_scan` | cached screen-depth summary; `include_grid: true` requests the 2D distance array and status mask |
-| `plan_escape` | fastest sampled direct or two-leg route by Gameplay travel time; accepts up to six `candidate_directions` from a cone scan |
+| `plan_escape` | one leg toward the furthest measured corridor; optional `candidate_directions` restricts to current scan recommendations |
 | `highlight` / `clear_highlights` | flash or clear HUD panels |
-| `turn_ship`, `face_point`, `thrust` | rotate or move at player Gameplay speed; no collision or zoom-floor movement gates |
+| `turn_ship`, `face_point`, `thrust` | rotate or move at player Gameplay speed; movement obeys collision and local-clearance step limits |
 | `fly_to_point`, `full_stop` | fly to world coordinates or cancel the active instruction |
 | `point_direction`, `clear_direction` | show/clear a turning arrow toward `point: [x,y,z]`; optional label and seconds (1–300, default 30) |
 | `set_screen_tints`, `clear_screen_tints` | color up to 8 screen regions using depth-scan `uv` coordinates; radius, RGB and strength per region; expires after 1–30 seconds (default 5) |
@@ -158,7 +158,9 @@ previously seen frame. Transmitted grids are capped to 32 cells per axis by
 default, at most 64 when explicitly requested through `max_columns`. The local
 cache can remain higher fidelity. Subsampled grids include source row/column
 indices. Captured pose, frame ID and age describe what was actually measured.
-Unknown, fog/range-limited and step-budget-limited cells are not open corridors.
+Range-limited cells mean no hit up to the cutoff and are useful steering evidence.
+Unknown and exhausted rays are excluded. Patches report `no_hit_fraction` and
+`exit_clear`; they rank by minimum observed depth, with no-hit fraction breaking ties.
 
 If the visible screen offers no promising route, the agent can explicitly call
 `scan_ship_depth {ray_count: 96}` (or pass `max_distance` in world units).
@@ -166,7 +168,7 @@ It computes new rays around the full ship, including the six camera axes and
 uniformly spread spherical samples. The default response contains status counts
 and up to six recommendations; `include_rays: true` adds each ray's world
 direction, depth, status and step count. Unknown/exhausted rays have null depth;
-range-limited rays remain marked as incomplete. Recommendations rank the minimum
+range-limited rays retain their measured clear-distance lower bound. Recommendations rank the minimum
 depth across five neighbouring rays; their `look_at` coordinates can be passed
 to `face_point` to inspect another direction before planning a flight.
 
@@ -175,21 +177,36 @@ Once a candidate direction is identified, refine it with
 direction, not a target point. The full cone angle is configurable from 15° to
 180°; samples cover the centre, edges and interior. Pass up to six recommended
 `direction` vectors to `plan_escape {candidate_directions: [...]}` to compare
-travel times against the ordinary escape candidates. Large depth alone does
-not establish the quickest route. Both scan modes share the same cooldown.
+bounded legs using those measured directions. No unobserved shortcuts are added.
+Both scan modes share the same cooldown.
 
 This call is marked **expensive** in both MCP and the voice-agent instructions.
-It has an eight-second work budget, yields between small ray batches, reports
+Navigation rays extend to twice the display horizon, capped at the exit sphere,
+and have 1,200 steps each (previously 600). This extends only the scan copy;
+renderer settings are unchanged. It has an eight-second work cutoff, checked
+inside each ray, yields between small ray batches, and reports
 partial coverage if the budget expires, and shares a five-second cooldown
 between phone and direct MCP requests. It never runs automatically or sends
 scan events. The captured pose and stale flag describe the snapshot used.
 These CPU raycasts omit shader-only noise displacement, so inspect the new
 screen before selecting the next flight leg.
 
-`plan_escape` integrates sampled inverse travel speeds plus turn times to rank
-bounded direct and two-leg candidates. It returns a few routes, never the depth
-field. This is an approximate search: narrow slow regions and globally faster
-paths may be missed. Execute one leg, wait for its terminal event, then replan.
+`plan_escape` uses the current deeper CPU scan, falling back to fresh screen
+patches. It ranks observed corridors by clear distance, then no-hit fraction,
+then estimated travel time. Supplied direction vectors must match an observation;
+missing or stale observations return `scan_required` without a destination.
+Each leg travels 75% of the minimum observed depth, keeping a buffer before a
+wall or an unknown region. A patch whose rays all reach the exit can produce a
+final leg across the boundary. Timing covers only this leg, not a complete escape.
+After each leg, observe again and replan. Samples may miss thin obstacles.
+
+Autopilot thrust and flight now cap each movement tick to 80% of local surface
+clearance and call the player's adaptive collision check before moving, including
+the final arrival step. This uses at most three additional distance evaluations
+per movement tick, without additional rays. Blocked or numerically unresolvable
+moves cancel with a `collision:` reason and the current pose. The agent must
+rescan and pick a new direction rather than repeatedly driving at that target.
+CPU collision does not include shader-only displacement.
 
 During translation, the adapter emits `autopilot_slowdown` when the Gameplay
 speed used for movement drops at least 10% below its reference for 0.75 seconds.
@@ -204,7 +221,7 @@ second, drop fraction, actual motion direction, pose, target and approximate
 remaining time. No ray arrays or depth grids are attached. The agent ignores
 obsolete instruction IDs and may stop the current instruction to replan before
 arrival. It waits for cancellation, obtains a candidate, requests a wide cone
-scan and compares travel times. No expensive scan runs automatically.
+scan and compares measured clearances. No expensive scan runs automatically.
 
 Every accepted movement or turn returns an `instruction_id`. Exactly one
 `instruction_completed` or `instruction_cancelled` event carries that ID,
