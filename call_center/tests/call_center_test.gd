@@ -114,7 +114,7 @@ func _tools() -> void:
 	check_eq(cc.issues.entries[-1]["style"], "agent", "post_to_log writes an AGENT line")
 	check((await _call("set_visual_filter", {"palette": "Gold"}))["ok"], "set_visual_filter goes through the adapter")
 	game._resolve_once()
-	check_eq(game.params.color_mode, 14, "and reaches the game's shape table")
+	check_eq(game.params.color_mode, 14, "and reaches the game's look table")
 	await _call("set_visual_filter", {"palette": "Ice Fractal"})
 	game._resolve_once()
 	var h0: float = rad_to_deg(atan2(game.camera.forward().y, game.camera.forward().x))

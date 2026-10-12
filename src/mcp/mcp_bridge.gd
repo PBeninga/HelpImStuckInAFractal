@@ -299,22 +299,23 @@ func _start_game() -> Dictionary:
 func _camera_json(main: Main) -> Dictionary:
 	var cam := main.camera
 	return {
-		"eye": _v3(cam.eye()),
+		"eye": _eye64(cam),
 		"forward": _v3(cam.forward()),
 		"up": _v3(cam.up()),
 		"right": _v3(cam.right()),
 		"speed_factor": cam.speed_factor,
-		"surface_distance": DistanceEstimator.estimate(cam.eye(), main.params),
+		"surface_distance": _surface(main),
 	}
 
 
 ## eye / look_at / forward / up, any subset; duration > 0 animates there.
 func _set_camera(main: Main, args: Dictionary) -> Dictionary:
 	var cam := main.camera
-	var eye := _arg_v3(args, "eye", cam.eye())
+	var eye := _arg_f64(args, "eye", _eye64(cam))
 	var fwd := cam.forward()
 	if args.has("look_at"):
-		fwd = _arg_v3(args, "look_at", Vector3.ZERO) - eye
+		var at := _arg_f64(args, "look_at", [0.0, 0.0, 0.0])
+		fwd = Vector3(at[0] - eye[0], at[1] - eye[1], at[2] - eye[2])
 	elif args.has("forward"):
 		fwd = _arg_v3(args, "forward", fwd)
 	if fwd.length_squared() == 0.0:
@@ -322,7 +323,7 @@ func _set_camera(main: Main, args: Dictionary) -> Dictionary:
 	var up := _arg_v3(args, "up", Vector3(0, 0, 1))
 	if args.has("speed_factor"):
 		cam.speed_factor = clampf(float(args["speed_factor"]), 0.01, 100.0)
-	await _go(main, _look(eye, fwd, up), float(args.get("duration", 0.0)))
+	await _go(main, eye, _look(fwd, up), float(args.get("duration", 0.0)))
 	return _camera_json(main)
 
 
@@ -333,22 +334,24 @@ func _set_camera(main: Main, args: Dictionary) -> Dictionary:
 func _move(main: Main, args: Dictionary) -> Dictionary:
 	var cam := main.camera
 	var local := Vector3(float(args.get("right", 0.0)), float(args.get("up", 0.0)), float(args.get("forward", 0.0)))
-	var delta := cam.right() * local.x + cam.up() * local.y + cam.forward() * local.z
+	var dir := cam.right() * local.x + cam.up() * local.y + cam.forward() * local.z
 	var unit := 1.0
 	if str(args.get("units", "surface")) == "surface":
-		unit = DistanceEstimator.estimate(cam.eye(), main.params)
-	delta *= unit
+		unit = _surface(main)
+	# The length in 64-bit: a deep-zoom step is far below a Vector3's resolution.
+	var length := dir.length() * unit
+	dir = dir.normalized()
 	var clamped := false
-	if bool(args.get("safe", true)) and delta.length_squared() > 0.0:
-		var hit: Variant = FractalProbe.march(cam.eye(), delta.normalized(), main.params)
-		if hit != null and hit["distance"] * 0.8 < delta.length():
-			delta = delta.normalized() * hit["distance"] * 0.8
+	if bool(args.get("safe", true)) and length > 0.0:
+		var hit: Variant = FractalProbe.march(cam.eye_x(), cam.eye_y(), cam.eye_z(), dir, main.params)
+		if hit != null and hit["distance"] * 0.8 < length:
+			length = hit["distance"] * 0.8
 			clamped = true
-	var t := cam.transform
-	t.origin += delta
-	await _go(main, t, float(args.get("duration", 0.0)))
+	var e := _eye64(cam)
+	var to := [e[0] + dir.x * length, e[1] + dir.y * length, e[2] + dir.z * length]
+	await _go(main, to, cam.transform.basis, float(args.get("duration", 0.0)))
 	var out := _camera_json(main)
-	out["moved"] = delta.length()
+	out["moved"] = length
 	out["clamped"] = clamped
 	return out
 
@@ -356,13 +359,11 @@ func _move(main: Main, args: Dictionary) -> Dictionary:
 ## Yaw about world +Z (as the fly camera's mouse-look does), then pitch about
 ## the camera's right and roll about its forward. Degrees.
 func _rotate(main: Main, args: Dictionary) -> Dictionary:
-	var t := main.camera.transform
-	var b := t.basis
+	var b := main.camera.transform.basis
 	b = Basis(Vector3(0, 0, 1), deg_to_rad(float(args.get("yaw", 0.0)))) * b
 	b = Basis(b.x.normalized(), deg_to_rad(float(args.get("pitch", 0.0)))) * b
 	b = Basis(-b.z.normalized(), deg_to_rad(-float(args.get("roll", 0.0)))) * b
-	t.basis = b.orthonormalized()
-	await _go(main, t, float(args.get("duration", 0.0)))
+	await _go(main, _eye64(main.camera), b.orthonormalized(), float(args.get("duration", 0.0)))
 	return _camera_json(main)
 
 
@@ -373,23 +374,25 @@ func _dive(main: Main, args: Dictionary) -> Dictionary:
 	if hit == null:
 		return {"error": "nothing under that pixel"}
 	var fraction := clampf(float(args.get("fraction", 0.5)), 0.0, 0.99)
-	var eye := main.camera.eye()
-	var target: Vector3 = hit["point"]
-	var new_eye := eye.lerp(target, fraction)
-	await _go(main, _look(new_eye, target - new_eye, main.camera.up()), float(args.get("duration", 0.0)))
+	var e := _eye64(main.camera)
+	var target: Array = hit["point64"]
+	var to := [lerpf(e[0], target[0], fraction), lerpf(e[1], target[1], fraction), lerpf(e[2], target[2], fraction)]
+	var fwd := Vector3(target[0] - to[0], target[1] - to[1], target[2] - to[2])
+	await _go(main, to, _look(fwd, main.camera.up()), float(args.get("duration", 0.0)))
 	var out := _camera_json(main)
-	out["target"] = _v3(target)
+	out["target"] = target
 	return out
 
 
-## Snap or animate the camera to `to`. Linear in position, slerp in rotation,
-## eased. In orbit mode the orbit centre is re-derived afterwards.
-func _go(main: Main, to: Transform3D, duration: float) -> void:
+## Snap or animate the camera to the 64-bit eye `to` ([x, y, z]) with basis
+## `basis`. Linear in position (in 64-bit, through CameraState.set_eye), slerp
+## in rotation, eased. In orbit mode the orbit centre is re-derived afterwards.
+func _go(main: Main, to: Array, basis: Basis, duration: float) -> void:
 	var cam := main.camera
 	if duration > 0.0:
-		var from := cam.transform
-		var q0 := from.basis.get_rotation_quaternion()
-		var q1 := to.basis.get_rotation_quaternion()
+		var from := _eye64(cam)
+		var q0 := cam.transform.basis.get_rotation_quaternion()
+		var q1 := basis.get_rotation_quaternion()
 		var elapsed := 0.0
 		while elapsed < duration:
 			await get_tree().process_frame
@@ -397,18 +400,31 @@ func _go(main: Main, to: Transform3D, duration: float) -> void:
 				return
 			elapsed += get_process_delta_time()
 			var k := smoothstep(0.0, 1.0, minf(elapsed / duration, 1.0))
-			cam.transform = Transform3D(Basis(q0.slerp(q1, k)), from.origin.lerp(to.origin, k))
-	cam.transform = to
+			cam.set_basis(Basis(q0.slerp(q1, k)))
+			cam.set_eye(lerpf(from[0], to[0], k), lerpf(from[1], to[1], k), lerpf(from[2], to[2], k))
+	cam.set_basis(basis)
+	cam.set_eye(to[0], to[1], to[2])
 	var orbit := main.get_node_or_null("OrbitCamera") as OrbitCamera
 	if orbit != null and main.params.camera_mode == FractalParams.CameraMode.ORBIT:
 		orbit.enter()
 
 
-func _look(eye: Vector3, fwd: Vector3, up: Vector3) -> Transform3D:
+## The camera basis looking along `fwd` with `up` as near-up as it can be.
+func _look(fwd: Vector3, up: Vector3) -> Basis:
 	fwd = fwd.normalized()
 	if absf(fwd.dot(up.normalized())) > 0.999:
 		up = Vector3(0, 1, 0) if absf(fwd.y) < 0.9 else Vector3(1, 0, 0)
-	return Transform3D(Basis.IDENTITY, eye).looking_at(eye + fwd, up)
+	return Basis.looking_at(fwd, up)
+
+
+static func _eye64(cam: CameraState) -> Array:
+	return [cam.eye_x(), cam.eye_y(), cam.eye_z()]
+
+
+## The scene distance at the camera's 64-bit eye.
+static func _surface(main: Main) -> float:
+	var cam := main.camera
+	return DistanceEstimator.scene_estimate_at(cam.eye_x(), cam.eye_y(), cam.eye_z(), main.params)
 
 
 # ------------------------------------------------------------- queries
@@ -416,8 +432,9 @@ func _look(eye: Vector3, fwd: Vector3, up: Vector3) -> Transform3D:
 func _hit_at(main: Main, args: Dictionary) -> Variant:
 	var size := main.view.size
 	var px := Vector2(float(args.get("x", size.x * 0.5)), float(args.get("y", size.y * 0.5)))
-	var dir := main.view.unproject(px, 1.0) - main.camera.eye()
-	return FractalProbe.march(main.camera.eye(), dir, main.params)
+	var cam := main.camera
+	var dir := main.view.unproject(px, 1.0) - cam.eye()
+	return FractalProbe.march(cam.eye_x(), cam.eye_y(), cam.eye_z(), dir, main.params)
 
 
 ## The surface under a window pixel (default: the centre).
@@ -427,7 +444,8 @@ func _raycast(main: Main, args: Dictionary) -> Dictionary:
 		return {"hit": false}
 	return {
 		"hit": true,
-		"point": _v3(hit["point"]),
+		"point": hit["point64"],
+		"shape": hit["shape"],
 		"distance": hit["distance"],
 		"normal": _v3(hit["normal"]),
 		"steps": hit["steps"],
@@ -480,6 +498,7 @@ func _list_rows(table: AttributeTable, out: Array) -> void:
 		out.append(row)
 
 
+## Set knobs by id, in the active shape's table or else the look's.
 func _set_shape(main: Main, args: Dictionary) -> Dictionary:
 	var values: Variant = args.get("values", {})
 	if not values is Dictionary or values.is_empty():
@@ -794,6 +813,14 @@ static func _arg_v3(args: Dictionary, key: String, fallback: Vector3) -> Vector3
 	var a: Variant = args.get(key)
 	if a is Array and a.size() == 3:
 		return Vector3(float(a[0]), float(a[1]), float(a[2]))
+	return fallback
+
+
+## A [x, y, z] argument as 64-bit floats (JSON numbers are doubles).
+static func _arg_f64(args: Dictionary, key: String, fallback: Array) -> Array:
+	var a: Variant = args.get(key)
+	if a is Array and a.size() == 3:
+		return [float(a[0]), float(a[1]), float(a[2])]
 	return fallback
 
 
