@@ -107,6 +107,12 @@ func run() -> void:
 	check(sh.code.contains("max(0.0, 2.0 / max(r_eff2, 1e-9) - 2.0)"),
 		"the specular exponent is clamped non-negative")
 
+	# the shadow ray marches the scene through de_scene on offsets from the eye, so
+	# the perturbed shape's estimates keep their precision at depth (de from the
+	# 32-bit point would be noise)
+	check(sh.code.contains("de_scene(lift + ldir * t, true, which)"),
+		"the shadow ray's estimates go through de_scene")
+
 	# the record arrays are as long as ReferenceOrbit's record, the handoff points
 	# one longer, and the shader hands off where FractalParams says
 	var inc := FileAccess.get_file_as_string("res://src/fractal/perturbation.gdshaderinc")

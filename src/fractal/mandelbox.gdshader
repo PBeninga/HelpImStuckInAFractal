@@ -557,7 +557,9 @@ vec3 scatter(vec3 col, float t, vec3 dir, vec3 ldir) {
 // penumbra as the lamp widens (light_size); a size-0 lamp is near-hard. Costs
 // one extra ray per pixel; skipped when shadow_steps is 0. The world offset
 // from the eye (dir · total + the normal lift + ldir · t) is what every shape
-// maps into its own frame, so the hit shape's numbers stay O(1).
+// maps into its own frame, so the hit shape's numbers stay O(1); and since it
+// goes through de_scene, the perturbed shape's estimates are the perturbed ones,
+// which keep their precision at depth (de from the 32-bit point would be noise).
 float soft_shadow(int s, vec3 n_world, vec3 dir, vec3 ldir, float total) {
 	float eps0 = hit_eps(total, precision[s]);
 	vec3 lift = dir * total + n_world * 4.0 * eps0;
