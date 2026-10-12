@@ -222,7 +222,7 @@ VIZ.glossary({
   cancellation: {
     term: "Catastrophic cancellation",
     match: ["catastrophic cancellation", "cancellation", /\bnearly equal\b/gi],
-    body: "What goes wrong when you subtract two nearly equal floating-point numbers: the leading digits cancel and only the rounded tail is left. A 32-bit float keeps about 7 significant digits whatever its size, so 2.0000001 − 2.0000000 leaves a result with one correct digit at best. That is why `eye + dir × t` fails at depth: the small offset is rounded away before the fractal maths starts, and P − X can't bring it back. Perturbation's formulas only ever subtract small numbers (gaps the CPU already computed in 64-bit), or use products, never the difference of two big ones.",
+    body: "What goes wrong when you subtract two nearly equal floating-point numbers: the leading digits cancel and only the rounded tail is left. A 32-bit float keeps about 7 significant digits whatever its size, so 1.0000001 − 1.0000000 gives 1.19e-7 against the true 1e-7: about one correct digit. That is why `eye + dir × t` fails at depth: the small offset is rounded away before the fractal maths starts, and P − X can't bring it back. Perturbation's formulas only ever subtract small numbers (gaps the CPU already computed in 64-bit), or use products, never the difference of two big ones.",
     links: [WIKI("Catastrophic_cancellation"), { url: "https://floating-point-gui.de/", label: "The Floating-Point Guide" }],
   },
   magnification: {

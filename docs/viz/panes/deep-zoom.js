@@ -368,7 +368,8 @@ const CHECK = (function () {
     const err = Math.max(...[0, 1, 2, 3].map(j => Math.abs(got.dl[j] - (mq * q[j] - mx * x[j]))));
     if (!(err < 1e-12) || !(Math.abs(got.dz - mq) <= 1e-12)) fails.push(`pert_sphere |X| ${xa} → |P| ${qa}: error ${err}, dz ${got.dz} (want ${mq})`);
   }
-  // 3 (a fixed pseudo-random set of offsets, 1e-7 to 1e-1, as the test draws them)
+  // 3 (24 offsets from a fixed LCG, uniform-cube directions: only the size range 1e-7 to 1e-1 and the
+  //    tolerance formula are the test's, which draws 48 normalised-Gaussian directions)
   const P = SAVES[0].P, s = SAVES[0].surf, e = backed(s, 1e-3), X = buildOrbit(P, e[0], e[1], e[2]);
   let seed = 20261009, worst = 0;
   const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
@@ -599,7 +600,7 @@ const whyFig = {
   type: "figure",
   tab: "Why 32-bit breaks",
   title: "Why 32 bits break, and what perturbation buys",
-  note: "A port of FractalParams.ulp32 and of ReferenceOrbit on the default box, in JS doubles. The camera sits d back from the default view's surface point, along its ray (SurfaceFixture.default_surface). The top strip: the view at the hit is 2 d tan 20° tall, the GPU forms every ray position as `eye + dir × t` in 32-bit floats, and near the eye those can only land on a grid ulp32 apart. Once the whole view is a few grid steps tall, hundreds of pixel rows share one position, and the hit threshold `eps × d` is far finer than the grid, so rays reach the surface only by luck. The chart: perturbation iterates the offset instead, and after i iterations the view has been magnified λ_i times while the grid at the reference point X_i stays about the same. A ray hands off to the 32-bit loop once its offset reaches 0.1; by then its view spans thousands of grid steps and its threshold sits well above the grid. The zoom guard asks the same at the last record K: the threshold λ_K × eps × d must stay above 50 grid steps, which is floor_pert.",
+  note: "A port of FractalParams.ulp32 and of ReferenceOrbit on the default box, in JS doubles. The camera sits d back from the default view's surface point, along its ray (SurfaceFixture.default_surface). The top strip: the view at the hit is 2 d tan 20° tall, the GPU forms every ray position as `eye + dir × t` in 32-bit floats, and near the eye those can only land on a grid ulp32 apart. Once the whole view is a few grid steps tall, hundreds of pixel rows share one position, and the hit threshold `eps × d` is far finer than the grid, so rays reach the surface only by luck. The chart: perturbation iterates the offset instead, and after i iterations the view has been magnified λ_i times while the grid at the reference point X_i stays about the same. A ray hands off to the 32-bit loop once its offset reaches 0.1; by then its view spans thousands of grid steps and its threshold sits well above the grid. The zoom guard asks the same at the last record K: the threshold λ_K × eps × d must stay above 1/50 of a grid step there (ZOOM_FLOOR_DIVISOR = 50), which is exactly d ≥ floor_pert; the old floor32 is the same rule at the eye, eps × d ≥ ulp32 / 50.",
   w: 1500, h: 900,
   draw(api) {
     const sv = SAVES[0], P = sv.P, eps = epsOf(P);
@@ -633,7 +634,7 @@ const whyFig = {
       { key: "off", label: "a ray's offset at t = d, λ_i × d (the view, λ_i × W, is 0.73 of it)", hue: 1, w: 2.2 },
       { key: "thr", label: "the hit threshold, λ_i × eps × d", hue: 3, w: 2.2 },
       { key: "grid", label: "the grid at X_i, ulp32(max |X_i|)", hue: 2, w: 2.2 },
-      { key: "grid50", label: "50 × that grid (ZOOM_FLOOR_DIVISOR)", hue: 2, w: 1.2, dash: "5 4" },
+      { key: "grid50", label: "1/50 of that grid (the guard's bar, ZOOM_FLOOR_DIVISOR)", hue: 2, w: 1.2, dash: "5 4" },
     ];
     const paths = SER.map(s => api.el("path", { style: `fill:none;stroke:${api.hue(s.hue)};stroke-width:${s.w};${s.dash ? `stroke-dasharray:${s.dash};` : ""}${noPtr}` }));
     const hMark = api.el("line", { y1: CY, y2: CY + CH, style: `stroke:${api.hue(4)};stroke-width:2;${noPtr}` });
@@ -645,7 +646,7 @@ const whyFig = {
       api.tip(c, { title: `after ${i} iterations`, ...R("orb", 133), live: () => {
         const st = S.cur; if (!st) return {};
         const o = st.o, x = o.pts32[i], g = ulp32(maxAbs(x));
-        return { sub: `λ_${i} = ${sci(o.mag[i])}`, blurb: `X_${i} = ${vec(o.pts[i])}\nview λ W = ${sci(o.mag[i] * st.W)} = ${sci(o.mag[i] * st.W / g)} grid steps at X_${i} (ulp32 ${sci(g)})\nthreshold λ eps d = ${sci(o.mag[i] * eps * st.d)} against 50 × grid = ${sci(50 * g)}\na ray at t = d: |δ| ≈ ${sci(o.mag[i] * st.d)}${o.mag[i] * st.d >= PERT_HANDOFF ? " (past the handoff)" : ""}` };
+        return { sub: `λ_${i} = ${sci(o.mag[i])}`, blurb: `X_${i} = ${vec(o.pts[i])}\nview λ W = ${sci(o.mag[i] * st.W)} = ${sci(o.mag[i] * st.W / g)} grid steps at X_${i} (ulp32 ${sci(g)})\nthreshold λ eps d = ${sci(o.mag[i] * eps * st.d)} against 1/50 of the grid = ${sci(g / ZOOM_FLOOR_DIVISOR)}${o.mag[i] * eps * st.d >= g / ZOOM_FLOOR_DIVISOR ? " (above it)" : " (below it)"}\na ray at t = d: |δ| ≈ ${sci(o.mag[i] * st.d)}${o.mag[i] * st.d >= PERT_HANDOFF ? " (past the handoff)" : ""}` };
       } });
     }
     // legend + readout on the right
@@ -703,7 +704,7 @@ const whyFig = {
         series.off.push([ch.X(i), ch.Y(o.mag[i] * d)]);
         series.thr.push([ch.X(i), ch.Y(o.mag[i] * eps * d)]);
         series.grid.push([ch.X(i), ch.Y(g)]);
-        series.grid50.push([ch.X(i), ch.Y(50 * g)]);
+        series.grid50.push([ch.X(i), ch.Y(g / ZOOM_FLOOR_DIVISOR)]);
         dots[i].setAttribute("cx", ch.X(i)); dots[i].setAttribute("cy", ch.Y(o.mag[i] * d));
       }
       SER.forEach((s, i) => paths[i].setAttribute("d", pathOf(series[s.key].map(p => [p[0], clampf(p[1], CY, CY + CH)]))));
@@ -716,20 +717,21 @@ const whyFig = {
       const K = Math.min(PERT_MAX, o.n), gh = ulp32(maxAbs(o.pts32[h])), gK = ulp32(maxAbs(o.pts32[K])), thrK = o.mag[K] * eps * d;
       const L = [
         `at i = 0 (today): the view spans ${sci(W / ulp)} grid steps`,
-        `   threshold ${sci(eps * d)} vs grid ${sci(ulp)}: ${eps * d >= 50 * ulp ? "fine" : "far finer than the grid"}`,
+        `   threshold ${sci(eps * d)} vs 1/50 of the grid ${sci(ulp / ZOOM_FLOOR_DIVISOR)}: ${eps * d >= ulp / ZOOM_FLOOR_DIVISOR ? "above it (d ≥ floor32)" : "below it (d < floor32)"}`,
         `at the handoff h = ${h}: λ_h = ${sci(o.mag[h])}`,
         `   the view spans ${sci(o.mag[h] * W / gh)} grid steps at X_h`,
         `   threshold λ_h eps d = ${sci(o.mag[h] * eps * d)} (grid ${sci(gh)})`,
         ``,
         `the guard, at K = min(20, n) = ${K}:`,
-        `   threshold λ_K eps d = ${sci(thrK)} vs 50 × grid = ${sci(50 * gK)}`,
-        `   ${thrK >= 50 * gK ? "above it: d is above the zoom floor" : "below it: d is past the zoom floor"}`,
+        `   threshold λ_K eps d = ${sci(thrK)} vs 1/50 of the grid = ${sci(gK / ZOOM_FLOOR_DIVISOR)}`,
+        `   ${thrK >= gK / ZOOM_FLOOR_DIVISOR ? "above it: d is above the zoom floor" : "below it: d is past the zoom floor"}`,
         `   floor_pert = ulp32(max |X_K|) / (50 eps λ_K) = ${sci(floorPert(P, o))}`,
         `rays also stop resolving where 32 iterations`,
         `   run out (not guarded; tab 8, REFERENCE FLOOR)`,
       ];
       L.forEach((s, i) => { out[i].textContent = s; });
-      out[8].style.fill = thrK >= 50 * gK ? api.hue(3) : api.hue(2);
+      out[8].style.fill = thrK >= gK / ZOOM_FLOOR_DIVISOR ? api.hue(3) : api.hue(2);
+      out[1].style.fill = eps * d >= ulp / ZOOM_FLOOR_DIVISOR ? api.hue(3) : api.hue(2);
     }
     render();
   },
@@ -1464,7 +1466,7 @@ const VIEW9 = [
 const view9Table = {
   type: "table",
   title: "REFERENCE FLOOR (VIEW9): nine rays of the default view, the deepest d each resolves",
-  note: "The default box at its default camera: a 3 × 3 grid of rays near the middle of the view (at 0.1 and at 0.3 of the half field), each backed off d from its own hit; the deepest d (down from 1e-4) at which that ray still hits within 10% of d, 128 steps, 64-bit. Rays in the test's order (ia = −1, 0, 1 across, ib = −1, 0, 1 within each). Points a few pixels apart resolve anywhere from 1e-5 to 1e-12: the 32-iteration floor varies by orders of magnitude, which is why it is measured, not guarded.",
+  note: "The default box at its default camera: a 3 × 3 grid of rays near the middle of the view (at 0.1 and at 0.3 of the half field), each backed off d from its own hit; the deepest d (down from 1e-4) at which that ray still hits within 10% of d, 128 steps, 64-bit. Rays in the test's order (ia = −1, 0, 1 across, ib = −1, 0, 1 within each). Rays 0.1 to 0.3 of the half field apart (about 40 to 120 px in an 800 px view) resolve anywhere from 1e-4 to 1e-12, and one never hits (none): the 32-iteration floor varies by orders of magnitude, which is why it is measured, not guarded.",
   columns: [{ label: "grid", w: 100 }].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => ({ label: `ray ${i}`, w: 64, mono: true }))),
   rows: VIEW9.map(r => ({ cells: r, tip: { title: `VIEW9, ${r[0]}`, ...R("tPert", 404), links: [RL("tPert", 392, "the ray grid")] } })),
 };
@@ -1605,7 +1607,7 @@ const cards = {
       body: "Not perturbed yet: the many-region folds need their crossing cases enumerated, and the Mandelbulb's power map is not piecewise-linear (a follow-up spec). They keep today's floor.",
       links: [RL("orb", 312, "the Mandelbulb: not perturbed")] },
     { title: "The 32-iteration floor, and more iterations", tag: "open", hue: 4, ...R("spec", 63),
-      body: "Past a point's own 32-iteration floor rays run out of steps and the picture darkens; on the default box at its default view that is about 1e-7 to 1e-8, while the zoom floor allows about 3e-10. More iterations past 32 would push it down; it needs measuring first. tests/perturbation_test.gd prints the data.",
+      body: "Past a point's own 32-iteration floor rays run out of steps and the picture darkens; on the default box at its default view that is about 1e-7 to 1e-8, while the zoom floor allows about 1e-10 (3e-11 to 3e-10 depending on the eye). More iterations past 32 would push it down; it needs measuring first. tests/perturbation_test.gd prints the data.",
       links: [RL("readme", 166, "README: where 32 iterations run out")] },
     { title: "The orbit camera", tag: "open", hue: 4, ...R("spec", 62),
       body: "Out of scope: the orbit camera cannot approach the surface, so it keeps the 32-bit eye path." },
@@ -1637,7 +1639,7 @@ VIZ.pane({
   id: "deep-zoom",
   short: "Deep zoom",
   title: "Deep zoom — past the 32-bit floor with perturbation",
-  subtitle: "The GPU works in 32-bit floats, which near the fractal sit on a grid about 1e-7 apart, so the fly camera used to stop at about 1e-4 from the surface. Now the eye is three 64-bit numbers, the CPU runs the camera's own orbit in 64-bit once per change (the reference orbit), and the GPU follows only each pixel's small offset from it (perturbation), handing off to the ordinary loop once the offset is big enough. The fly camera can now reach about 3e-10 on the default box; the default view is unchanged, bit for bit.",
+  subtitle: "The GPU works in 32-bit floats, which near the fractal sit on a grid about 1e-7 apart, so the fly camera used to stop at about 1e-4 from the surface. Now the eye is three 64-bit numbers, the CPU runs the camera's own orbit in 64-bit once per change (the reference orbit), and the GPU follows only each pixel's small offset from it (perturbation), handing off to the ordinary loop once the offset is big enough. The fly camera can now reach about 1e-10 on the default box (3e-11 to 3e-10 depending on the eye); the default view is unchanged, bit for bit.",
   commit: COMMIT,
   pinNote: "perturbation branch, unpushed: links 404 until it is pushed",
   ctx: {
