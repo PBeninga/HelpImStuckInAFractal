@@ -79,6 +79,9 @@ var _depth_scan: Node
 
 func _ready() -> void:
 	_viewport = $SubViewport
+	var performance_menu := get_node_or_null("/root/PerformanceMenu")
+	if performance_menu != null:
+		performance_menu.watch_viewport(_viewport)
 	_rect = $SubViewport/ColorRect
 	_display = $Display
 	_material = _rect.material as ShaderMaterial
@@ -179,6 +182,12 @@ func _on_noise_node_changed(id: StringName, param_id: StringName) -> void:
 ## Compile the graph, swap the material's shader, and re-push every uniform. On a
 ## compile failure the old shader stays and the failure is reported.
 func _rebuild_noise() -> void:
+	var started := FrameProfiler.begin()
+	_rebuild_noise_impl()
+	FrameProfiler.end(&"Noise shader rebuild", started)
+
+
+func _rebuild_noise_impl() -> void:
 	_capture_base()
 	if _material == null or _base_shader == null:
 		return
@@ -408,6 +417,12 @@ func _push_probe() -> void:
 
 
 func _push_params() -> void:
+	var started := FrameProfiler.begin()
+	_push_params_impl()
+	FrameProfiler.end(&"Shader parameter upload", started)
+
+
+func _push_params_impl() -> void:
 	if _material == null or _params == null:
 		return
 	_material.set_shader_parameter("exit_radius", _params.gameplay.exit_radius)
@@ -509,6 +524,12 @@ func _push_camera() -> void:
 ## estimated at the 64-bit eye. These depend on both the camera and the shapes,
 ## so both pushes refresh them.
 func _push_near() -> void:
+	var started := FrameProfiler.begin()
+	_push_near_impl()
+	FrameProfiler.end(&"Camera distance + shape frames", started)
+
+
+func _push_near_impl() -> void:
 	if _material == null or _params == null or _camera == null:
 		return
 	var n := FractalParams.MAX_SHAPES

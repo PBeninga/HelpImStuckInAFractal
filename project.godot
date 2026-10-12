@@ -11,6 +11,7 @@ config/features=PackedStringArray("4.6", "GL Compatibility")
 
 Settings="*res://src/settings/settings.gd"
 McpBridge="*res://src/mcp/mcp_bridge.gd"
+PerformanceMenu="*res://src/ui/performance_menu.gd"
 
 [display]
 

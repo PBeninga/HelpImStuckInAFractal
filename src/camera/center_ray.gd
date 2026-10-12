@@ -62,9 +62,11 @@ func _update() -> void:
 	if not _dirty:
 		return
 	_dirty = false
+	var started := FrameProfiler.begin()
 	var r := march_at(_camera.eye_x(), _camera.eye_y(), _camera.eye_z(), _camera.forward(), _params)
 	_distance = r[0]
 	_hit = r[1]
+	FrameProfiler.end(&"CPU centre ray", started)
 
 
 ## Sphere-trace from `origin` along unit `dir`. Returns [distance, hit]:

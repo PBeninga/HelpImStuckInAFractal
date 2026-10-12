@@ -75,6 +75,12 @@ func handle_event(event: InputEvent) -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	var started := FrameProfiler.begin()
+	_step_movement(delta)
+	FrameProfiler.end(&"Fly movement + collision", started)
+
+
+func _step_movement(delta: float) -> void:
 	if not enabled:
 		at_zoom_limit = false
 		return

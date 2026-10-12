@@ -499,6 +499,7 @@ func _process(_delta: float) -> void:
 ## hundred scalars per shape); apply_resolved emits at most once per shape, and
 ## nothing when no binding is active.
 func _resolve_once() -> void:
+	var started := FrameProfiler.begin()
 	if params.shapes.size() != _shapes.count():
 		params.set_shape_count(_shapes.count())
 	var axis_values := _keymap.axes().values()
@@ -507,11 +508,14 @@ func _resolve_once() -> void:
 		params.shapes[i].apply_resolved(all[i])
 	var look := BindingResolver.resolve(_look, axis_values, _clock.t)
 	params.apply_resolved(look)
+	FrameProfiler.end(&"Bindings + scene updates", started)
 	if _console != null and _console.visible:
+		started = FrameProfiler.begin()
 		_console.set_resolved(all, look)
 		var active: Dictionary = all[clampi(params.active, 0, all.size() - 1)]
 		_console.show_self_similarity(ShapeCatalogue.self_similarity(
 			active, NoiseCompiler.displaces(view.noise_graph())))
+		FrameProfiler.end(&"Console readouts", started)
 
 
 # ------------------------------------------------------------- save / load

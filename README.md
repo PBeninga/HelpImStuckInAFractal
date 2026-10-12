@@ -47,6 +47,17 @@ Everything the console does not own is driven directly by the mouse and
 keyboard. **Escape** only frees the mouse: nothing pauses, and it never opens
 or closes the console. Click the view to take the mouse back.
 
+**F3** toggles an opaque performance overlay above the menus, including
+while a console or noise-editor field has focus. It shows current FPS and
+expensive CPU operations as milliseconds and percentages of the **16.67 ms
+(60 FPS)** frame budget, averaged per game frame over the last quarter second.
+CPU scopes include nested work, so their percentages overlap. The fractal
+viewport's latest available CPU submission and GPU ray-march/shading times are
+shown separately; an idle cached image is marked idle, and unavailable timer
+results are labelled rather than reported as zero cost. CPU/GPU work can overlap.
+Closing F3 stops its timers, sampling callbacks, and viewport timing queries.
+Separate native windows show the same readout above their own controls.
+
 The console opens **beside** the main window — or on another monitor when
 there is no room beside it — and can be dragged anywhere. Keep it off the main
 window: on macOS (Godot 4.6.1, GL Compatibility) a separate window overlapping
