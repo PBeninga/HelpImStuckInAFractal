@@ -193,6 +193,43 @@ try {
     const base = p.slice(0,3).map(v=>v/255);
     p = draw({fog_distance:1});
     check(rgb(p, base.map((v,i)=>(v+[0.2,0.4,0.6][i])*0.5)), 'surface halfway through fade smoothly blends into fog');
+    // Escape sky is sampled by view direction, even outside and facing away.
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+        new Uint8Array([80,120,200,255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const skyColor = [80/255,120/255,200/255];
+    p = draw({shape_count:0, eye:[21,0,0], exit_radius:20, fog_distance:0,
+        exit_has_skybox:0, exit_sky_alpha:1, fog_dist:0, cam_forward:[1,0,0]});
+    check(rgb(p, [0,0,0]), 'sky render gate hides an assigned texture before escape');
+    p = draw({exit_has_skybox:1, exit_sky_alpha:0});
+    check(rgb(p, [0,0,0]), 'zero sky opacity leaves the original background');
+    p = draw({exit_sky_alpha:0.5});
+    check(rgb(p, skyColor.map(v=>v*0.5)), 'escaped outward view fades sky halfway');
+    p = draw({exit_sky_alpha:1});
+    check(rgb(p, skyColor), 'escaped outward view retains the complete sky');
+    p = draw({cam_forward:[-1,0,0]});
+    check(rgb(p, skyColor), 'sky also surrounds an inward-facing camera');
+    p = draw({cam_forward:[1,0,0], fog_distance:1, escape_fog_clear:0.5});
+    check(rgb(p, skyColor.map((v,i)=>(v+[0.2,0.4,0.6][i])*0.5)), 'distance fog smoothly reveals the sky');
+    p = draw({escape_fog_clear:1, fog_distance:0});
+    check(rgb(p, skyColor), 'cleared fog reveals the complete sky without a final colour jump');
+    p = draw({shape_count:1, eye:[0,0,0], local_eye:[0,0,0], exit_radius:100,
+        test_surface:2, fog_distance:1, escape_fog_clear:0.5, test_output:1});
+    check(p[2] === 255, 'fading fog reveals geometry beyond the former opaque wall');
+    const almostClear = draw({test_output:0, shape_count:0, eye:[21,0,0],
+        cam_forward:[-1,0,0], exit_radius:20, fog_distance:60, escape_fog_clear:0.999,
+        scatter_density:0.1, scatter_brightness:0.5, light_color:[1,1,1]});
+    p = draw({escape_fog_clear:1, fog_distance:0});
+    check(p.slice(0,3).every((v,i)=>Math.abs(v-almostClear[i]) <= 1),
+        'early misses have no scattering colour jump when fog finishes clearing');
+    const marchedAlmostClear = draw({shape_count:1, eye:[21,0,0], local_eye:[21,0,0],
+        frame_x:[-1,0,0], test_surface:1000, box_half:[30], fog_distance:1,
+        escape_fog_clear:0.999});
+    p = draw({escape_fog_clear:1, fog_distance:0});
+    check(p.slice(0,3).every((v,i)=>Math.abs(v-marchedAlmostClear[i]) <= 1),
+        'marched misses have no scattering colour jump when fog finishes clearing');
     results.push(failures ? `${failures} FAILED` : 'ALL PASSED');
 } catch (e) { results.push('ERROR ' + e.stack); }
 document.body.textContent = results.join('\n');

@@ -26,10 +26,11 @@ const int MAX_SHAPES = 8;
 
 uniform bool depth_scan = false;
 uniform vec3 eye;             // world; probe dot and the exit sphere
-// Finite background sphere at the world origin. A future sky picker can set
-// GameplaySettings.exit_skybox; longitude wraps, latitude runs pole to pole.
+// The finite sphere bounds geometry; the escape sky surrounds the camera.
 uniform float exit_radius = 20.0;
 uniform bool exit_has_skybox = false;
+uniform float exit_sky_alpha = 0.0;
+uniform float escape_fog_clear = 0.0;
 uniform sampler2D exit_skybox : source_color, filter_linear, repeat_enable;
 uniform vec3 cam_right;
 uniform vec3 cam_up;
@@ -207,7 +208,7 @@ vec3 fog_wall_color(vec3 col, float t) {
 	if (fog_distance <= 0.0) { return col; }
 	float wall = fog_wall_distance();
 	float a = smoothstep(clamp(fog_start, 0.0, 0.99) * wall, wall, t);
-	return mix(col, fog_tint, a);
+	return mix(col, fog_tint, a * (1.0 - escape_fog_clear));
 }
 
 // The probe dot over a surface colour at hit point v: a white disc of radius
@@ -574,7 +575,7 @@ float soft_shadow(int s, vec3 n_world, vec3 dir, vec3 ldir, float total) {
 	vec3 lift = dir * total + n_world * 4.0 * eps0;
 	vec3 ro_local = local_offset_point(s, lift);
 	float far = box_intersect(ro_local, local_dir(s, ldir), box_half[s]).y * shape_size[s];
-	if (fog_distance > 0.0) {
+	if (fog_distance > 0.0 && escape_fog_clear <= 0.0) {
 		// Shadow origins are offsets from the eye. Intersect this ray with
 		// the SAME camera-centred sphere, not a new radius from the hit.
 		float wall = fog_wall_distance();
@@ -649,12 +650,13 @@ void fragment() {
 		sphere_start = max(0.0, -sphere_b - root);
 		sphere_end = -sphere_b + root;
 	}
-	if (exit_has_skybox && sphere_end > 0.0
-			&& (fog_distance <= 0.0 || sphere_end < fog_wall_distance())) {
-		vec3 normal = normalize(eye + dir * sphere_end);
-		vec2 sky_uv = vec2(atan(normal.y, normal.x) / (2.0 * PI) + 0.5,
-			acos(clamp(normal.z, -1.0, 1.0)) / PI);
-		bg = texture(exit_skybox, sky_uv).rgb;
+	// Uniform gate: no sky texture lookup or spherical mapping before escape,
+	// at zero opacity, or in the geometry-only depth scan. Direction mapping
+	// also covers outward rays that never intersect the exit sphere.
+	if (exit_has_skybox && exit_sky_alpha > 0.0 && !depth_scan) {
+		vec2 sky_uv = vec2(atan(dir.y, dir.x) / (2.0 * PI) + 0.5,
+			acos(clamp(dir.z, -1.0, 1.0)) / PI);
+		bg = mix(bg, texture(exit_skybox, sky_uv).rgb, exit_sky_alpha);
 	}
 	// A miss is infinitely far, so under fog the sky is the fog: far surfaces fade
 	// into it without a seam.
@@ -667,6 +669,11 @@ void fragment() {
 		vec3 far_color = base_bg;
 		if (bg_distance < fog_wall_distance()) {
 			far_color = scatter(base_bg, bg_distance, dir, sky_ldir);
+			// Without the manual wall, early misses use the plain background.
+			// Converge to that same target before the wall uniform turns off.
+			if (escape_fog_clear > 0.0) {
+				far_color = mix(far_color, base_bg, escape_fog_clear);
+			}
 		}
 		sky = fog_wall_color(far_color, bg_distance);
 		if (fog_dist > 0.0) {
@@ -693,11 +700,11 @@ void fragment() {
 	// geometry behind it does not hide the sky, including while outside.
 	t_start = max(t_start, sphere_start);
 	t_exit = min(t_exit, sphere_end);
-	if (fog_distance > 0.0) {
+	if (fog_distance > 0.0 && escape_fog_clear <= 0.0) {
 		t_exit = min(t_exit, fog_wall_distance());
 	}
 	float scan_far = sphere_end;
-	if (fog_distance > 0.0) { scan_far = min(scan_far, fog_wall_distance()); }
+	if (fog_distance > 0.0 && escape_fog_clear <= 0.0) { scan_far = min(scan_far, fog_wall_distance()); }
 	if (fog_dist > 0.0 && fog_clear <= 0.0) { scan_far = min(scan_far, fog_dist * near_dist); }
 	if (view_limit > 0.0) { scan_far = min(scan_far, view_limit); }
 	float scan_far_status = scan_far <= 0.0 ? 0.0 : (scan_far < sphere_end ? 3.0 : 2.0);
@@ -747,6 +754,11 @@ void fragment() {
 			float t_scat = min(t_exit, total);
 			if (fog_distance > 0.0) {
 				COLOR = vec4(sky, 1.0);  // same background as a ray that missed every cube
+				if (escape_fog_clear > 0.0) {
+					// Marched misses retain their travelled-distance scattering
+					// once fog is gone. Ease toward it instead of switching at 1.
+					COLOR.rgb = mix(sky, scatter(bg, t_scat, dir, sky_ldir), escape_fog_clear);
+				}
 			} else {
 				COLOR = vec4(scatter(bg, t_scat, dir, sky_ldir), 1.0);
 			}

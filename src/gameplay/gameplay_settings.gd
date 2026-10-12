@@ -1,12 +1,16 @@
 class_name GameplaySettings
 extends Resource
-## Level-owned spawn, flight tuning and a spherical exit/background at world
-## origin. The optional skybox is an equirectangular Texture2D on this sphere.
+## Level-owned spawn, flight tuning and a spherical exit boundary at world
+## origin. Escape reveals an equirectangular sky around the camera.
 ## Spawn and escape detection use doubles, never the camera's Vector3 mirror.
+
+const DEFAULT_SKYBOX := preload("res://Assets/sky_82_2k.png")
+const DURATION_KEYS := [&"escape_sky_duration", &"escape_fog_duration"]
 
 const NUMERIC_KEYS := [&"exit_radius", &"spawn_x", &"spawn_y", &"spawn_z",
 	&"move_speed", &"shift_multiplier", &"distance_power", &"near_cap", &"max_distance_speed",
-	&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval"]
+	&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval",
+	&"escape_sky_duration", &"escape_fog_duration"]
 const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_scan_interval"]
 
 @export var exit_radius := 20.0:
@@ -75,7 +79,18 @@ const INTEGER_KEYS := [&"surrounding_ray_count", &"depth_scan_width", &"depth_sc
 		if v >= 1 and v <= 30 and v != depth_scan_interval:
 			depth_scan_interval = v
 			emit_changed()
-@export var exit_skybox: Texture2D:
+## Seconds from crossing the exit boundary; zero completes immediately.
+@export var escape_sky_duration := 3.0:
+	set(v):
+		if is_finite(v) and v >= 0.0 and v != escape_sky_duration:
+			escape_sky_duration = v
+			emit_changed()
+@export var escape_fog_duration := 3.0:
+	set(v):
+		if is_finite(v) and v >= 0.0 and v != escape_fog_duration:
+			escape_fog_duration = v
+			emit_changed()
+@export var exit_skybox: Texture2D = DEFAULT_SKYBOX:
 	set(v):
 		if v != exit_skybox:
 			exit_skybox = v
@@ -112,14 +127,16 @@ func apply_dict(raw: Variant) -> Array:
 	for key in NUMERIC_KEYS:
 		set(key, defaults.get(key))
 	distance_scaling = true
-	exit_skybox = null
+	exit_skybox = DEFAULT_SKYBOX
 	if not raw is Dictionary:
 		return ["Malformed gameplay section ignored"]
 	for key in raw:
 		var value: Variant = raw[key]
 		if NUMERIC_KEYS.has(StringName(key)):
 			var valid := (value is float or value is int) and is_finite(float(value))
-			if not String(key).begins_with("spawn_"):
+			if DURATION_KEYS.has(StringName(key)):
+				valid = valid and float(value) >= 0.0
+			elif not String(key).begins_with("spawn_"):
 				valid = valid and float(value) > 0.0
 			if key == "distance_power":
 				valid = valid and float(value) <= 4.0

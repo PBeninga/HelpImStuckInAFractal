@@ -47,7 +47,6 @@ var _last_mode := -1
 var _files: WorkspaceFiles
 var _view_pane: ViewPane
 var _gameplay_pane: GameplayPane
-var escape_label: Label
 var _noise: NoiseWindow
 var _chat: ChatPanel
 var _loading := false
@@ -311,32 +310,7 @@ func _build_gameplay() -> void:
 	_gameplay_pane.load_requested.connect(_files.prompt_load)
 	_gameplay_pane.return_requested.connect(return_to_spawn)
 	_gameplay_pane.find_surface_requested.connect(find_nearest_surface)
-	var hud := CanvasLayer.new()
-	hud.name = "GameplayHUD"
-	hud.layer = 5
-	add_child(hud)
-	escape_label = Label.new()
-	escape_label.name = "EscapeMessage"
-	escape_label.text = "You escaped!"
-	escape_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	escape_label.add_theme_font_size_override("font_size", 44)
-	escape_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.75))
-	escape_label.add_theme_color_override("font_shadow_color", Color.BLACK)
-	escape_label.add_theme_constant_override("shadow_offset_x", 2)
-	escape_label.add_theme_constant_override("shadow_offset_y", 2)
-	escape_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(escape_label)
-	escape_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	escape_label.offset_top = 70
-	escape_label.offset_bottom = 130
-	camera.changed.connect(_update_escape)
-	params.gameplay.changed.connect(_update_escape)
-	_update_escape()
-
-
-func _update_escape() -> void:
-	if escape_label != null:
-		escape_label.visible = params.gameplay.is_outside(camera)
+	_console.escape_animation_pane().setup(params.gameplay)
 
 
 ## Show the console beside the main window, then hand focus back to the main
@@ -436,7 +410,7 @@ func _layout_view() -> void:
 	var right := 0.0
 	if _docked and _console.visible:
 		right = -float(_dock_rect().size.x)
-	for c in [view, _marker, escape_label]:
+	for c in [view, _marker]:
 		if c != null:
 			c.offset_right = right
 	if _chat != null:
@@ -567,7 +541,6 @@ func return_to_spawn() -> void:
 	params.gameplay.return_to_spawn(camera)
 	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
 		_orbit.enter()
-	_update_escape()
 	_report("Returned to spawn")
 
 

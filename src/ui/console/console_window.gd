@@ -1,7 +1,7 @@
 class_name ConsoleWindow
 extends Window
 ## The console ("Fractacular embedded") for the scene of shapes being flown
-## through in the main window: five tabs stacked above the Movement pane in a
+## through in the main window: six tabs stacked above the Movement pane in a
 ## VSplit. The Shape tab is the ShapeListPane: Add shape and a read-only line
 ## saying whether the selected shape is self-similar
 ## (ShapeCatalogue.self_similarity, fed by Main) over one collapsible panel per
@@ -79,6 +79,7 @@ var _self_similar: Label
 var _movement: MovementPane
 var _view: ViewPane
 var _gameplay: GameplayPane
+var _escape_animation: EscapeAnimationPane
 var _keymap: Keymap
 var _ctrl := CtrlTap.new()
 var _docked := false
@@ -148,6 +149,8 @@ func setup(shapes: ShapeList, look: AttributeTable, keymap: Keymap, clock: Clock
 	_tabs.add_child(_view)
 	_gameplay = GameplayPane.new()
 	_tabs.add_child(_gameplay)
+	_escape_animation = EscapeAnimationPane.new()
+	_tabs.add_child(_escape_animation)
 
 	_movement = MovementPane.new()
 	_movement.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -203,7 +206,11 @@ func gameplay_pane() -> GameplayPane:
 	return _gameplay
 
 
-## Bring Shape (0), Light (1), Material (2), View (3) or Gameplay (4) to the front.
+func escape_animation_pane() -> EscapeAnimationPane:
+	return _escape_animation
+
+
+## Bring a console tab to the front.
 func show_tab(index: int) -> void:
 	_tabs.current_tab = clampi(index, 0, _tabs.get_tab_count() - 1)
 

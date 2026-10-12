@@ -79,6 +79,8 @@ var _restore_frame := RESTORE_FRAMES  # frames into the restore tween; done at R
 var _restore_stepped_on := -1         # the process frame the tween last stepped on
 var _center_ray: CenterRay
 var _depth_scan: Node
+var _escaped := false
+var _escape_elapsed := 0.0
 
 
 func _ready() -> void:
@@ -131,6 +133,8 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 		# Made before the view connects its own handlers, so the ray has heard
 		# of a change before the view asks it where the dot goes.
 		_center_ray = CenterRay.new(params, camera)
+	_escaped = false
+	_escape_elapsed = 0.0
 	_params = params
 	_camera = camera
 	_apply_size()
@@ -304,7 +308,13 @@ func restoring() -> bool:
 	return _restore_frame < RESTORE_FRAMES
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _escaped and _params != null:
+		var duration := maxf(_params.gameplay.escape_sky_duration, _params.gameplay.escape_fog_duration)
+		if _escape_elapsed < duration:
+			_escape_elapsed = minf(_escape_elapsed + delta, duration)
+			_push_escape()
+			request_frame()
 	if restoring() and _restore_stepped_on != Engine.get_process_frames():
 		_step_restore()
 		_push_shed()
@@ -495,7 +505,6 @@ func _push_params_impl() -> void:
 	if _material == null or _params == null:
 		return
 	_material.set_shader_parameter("exit_radius", _params.gameplay.exit_radius)
-	_material.set_shader_parameter("exit_has_skybox", _params.gameplay.exit_skybox != null)
 	_material.set_shader_parameter("exit_skybox", _params.gameplay.exit_skybox)
 	# Every scene id is a scalar uniform of the same name, pushed as it is; the
 	# COLOR keys go as a vec3 (the shader's colour uniforms).
@@ -545,6 +554,7 @@ func _push_params_impl() -> void:
 	_material.set_shader_parameter("tan_half_fov", TAN_HALF_FOV)
 	_material.set_shader_parameter("detail_range", _params.detail_range)
 	_material.set_shader_parameter("detail_falloff", _params.detail_falloff)
+	_sync_escape()
 	_push_shed()
 	_push_near()
 
@@ -566,17 +576,48 @@ func _push_shed() -> void:
 		FractalParams.MAX_STEPS_MIN, int(_shed["step_cap"]))
 	_material.set_shader_parameter("coarse_steps", _params.coarse_steps(budget))
 	_material.set_shader_parameter("fine_steps", _params.fine_steps(budget))
-	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 else 0.0)
-	_material.set_shader_parameter("fog_clear", _fog_clear)
+	_push_escape()
 	_material.set_shader_parameter("fog_color", _params.fog_color())
 	# The self-shadow march's budget, shed with the ladder (full 48 at level 0;
 	# it steps with the level rather than easing, since it is a step count).
 	_material.set_shader_parameter("shadow_steps", int(round(FractalParams.SHADOW_STEPS * _shed["shadow"])))
 
 
+## Reentering the sphere resets immediately, including a return to spawn.
+func _sync_escape() -> void:
+	if _params == null or _camera == null:
+		return
+	var outside := _params.gameplay.is_outside(_camera)
+	if outside != _escaped:
+		_escaped = outside
+		_escape_elapsed = 0.0
+	_push_escape()
+
+
+func _escape_progress(duration: float) -> float:
+	if not _escaped:
+		return 0.0
+	return 1.0 if duration <= 0.0 else smoothstep(0.0, duration, _escape_elapsed)
+
+
+## Only presentation values change; the level's saved fog is preserved.
+func _push_escape() -> void:
+	if _material == null or _params == null:
+		return
+	var alpha := _escape_progress(_params.gameplay.escape_sky_duration)
+	var clear := _escape_progress(_params.gameplay.escape_fog_duration)
+	_material.set_shader_parameter("exit_has_skybox", alpha > 0.0 and _params.gameplay.exit_skybox != null)
+	_material.set_shader_parameter("exit_sky_alpha", alpha)
+	_material.set_shader_parameter("escape_fog_clear", clear)
+	_material.set_shader_parameter("fog_distance", _params.fog_distance if clear < 1.0 else 0.0)
+	_material.set_shader_parameter("fog_dist", 1.0 / _fog_inv if _fog_inv > 0.0 and clear < 1.0 else 0.0)
+	_material.set_shader_parameter("fog_clear", 1.0 - (1.0 - _fog_clear) * (1.0 - clear))
+
+
 func _push_camera() -> void:
 	if _material == null or _camera == null:
 		return
+	_sync_escape()
 	_material.set_shader_parameter("eye", _camera.eye())
 	_material.set_shader_parameter("cam_right", _camera.right())
 	_material.set_shader_parameter("cam_up", _camera.up())

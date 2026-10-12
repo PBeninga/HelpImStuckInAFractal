@@ -75,10 +75,10 @@ func run() -> void:
 	check_eq(main.params.gameplay.exit_radius, 5.0, "the radius control edits the live sphere")
 	main.camera.set_eye(6.0, 0.0, 0.0)
 	await frames(1)
-	check(main.escape_label.visible and main.escape_label.text == "You escaped!", "leaving the sphere shows the escape HUD")
+	check(main.find_child("EscapeMessage", true, false) == null, "escaping no longer displays a text HUD")
 	pane.return_button.pressed.emit()
 	check_eq(main.camera.eye64(), PackedFloat64Array([0.0, 0.0, 0.0]), "Return to spawn uses the default origin")
-	check(not main.escape_label.visible, "returning to spawn clears the HUD immediately")
+	check_eq(main.view._material.get_shader_parameter("exit_has_skybox"), false, "returning to spawn disables sky sampling immediately")
 	main.params.gameplay.spawn_x = 1.23456789012345
 	main.params.gameplay.spawn_y = -2.0
 	main.params.gameplay.spawn_z = 3.0
@@ -101,6 +101,6 @@ func run() -> void:
 	var sky := ImageTexture.create_from_image(image)
 	main.params.gameplay.exit_skybox = sky
 	check(mat.get_shader_parameter("exit_skybox") == sky, "an optional sky texture reaches the sphere material")
-	check_eq(mat.get_shader_parameter("exit_has_skybox"), true, "the material enables sky sampling when a texture is assigned")
+	check_eq(mat.get_shader_parameter("exit_has_skybox"), false, "assigning a texture inside the boundary does not enable sky sampling")
 	main.queue_free()
 	await frames(1)

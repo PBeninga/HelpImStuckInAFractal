@@ -66,7 +66,7 @@ func run() -> void:
 	check(material.row(&"light_color") == null and light.row(&"color_mode") == null,
 		"neither tab holds the other's rows")
 	check(material.row(&"palette_a_r") != null, "the palette's twelve numbers are on the Material tab")
-	check_eq(console.tabs().get_tab_count(), 5, "five tabs")
+	check_eq(console.tabs().get_tab_count(), 6, "six tabs")
 	check_eq(console.tabs().get_tab_title(0), "Shape", "the first is Shape")
 	check_eq(console.tabs().get_tab_title(1), "Light", "the second Light")
 	check_eq(console.tabs().get_tab_title(2), "Material", "the third Material")
