@@ -44,7 +44,7 @@ const VERSION := 4
 const FRACTAL_KEYS: Array[String] = [
 	"fast_controls", "camera_mode", "mouse_sensitivity",
 	"detail", "detail_range", "detail_falloff", "max_steps", "min_render_scale",
-	"fractal_iterations",
+	"fractal_iterations", "painterly_enabled", "painterly_scale", "painterly_brush_size",
 ]
 const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
 
@@ -145,6 +145,10 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 
 	var fractal: Variant = data.get("fractal", {})
 	if fractal is Dictionary:
+		# Pre-painting levels should retain their original presentation even
+		# when loaded immediately after a level that opted into painting.
+		if not fractal.has("painterly_enabled"):
+			params.painterly_enabled = false
 		for key in fractal:
 			# Retired renderer settings in older levels are harmless and discarded.
 			if key in ["perturbation_enabled", "perturbation_iterations"]:
@@ -336,12 +340,12 @@ static func _migrate_v1(data: Dictionary) -> Dictionary:
 ## The typed value for one "fractal" key, or null when malformed.
 static func _parse_fractal(key: String, raw: Variant) -> Variant:
 	match key:
-		"fast_controls":
+		"fast_controls", "painterly_enabled":
 			return raw if raw is bool else null
 		"camera_mode":
 			var index := CAMERA_MODE_NAMES.find(String(raw)) if raw is String else -1
 			return index if index >= 0 else null
-		"precision", "mouse_sensitivity", "detail", "detail_range", "min_render_scale":
+		"precision", "mouse_sensitivity", "detail", "detail_range", "min_render_scale", "painterly_scale", "painterly_brush_size":
 			return float(raw) if (raw is float or raw is int) and float(raw) > 0.0 else null
 		"detail_falloff":
 			return float(raw) if (raw is float or raw is int) and float(raw) >= 0.0 else null

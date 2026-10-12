@@ -51,6 +51,9 @@ var _camera: CameraState
 var _viewport: SubViewport
 var _rect: ColorRect
 var _display: TextureRect
+var _paint_viewport: SubViewport
+var _paint_rect: TextureRect
+var _brush_material: ShaderMaterial
 var _material: ShaderMaterial
 var _pending_size := Vector2i(1280, 800)
 
@@ -98,6 +101,7 @@ func _ready() -> void:
 	# A content-scale change resizes the window's viewport without necessarily
 	# resizing this Control; the pixel size still has to follow.
 	get_viewport().size_changed.connect(_apply_size)
+	_update_painterly()
 	_apply_size()
 	# setup() may have run before _ready wired the material (e.g. a test or the
 	# screenshot pass that adds the view and calls setup() in the same frame).
@@ -127,6 +131,8 @@ func setup(params: FractalParams, camera: CameraState) -> void:
 		params.changed.connect(_on_params_changed)
 	if not camera.changed.is_connected(_on_camera_changed):
 		camera.changed.connect(_on_camera_changed)
+	_update_painterly()
+	_apply_size()
 	_push_params()
 	_push_camera()
 	_push_probe()
@@ -248,12 +254,12 @@ func viewport_size() -> Vector2i:
 	return _viewport.size
 
 
-## The last frame the view rendered, at its current render scale (full scale
-## once the governor has settled). null before _ready.
+## The last presented frame: the full-resolution painted target when enabled,
+## otherwise the ray target at its current scale. null before _ready.
 func capture() -> Image:
 	if _viewport == null:
 		return null
-	return _viewport.get_texture().get_image()
+	return _display.texture.get_image()
 
 
 func set_render_scale(s: float) -> void:
@@ -370,7 +376,17 @@ func _aspect() -> float:
 func _apply_size() -> void:
 	if _viewport == null:
 		return  # setup()/set_render_scale() may run before _ready
-	var s := render_scale * _content_scale()
+	# The governor may restore its scale to 1 at rest. Painting keeps its
+	# independent ceiling, while still allowing the governor to go lower.
+	var ray_scale := render_scale
+	if _params != null and _params.painterly_enabled:
+		ray_scale = minf(ray_scale, _params.painterly_scale)
+	var s := ray_scale * _content_scale()
+	if _brush_material != null:
+		_brush_material.set_shader_parameter("display_size", size)
+		var display_px := Vector2i(maxi(1, roundi(size.x * _content_scale())), maxi(1, roundi(size.y * _content_scale())))
+		_paint_viewport.size = display_px
+		_paint_rect.size = Vector2(display_px)
 	var px := Vector2i(maxi(1, int(round(size.x * s))), maxi(1, int(round(size.y * s))))
 	if _material:
 		_material.set_shader_parameter("aspect", _aspect())
@@ -390,7 +406,38 @@ func _content_scale() -> float:
 	return win.content_scale_factor if win != null else 1.0
 
 
+func _update_painterly() -> void:
+	if _display == null:
+		return
+	if _params == null or not _params.painterly_enabled:
+		_display.texture = _viewport.get_texture()
+		if _paint_viewport != null:
+			_paint_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		return
+	if _brush_material == null:
+		# A full-resolution presentation target keeps clipboard/MCP capture
+		# identical to the on-screen painting without re-marching any rays.
+		_paint_viewport = SubViewport.new()
+		_paint_viewport.name = "PaintViewport"
+		_paint_viewport.disable_3d = true
+		add_child(_paint_viewport)
+		_paint_rect = TextureRect.new()
+		_paint_rect.texture = _viewport.get_texture()
+		_paint_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_paint_rect.stretch_mode = TextureRect.STRETCH_SCALE
+		_paint_viewport.add_child(_paint_rect)
+		_brush_material = ShaderMaterial.new()
+		_brush_material.shader = preload("res://src/fractal/painterly.gdshader")
+		_brush_material.set_shader_parameter("ray_texture", _viewport.get_texture())
+	_brush_material.set_shader_parameter("brush_size", _params.painterly_brush_size)
+	_paint_rect.material = _brush_material
+	_display.texture = _paint_viewport.get_texture()
+	_paint_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+
+
 func _on_params_changed() -> void:
+	_update_painterly()
+	_apply_size()
 	_push_params()
 	_push_probe()
 	request_frame()

@@ -12,6 +12,9 @@ var steps_slider: HSlider
 var iterations_slider: HSlider
 var fast_check: CheckBox
 var min_scale_slider: HSlider
+var painterly_check: CheckBox
+var painterly_scale_slider: HSlider
+var painterly_brush_slider: HSlider
 var reset_button: Button
 
 var _params: FractalParams
@@ -42,9 +45,19 @@ func _init() -> void:
 	min_scale_slider = _slider(grid, "Min resolution", FractalParams.RENDER_SCALE_FLOOR, 1.0, 0.05, false,
 		"With Fast Controls on, the lowest render scale used while moving to target 60 fps.")
 
+	painterly_scale_slider = _slider(grid, "Painting ray resolution", FractalParams.RENDER_SCALE_FLOOR, FractalParams.PAINTERLY_SCALE_MAX, 0.05, false,
+		"Persistent ceiling on ray resolution, even at rest. 30% uses about 9% of the full-resolution primary rays; Fast Controls may go lower.")
+	painterly_brush_slider = _slider(grid, "Brush size", FractalParams.PAINTERLY_BRUSH_MIN, FractalParams.PAINTERLY_BRUSH_MAX, 1.0, false,
+		"Stroke size in screen pixels. Marks follow sampled colour edges and remain visible at rest.")
+	painterly_check = CheckBox.new()
+	painterly_check.text = "Painterly brushstrokes"
+	painterly_check.tooltip_text = "March fewer camera rays, then paint overlapping brush dabs at full display resolution. Saved with the level."
+	painterly_check.focus_mode = Control.FOCUS_NONE
+	add_child(painterly_check)
+
 	fast_check = CheckBox.new()
 	fast_check.text = "Fast Controls"
-	fast_check.tooltip_text = "Lower the resolution while moving to target 60 fps; render one full frame when still."
+	fast_check.tooltip_text = "Lower the resolution while moving to target 60 fps; restore resolution when still (up to the painting ceiling if enabled)."
 	fast_check.focus_mode = Control.FOCUS_NONE
 	add_child(fast_check)
 
@@ -63,6 +76,9 @@ func _init() -> void:
 	min_scale_slider.value_changed.connect(func(v): _write(func(): _params.min_render_scale = v))
 	iterations_slider.value_changed.connect(func(v): _write(func(): _params.fractal_iterations = int(v)))
 	fast_check.toggled.connect(func(on): _write(func(): _params.fast_controls = on))
+	painterly_check.toggled.connect(func(on): _write(func(): _params.painterly_enabled = on))
+	painterly_scale_slider.value_changed.connect(func(v): _write(func(): _params.painterly_scale = v))
+	painterly_brush_slider.value_changed.connect(func(v): _write(func(): _params.painterly_brush_size = v))
 	reset_button.pressed.connect(reset_defaults)
 
 
@@ -86,6 +102,9 @@ func reset_defaults() -> void:
 	_params.max_steps = d.max_steps
 	_params.min_render_scale = d.min_render_scale
 	_params.fast_controls = d.fast_controls
+	_params.painterly_enabled = d.painterly_enabled
+	_params.painterly_scale = d.painterly_scale
+	_params.painterly_brush_size = d.painterly_brush_size
 
 
 func _write(action: Callable) -> void:
@@ -112,6 +131,13 @@ func _refresh() -> void:
 	_values[steps_slider].text = str(_params.max_steps)
 	_values[min_scale_slider].text = "%d%%" % roundi(_params.min_render_scale * 100.0)
 	min_scale_slider.editable = _params.fast_controls
+	painterly_check.set_pressed_no_signal(_params.painterly_enabled)
+	painterly_scale_slider.set_value_no_signal(_params.painterly_scale)
+	painterly_brush_slider.set_value_no_signal(_params.painterly_brush_size)
+	_values[painterly_scale_slider].text = "%d%%" % roundi(_params.painterly_scale * 100.0)
+	_values[painterly_brush_slider].text = "%d px" % roundi(_params.painterly_brush_size)
+	painterly_scale_slider.editable = _params.painterly_enabled
+	painterly_brush_slider.editable = _params.painterly_enabled
 	_syncing = false
 
 

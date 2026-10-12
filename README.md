@@ -103,7 +103,22 @@ rendered, and are saved with the view.
 | **Max march steps** | the step budget per ray (default 96: 72 coarse + 24 fine) |
 | **Fractal iterations** | work per distance estimate (default 16; 32 for deeper structure) |
 | **Min resolution** | the lowest render scale Fast Controls may drop to while moving (default 10%) |
-| **Fast Controls** | target 60 fps while anything moves, then return to full resolution when it stops |
+| **Fast Controls** | target 60 fps while anything moves, then restore resolution up to the painting ceiling when enabled |
+| **Painterly brushstrokes** | opt into gradient-oriented brush dabs over a smaller ray-marched image |
+| **Painting ray resolution** | persistent resolution ceiling, including at rest (default 30% per dimension, about 9% of the primary rays) |
+| **Brush size** | stroke size in logical screen pixels, independent of ray resolution (default 12 px) |
+
+Painting is off by default. Enable **Painterly brushstrokes** in the console's
+**View → Renderer** options. The low-resolution pass does the actual camera
+ray marching; a separate full-resolution pass paints deterministic overlapping
+dabs along sampled colour gradients. Colour-aware weights limit bleeding across
+strong edges. Fast Controls can reduce the ray resolution further under load,
+but settling never removes the painting ceiling or the brush marks. Settings
+save with the level, and clipboard/MCP captures preserve the painted image.
+Older levels load with painting disabled. Screen-anchored marks are stable at
+rest; they can slide over surfaces during camera motion. Very thin silhouettes
+may disappear below the chosen ray resolution, and equal-colour depth edges
+cannot be distinguished by this colour-guided presentation pass.
 
 A ray stops once the distance estimate falls below
 `precision / detail × t × max(1, t / (range × d₀))^falloff`, where `t` is the
@@ -181,7 +196,7 @@ with 1 s between changes; restoration needs 2 s above 59.5 fps, so a display
 paced to 60 Hz can recover quality. A quick relapse doubles the restoration
 wait, up to 16 s. Fog, detail and march multipliers ease back over 18 frames;
 iteration caps, absolute march caps and surface effects change with the level.
-When movement stops, a full-resolution frame uses the saved view quality and
+When movement stops, a final frame (capped at the painting resolution when enabled) uses the saved view quality and
 then freezes. The moving scale and shed level are remembered for the next move.
 The console's Movement pane shows `load shed N/4`.
 

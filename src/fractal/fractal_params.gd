@@ -307,6 +307,19 @@ const FRACTAL_ITERATIONS_MAX := 32
 	set(v): detail_falloff = clampf(v, 0.0, DETAIL_FALLOFF_MAX); emit_changed()
 @export var min_render_scale: float = 0.1:
 	set(v): min_render_scale = clampf(v, RENDER_SCALE_FLOOR, 1.0); emit_changed()
+## Painterly presentation has a persistent ray-resolution ceiling, including at
+## rest. Brush size is in logical screen pixels, independent of ray resolution.
+const PAINTERLY_SCALE_MAX := 0.75
+const PAINTERLY_BRUSH_MIN := 4.0
+const PAINTERLY_BRUSH_MAX := 40.0
+@export var painterly_enabled: bool = false:
+	set(v): painterly_enabled = v; emit_changed()
+@export var painterly_scale: float = 0.3:
+	set(v): painterly_scale = clampf(v, RENDER_SCALE_FLOOR, PAINTERLY_SCALE_MAX); emit_changed()
+@export var painterly_brush_size: float = 12.0:
+	set(v): painterly_brush_size = clampf(v, PAINTERLY_BRUSH_MIN, PAINTERLY_BRUSH_MAX); emit_changed()
+
+
 @export var max_steps: int = 96:
 	set(v): max_steps = clampi(v, MAX_STEPS_MIN, MAX_STEPS_MAX); emit_changed()
 
