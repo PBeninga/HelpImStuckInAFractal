@@ -220,6 +220,17 @@ func run() -> void:
 	await frames(1)
 	check_eq(int(mat.get_shader_parameter("shape_count")), 1, "removing it drops shape_count")
 
+	# near_dist follows the camera below 1e-6: measured from the 64-bit eye, clamped only at 1e-14
+	var snear := SurfaceFixture.default_surface(params)
+	var enear := SurfaceFixture.backed(snear, 1e-8)
+	cam.set_eye64(enear[0], enear[1], enear[2])
+	await frames(1)
+	var dnear := DistanceEstimator.scene_estimate_at(enear[0], enear[1], enear[2], params)
+	check_eq(float(mat.get_shader_parameter("near_dist")), maxf(dnear, FractalParams.NEAR_FLOOR),
+		"a camera 1e-8 short of the surface pushes its own distance (%s)" % dnear)
+	check(float(mat.get_shader_parameter("near_dist")) < 1e-7, "not the old 1e-6 clamp")
+	cam.transform = home   # back from the 1e-8 camera
+
 	# the shape switch reaches the shader, and the bounding cube follows the shape
 	check_approx(float(_slot0(mat, "box_half")), 2.0, "the Mandelbox marches in its cube of half-side 2")
 	params.shape().apply_resolved({&"shape": FractalParams.Shape.KIFS, &"kifs_scale": 2.5, &"kifs_rot2_yz": 12.0})

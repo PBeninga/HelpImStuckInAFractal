@@ -48,7 +48,10 @@ func hit() -> bool:
 ## The world point the ray hit. Only meaningful while hit() is true.
 func point() -> Vector3:
 	_update()
-	return _camera.eye() + _camera.forward() * (_distance if _hit else 0.0)
+	var e := _camera.eye64()
+	var f := _camera.forward()
+	var t := _distance if _hit else 0.0
+	return Vector3(e[0] + f.x * t, e[1] + f.y * t, e[2] + f.z * t)
 
 
 func _mark_dirty() -> void:

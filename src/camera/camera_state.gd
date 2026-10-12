@@ -22,7 +22,7 @@ const DEFAULT_EYE := Vector3(8.175847, 3.812460, 3.283393)
 	set(v):
 		if v == transform:
 			return
-		if v.origin != transform.origin:
+		if v.origin != Vector3(_ex, _ey, _ez):   # the mirror keeps the doubles
 			_ex = v.origin.x
 			_ey = v.origin.y
 			_ez = v.origin.z
@@ -64,20 +64,30 @@ func eye_z() -> float:
 func set_eye(x: float, y: float, z: float) -> void:
 	if x == _ex and y == _ey and z == _ez:
 		return
-	var t := transform
-	t.origin = Vector3(x, y, z)
-	var mirror_moved := t != transform
-	transform = t   # emits when the mirror moved (and copies the rounded origin)
-	_ex = x
+	_ex = x   # first, so a listener of `changed` reads the new doubles
 	_ey = y
 	_ez = z
-	if not mirror_moved:
-		emit_changed()
+	var t := transform
+	t.origin = Vector3(x, y, z)
+	if t == transform:
+		emit_changed()   # the doubles moved under the same mirror
+	else:
+		transform = t    # its origin is the new mirror, so the doubles stay
 
 
 ## Move the eye by a world-space delta, accumulated in 64-bit.
 func move_by(delta: Vector3) -> void:
 	set_eye(_ex + delta.x, _ey + delta.y, _ez + delta.z)
+
+
+## The 64-bit eye as one array (the deep-zoom code passes it around whole).
+func eye64() -> PackedFloat64Array:
+	return PackedFloat64Array([_ex, _ey, _ez])
+
+
+## set_eye() under the deep-zoom code's name.
+func set_eye64(x: float, y: float, z: float) -> void:
+	set_eye(x, y, z)
 
 
 ## Re-orient without touching the 64-bit eye.

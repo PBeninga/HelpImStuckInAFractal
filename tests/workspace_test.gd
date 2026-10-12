@@ -349,6 +349,8 @@ func run() -> void:
 		for action in [StringName("axis_%s_pos" % id), StringName("axis_%s_neg" % id)]:
 			if InputMap.has_action(action):
 				InputMap.erase_action(action)
+	_deep_eye()
+
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TMP))
 
 
@@ -356,3 +358,44 @@ func _write(path: String, text: String) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(text)
 	f.close()
+
+
+## The eye is saved at full precision, so a deep view comes back exactly through
+## capture/restore and to within one 64-bit rounding step through a file; the
+## shipped default save loads to the same camera as before.
+func _deep_eye() -> void:
+	var deep_params := FractalParams.new()
+	var s := SurfaceFixture.default_surface(deep_params)
+	var deep := SurfaceFixture.backed(s, 1e-9)
+	var dc := CameraState.make_default()
+	dc.set_eye64(deep[0], deep[1], deep[2])
+	var cap := Workspace.capture(_table(), _look(), _keymap(), deep_params, dc)
+	var back := CameraState.make_default()
+	Workspace.restore(cap, _table(), _look(), _keymap(), FractalParams.new(), back)
+	check_eq(back.eye64(), dc.eye64(), "a capture 1e-9 from the surface restores the 64-bit eye exactly")
+	check(back.transform.basis.is_equal_approx(dc.transform.basis), "and the same orientation")
+	check_eq(Workspace.save_file(TMP, _table(), _look(), _keymap(), deep_params, dc), OK, "a deep view saves")
+	var from_file := CameraState.make_default()
+	Workspace.load_file(TMP, _table(), _look(), _keymap(), FractalParams.new(), from_file)
+	# Godot's float parser is not correctly rounded: about a third of doubles come
+	# back one 64-bit step (ulp) off, at most about 4e-15 for coordinates under 20,
+	# thousands of times below the deepest zoom floor (about 5e-12)
+	var fe := from_file.eye64()
+	var want := dc.eye64()
+	var worst := 0.0
+	for j in 3:
+		worst = maxf(worst, absf(fe[j] - want[j]))
+	check(worst <= 4e-15, "and loads from the file to within a 64-bit rounding step (%s): full-precision JSON" % worst)
+
+	# --- saves/default.json loads to the same camera as before ---
+	var dj := CameraState.new()
+	var res := Workspace.load_file("res://saves/default.json", _table(), _look(), _keymap(), FractalParams.new(), dj)
+	check(res["ok"], "saves/default.json loads")
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://saves/default.json"))["camera"]
+	var re := Vector3(raw["eye"][0], raw["eye"][1], raw["eye"][2])
+	var rf := Vector3(raw["forward"][0], raw["forward"][1], raw["forward"][2]).normalized()
+	var ru := Vector3(raw["up"][0], raw["up"][1], raw["up"][2]).normalized()
+	check_eq(dj.transform, Transform3D(Basis.looking_at(rf, ru), re),
+		"to exactly the transform it loaded to before")
+	check_eq(dj.eye64(), PackedFloat64Array([raw["eye"][0], raw["eye"][1], raw["eye"][2]]),
+		"with the file's own digits as the 64-bit eye")

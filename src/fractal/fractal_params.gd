@@ -242,7 +242,7 @@ const DETAIL_MAX := 10.0
 const DETAIL_RANGE_MIN := 1.0
 const DETAIL_RANGE_MAX := 1000.0
 const DETAIL_FALLOFF_MAX := 3.0
-const NEAR_FLOOR := 1e-6   # the near distance never reaches 0 (a camera on the surface)
+const NEAR_FLOOR := 1e-14   # only guards against a zero: near must follow the camera below 1e-6
 ## The Kleinian's bounding cube: effectively none (ShapeParams.bound_half()).
 const KLEINIAN_BOUND := ShapeParams.KLEINIAN_BOUND
 

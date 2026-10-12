@@ -116,6 +116,31 @@ func run() -> void:
 	view.queue_free()
 	await frames(1)
 
+	# --- the 64-bit march: march() is march_at() on the same origin, and from
+	# 1e-8 short of the Kleinian's surface (which resolves far below that) only a
+	# 64-bit origin hits (measured while planning: t/back 1.011 from the 64-bit
+	# origin; a 32-bit origin there is about 1e-7 off, ten times the distance) ---
+	var e := CameraState.make_default().eye()
+	var f0 := CameraState.make_default().forward()
+	check_eq(CenterRay.march_at(e.x, e.y, e.z, f0, params), CenterRay.march(e, f0, params),
+		"march() is march_at() on the same origin")
+	var klp := FractalParams.new()
+	klp.shape().shape = FractalParams.Shape.KLEINIAN
+	var sf := SurfaceFixture.surface_from(klp, Vector3(2.5, 1.6, 1.2))
+	var sdir := Vector3(sf[3], sf[4], sf[5])
+	var o := SurfaceFixture.backed(sf, 1e-8)
+	var r64 := CenterRay.march_at(o[0], o[1], o[2], sdir, klp)
+	check(r64[1] and absf(r64[0] / 1e-8 - 1.0) < 0.05,
+		"from 1e-8 the 64-bit origin hits at about 1e-8 (hit %s, t/back %s)" % [r64[1], r64[0] / 1e-8])
+	var r32 := CenterRay.march(Vector3(o[0], o[1], o[2]), sdir, klp)
+	check(not r32[1] or absf(r32[0] / 1e-8 - 1.0) > 0.05,
+		"the same ray from the 32-bit-rounded origin does not (hit %s, t/back %s)" % [r32[1], r32[0] / 1e-8])
+	var deep_cam := CameraState.new()
+	deep_cam.transform = Transform3D(Basis.IDENTITY, Vector3(o[0], o[1], o[2])).looking_at(Vector3(o[0], o[1], o[2]) + sdir, Vector3(0, 0, 1))
+	deep_cam.set_eye64(o[0], o[1], o[2])
+	var cached := CenterRay.new(klp, deep_cam).distance()
+	check(absf(cached / r64[0] - 1.0) < 0.01, "the cached ray marches from the 64-bit eye (%s against %s)" % [cached, r64[0]])
+
 	# --- Main: R toggles the dot, kept in Settings ---
 	var settings: Node = root.get_node("Settings")
 	var original_path: String = settings.config_path

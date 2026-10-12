@@ -32,8 +32,9 @@ extends RefCounted
 ## light_shininess (from before Roughness replaced it) becomes roughness =
 ## sqrt(2 / (shininess + 2)) with no warning; a binding on light_shininess is
 ## dropped with one. Saving always writes version 4. The camera's eye is
-## written with 15 significant digits: a camera inside a nested shape sits at a
-## position the 7 digits the unit vectors get would not hold.
+## written at full precision (every digit of its 64-bit value): a camera inside
+## a nested shape, or deep in a perturbed view, sits at a position the 7 digits
+## the unit vectors get would not hold.
 
 const VERSION := 4
 
@@ -63,7 +64,7 @@ static func capture(shapes: ShapeList, look: AttributeTable, keymap: Keymap, par
 		"axes": keymap.to_list(),
 		"fractal": fractal,
 		"camera": {
-			"eye": [_tidy(camera.eye_x(), 15), _tidy(camera.eye_y(), 15), _tidy(camera.eye_z(), 15)],
+			"eye": _eye_to_array(camera),
 			"forward": _vec_to_array(camera.forward()),
 			"up": _vec_to_array(camera.up()),
 			"speed_factor": camera.speed_factor,
@@ -164,7 +165,7 @@ static func save_file(path: String, shapes: ShapeList, look: AttributeTable, key
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(capture(shapes, look, keymap, params, camera, noise), "\t", false))
+	file.store_string(JSON.stringify(capture(shapes, look, keymap, params, camera, noise), "\t", false, true))
 	file.close()
 	return OK
 
@@ -360,6 +361,12 @@ static func _restore_camera(cam: Dictionary, camera: CameraState, warnings: Arra
 			camera.speed_factor = float(s)
 		else:
 			warnings.append("Malformed camera speed_factor ignored")
+
+
+## The 64-bit eye at full precision (no _tidy: a deep view needs every digit).
+static func _eye_to_array(camera: CameraState) -> Array:
+	var e := camera.eye64()
+	return [e[0], e[1], e[2]]
 
 
 static func _vec_to_array(v: Vector3) -> Array:

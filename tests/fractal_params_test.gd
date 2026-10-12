@@ -283,3 +283,4 @@ func run() -> void:
 	check(zs.zoom_floor_at(at.x, at.y, at.z) < zf.zoom_floor(near_box) * 0.002,
 		"a thousandth-size shape has about a thousandth of the floor (%s vs %s)" % [zs.zoom_floor_at(at.x, at.y, at.z), zf.zoom_floor(near_box)])
 	check_approx(zs.zoom_floor_at(at.x, at.y, at.z), tiny.zoom_floor(at.x, at.y, at.z), "which is the shape's own zoom_floor at that eye", 1e-15)
+	check_eq(FractalParams.NEAR_FLOOR, 1e-14, "near is clamped only against a zero (1e-14), not at 1e-6")
