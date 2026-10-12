@@ -41,7 +41,6 @@ var ship_depth_scanner := preload("res://src/mcp/ship_depth_scan.gd").new()
 var _orbit: OrbitCamera
 var _marker: JuliaMarker
 var _shapes: ShapeList
-var _look: AttributeTable
 var _keymap: Keymap
 var _axis_controller: AxisController
 var _clock: Clock
@@ -86,7 +85,6 @@ func _ready() -> void:
 	_shapes.table(0).set_default(&"shape", FractalParams.Shape.KLEINIAN)
 	_shapes.set_stage(0, 0.0, ["inversion -0.5"])
 	_shapes.changed.connect(_sync_shapes)
-	_look = AttributeTable.new(ShapeCatalogue.scene_specs())
 	_keymap = Keymap.new()
 	_keymap.reset_to_default()   # the shipped default (E / Q) until a level is loaded
 
@@ -146,6 +144,7 @@ func _ready() -> void:
 	shape_run.stage_activated.connect(_on_stage_activated)
 	params.gameplay.changed.connect(_refresh_shape_boundary)
 	_shapes.stage_changed.connect(func(_i): _restart_shape_run())
+	_shapes.next_level_distance_changed.connect(func(_i): _refresh_shape_boundary())
 	camera.changed.connect(_check_shape_progress)
 	var bridge := get_node_or_null("/root/McpBridge")
 	if bridge != null:
@@ -212,9 +211,9 @@ func shapes() -> ShapeList:
 	return _shapes
 
 
-## The scene's look table (light and material).
+## The selected shape's look table (light and material).
 func look_table() -> AttributeTable:
-	return _look
+	return _shapes.look_table(clampi(params.active, 0, _shapes.count() - 1))
 
 
 ## The active (console-selected) shape's table.
@@ -242,7 +241,7 @@ func new_shape_defaults() -> Dictionary:
 
 ## Add a shape from the console's defaults and make it the active one.
 func add_shape() -> int:
-	var i := _shapes.add(new_shape_defaults())
+	var i := _shapes.add(new_shape_defaults(), "", look_table().defaults())
 	if i >= 0:
 		if _console != null:
 			_console.shape_pane().set_expanded(i, true)
@@ -276,7 +275,7 @@ func _build_clock() -> void:
 func _build_console() -> void:
 	_console = ConsoleWindow.new()
 	_console.name = "ConsoleWindow"
-	_console.setup(_shapes, _look, _keymap, _clock, ShapeCatalogue.group_tooltips(),
+	_console.setup(_shapes, look_table(), _keymap, _clock, ShapeCatalogue.group_tooltips(),
 		func() -> float: return camera.speed_factor, new_shape_defaults)
 	add_child(_console)
 	_console.shape_pane().selected_changed.connect(func(i: int): params.active = i)
@@ -545,12 +544,14 @@ func _resolve_once() -> void:
 		if shape_run != null and not _loading:
 			all[i].merge(shape_run.overrides(i), true)
 		params.shapes[i].apply_resolved(all[i])
-	var look := BindingResolver.resolve(_look, axis_values, _clock.t)
+	# Only resolve the rendered shape's look: inactive editor previews use defaults.
+	var rendered_shape := clampi(params.gameplay_active if params.gameplay_active >= 0 else params.active, 0, _shapes.count() - 1)
+	var look := BindingResolver.resolve(_shapes.look_table(rendered_shape), axis_values, _clock.t)
 	params.apply_resolved(look)
 	FrameProfiler.end(&"Bindings + scene updates", started)
 	if _console != null and _console.visible:
 		started = FrameProfiler.begin()
-		_console.set_resolved(all, look)
+		_console.set_resolved(all, look, rendered_shape)
 		var active: Dictionary = all[clampi(params.active, 0, all.size() - 1)]
 		_console.show_self_similarity(ShapeCatalogue.self_similarity(
 			active, NoiseCompiler.displaces(view.noise_graph())))
@@ -561,7 +562,7 @@ func _resolve_once() -> void:
 
 func save_level_to(path: String) -> void:
 	var noise: Dictionary = _noise.to_dict() if _noise != null else {}
-	var err := Workspace.save_file(path, _shapes, _look, _keymap, params, camera, noise)
+	var err := Workspace.save_file(path, _shapes, look_table(), _keymap, params, camera, noise)
 	if err != OK:
 		_report("Save failed (error %d): %s" % [err, path])
 		return
@@ -575,7 +576,7 @@ func save_level_to(path: String) -> void:
 
 func load_level_from(path: String) -> void:
 	_loading = true
-	var result := Workspace.load_file(path, _shapes, _look, _keymap, params, camera)
+	var result := Workspace.load_file(path, _shapes, look_table(), _keymap, params, camera)
 	_loading = false
 	params.mouse_sensitivity = Settings.mouse_sensitivity
 	var warnings: Array = result["warnings"]
@@ -583,6 +584,8 @@ func load_level_from(path: String) -> void:
 		_report("Load failed: %s" % warnings[0])
 		return
 	_files.note_loaded(path)
+	if _console != null:
+		_console.shape_pane().select(params.active)
 	if shape_run != null:
 		_restart_shape_run()
 	_resolve_once()   # push the loaded table straight into params

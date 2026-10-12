@@ -1,9 +1,9 @@
 class_name Workspace
 extends RefCounted
-## Saving and loading a level as JSON, version 4: the shapes as a list (each a
+## Saving and loading a level as JSON, version 5: the shapes as a list (each a
 ## label and an AttributeTable over the per-shape catalogue: defaults + active
-## bindings, placement included), which one is active, the look as an
-## AttributeTable over the scene catalogue (light and material), the keymap
+## bindings, placement included), its own look table (light and material),
+## which one is active, the keymap
 ## (its axes, keys, speeds and values), the non-shape preference fields, the
 ## camera, gameplay (spawn, exit sphere and movement), and the noise graph.
 ## There is one file type — the level — tagged
@@ -32,12 +32,12 @@ extends RefCounted
 ## keys left alone) still load the same way, all without warnings. A saved
 ## light_shininess (from before Roughness replaced it) becomes roughness =
 ## sqrt(2 / (shininess + 2)) with no warning; a binding on light_shininess is
-## dropped with one. Saving always writes version 4. The camera's eye is
+## dropped with one. Saving always writes version 5. The camera's eye is
 ## written at full precision (every digit of its 64-bit value): a camera inside
 ## a nested shape sits at a position the 7 digits
 ## the unit vectors get would not hold.
 
-const VERSION := 4
+const VERSION := 5
 
 ## The preference and renderer fields kept under "fractal" (everything that is
 ## not a shape knob), in file order.
@@ -52,7 +52,7 @@ const CAMERA_MODE_NAMES: Array[String] = ["fly", "orbit"]
 
 
 ## Snapshot the level. Pure: it reads, it does not change anything.
-static func capture(shapes: ShapeList, look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Dictionary:
+static func capture(shapes: ShapeList, _look: AttributeTable, keymap: Keymap, params: FractalParams, camera: CameraState, noise := {}) -> Dictionary:
 	var fractal := {}
 	for key in FRACTAL_KEYS:
 		var value: Variant = params.get(key)
@@ -65,7 +65,6 @@ static func capture(shapes: ShapeList, look: AttributeTable, keymap: Keymap, par
 		"gameplay": params.gameplay.to_dict(),
 		"shapes": shapes.to_dict(),
 		"active": params.active,
-		"look": look.to_dict(),
 		"axes": keymap.to_list(),
 		"fractal": fractal,
 		"camera": {
@@ -80,7 +79,8 @@ static func capture(shapes: ShapeList, look: AttributeTable, keymap: Keymap, par
 	return out
 
 
-## Apply a capture. Accepts version 4 ("shapes" a list, "look" a table),
+## Apply a capture. Version 5 stores look per shape; older shared looks are
+## copied into independent shape tables. Accepts version 4 ("shapes" a list, "look" a table),
 ## version 3 (one "shape" table, split here into one shape and the look) and
 ## version 2 ("axes" a dict of id→value, applied onto the axes in hand, keys
 ## left alone). Returns the warnings.
@@ -91,12 +91,22 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 
 	if data.has("shape") and not data.has("shapes"):
 		data = _split_shape(data)
+	var saved_look: Variant = data.get("look", {})
+	var legacy_look := {}
+	if saved_look is Dictionary:
+		legacy_look = _migrate_shininess(saved_look, warnings)
+	else:
+		warnings.append("Malformed look section ignored")
 	var saved_shapes: Variant = data.get("shapes", [])
 	if saved_shapes is Array:
 		var prepared: Array = []
 		for raw in saved_shapes:
 			if raw is Dictionary:
 				var entry: Dictionary = (raw as Dictionary).duplicate(true)
+				if not entry.has("look"):
+					entry["look"] = legacy_look.duplicate(true)
+				elif entry["look"] is Dictionary:
+					entry["look"] = _migrate_shininess(entry["look"], warnings)
 				# Levels saved before there was a choice of fractal are all Mandelboxes.
 				var defaults: Variant = entry.get("defaults", {})
 				if defaults is Dictionary and not (defaults as Dictionary).has("shape"):
@@ -116,13 +126,9 @@ static func restore(data: Dictionary, shapes: ShapeList, look: AttributeTable, k
 	else:
 		warnings.append("Malformed active shape ignored")
 
-	var saved_look: Variant = data.get("look", {})
-	if saved_look is Dictionary:
-		# An old save's light_shininess becomes the new roughness (see below).
-		for w in look.apply_dict(_migrate_shininess(saved_look as Dictionary, warnings)):
-			warnings.append(w)
-	else:
-		warnings.append("Malformed look section ignored")
+	# Compatibility output for callers of the older Workspace API. Rendering
+	# and editing use shapes.look_table() directly; this is only a snapshot.
+	look.apply_dict(shapes.look_table(params.active).to_dict())
 
 	var axis_data: Variant = data.get("axes", {})
 	if axis_data is Array:

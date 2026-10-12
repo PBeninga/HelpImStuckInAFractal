@@ -33,7 +33,7 @@ func run() -> void:
 	var clock := Clock.new()
 	root.add_child(clock)
 	console = ConsoleWindow.new()
-	look = AttributeTable.new(ShapeCatalogue.scene_specs())
+	look = shapes.look_table(0)
 	console.setup(shapes, look, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	# Shorter than the list, so there is real scroll range.

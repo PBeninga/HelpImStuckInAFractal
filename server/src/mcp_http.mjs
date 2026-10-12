@@ -20,7 +20,7 @@ export async function handleMcp(req, res, game, log = console) {
           protocolVersion: SUPPORTED.includes(params.protocolVersion) ? params.protocolVersion : SUPPORTED[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "icebox-ship", title: "Starship Icebox (call centre ship tools)", version: "1.0.0" },
-          instructions: "Fly the starship Icebox, stranded inside a fractal. Start with get_ship_status and read shape_run: the active stage, escape distances and required commands. Use apply_shape_command only in response to a new human utterance, never on startup or system events; one command per utterance. Then request scans only when needed. The game must be running with its call centre and linked to this server.",
+          instructions: "Fly the starship Icebox, stranded inside a fractal. Start with get_ship_status and read shape_run: the active stage, additive next_level_distance values, cumulative next_level_threshold values and required commands. Use apply_shape_command only in response to a new human utterance, never on startup or system events; one command per utterance. Then request scans only when needed. The game must be running with its call centre and linked to this server.",
         });
       case "ping":
         return ok({});
