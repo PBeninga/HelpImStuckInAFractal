@@ -4,6 +4,7 @@ const MAX_REGIONS := 8
 var regions: Array = []
 var seconds_left := 0.0
 var _shader := ShaderMaterial.new()
+var _suppressed := false
 
 func _init() -> void:
 	name = "ScreenTints"
@@ -22,6 +23,8 @@ func _resize() -> void:
 	_shader.set_shader_parameter("aspect", size.x / maxf(size.y, 1.0))
 
 func set_tints(args: Dictionary) -> Dictionary:
+	if _suppressed:
+		return {"ok": false, "message": "Screen guidance is hidden after escape."}
 	var items: Variant = args.get("regions")
 	var duration: Variant = args.get("seconds", 5)
 	if not items is Array or items.size() > MAX_REGIONS:
@@ -55,6 +58,11 @@ func clear() -> void:
 	seconds_left = 0.0
 	_shader.set_shader_parameter("region_count", 0)
 	hide()
+
+func set_suppressed(on: bool) -> void:
+	_suppressed = on
+	if on:
+		clear()
 
 func _process(delta: float) -> void:
 	if seconds_left > 0.0:

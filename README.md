@@ -494,7 +494,10 @@ the sky and wind-blown grass fade in beneath the player, distance fog clears,
 and the fractal dissolves with ordered dithering. **Escape Animation** sets each
 transition’s duration independently (default 3 seconds; 0 is instant). Controls
 hide and movement locks while mouse look remains available, including after
-the fades finish. Escape releases the mouse and clicking the view recaptures it.
+the fades finish. The flashing support panel is the only remaining HUD and reads
+"Dimensional void traversed, Have a nice day!" Diagnostics, chat, navigation
+guidance, and the F3 performance overlay stay hidden until the flight resets.
+Escape releases the mouse and clicking the view recaptures it.
 Returning inside, including a return to spawn, resets the effects and controls. `params.gameplay.exit_skybox` accepts an
 optional equirectangular `Texture2D` for the sphere's background; no sky picker
 is included yet. With no texture it uses the current colour mode's background.

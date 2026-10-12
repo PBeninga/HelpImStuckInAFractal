@@ -24,6 +24,8 @@ var _rendered := false
 var _render_samples := 0
 var _render_cpu := 0.0
 var _render_gpu := 0.0
+var _suppressed := false
+var _visible_before_suppression := false
 
 
 func _ready() -> void:
@@ -72,8 +74,21 @@ func _add_shortcut(window_id: int) -> void:
 	var shortcut := WindowShortcut.new()
 	shortcut.name = "PerformanceShortcut"
 	shortcut.process_mode = Node.PROCESS_MODE_ALWAYS
-	shortcut.toggle = func() -> void: visible = not visible
+	shortcut.toggle = func() -> void:
+		if not _suppressed:
+			visible = not visible
 	window.add_child(shortcut)
+
+
+func set_suppressed(on: bool) -> void:
+	if on == _suppressed:
+		return
+	_suppressed = on
+	if on:
+		_visible_before_suppression = visible
+		hide()
+	else:
+		visible = _visible_before_suppression
 
 
 func watch_viewport(viewport: SubViewport) -> void:
@@ -93,6 +108,7 @@ func _release_viewport() -> void:
 	_render_samples = 0
 	_render_cpu = 0.0
 	_render_gpu = 0.0
+	set_suppressed(false)
 
 
 func _visibility_changed() -> void:
@@ -118,6 +134,7 @@ func _visibility_changed() -> void:
 
 
 func _exit_tree() -> void:
+	_visible_before_suppression = false
 	hide()
 	_release_viewport()
 	FrameProfiler.set_enabled(false)

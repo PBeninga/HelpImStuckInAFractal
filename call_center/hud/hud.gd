@@ -45,6 +45,8 @@ var _mono: Font
 var _mono_bold: Font
 var _banner_title: Label
 var _banner_body: Label
+var _escaped := false
+var _before_escape := {}
 
 
 func _init() -> void:
@@ -83,6 +85,7 @@ func setup(features: Features, issues: IssueLog) -> void:
 
 ## Point the HUD at the ship (ship_adapter.gd), or null when no game is up.
 func set_adapter(adapter: Node) -> void:
+	set_escaped(false)
 	if _adapter != null and is_instance_valid(_adapter):
 		if _adapter.maneuver_started.is_connected(_on_maneuver_started):
 			_adapter.maneuver_started.disconnect(_on_maneuver_started)
@@ -230,13 +233,37 @@ func _build_banner() -> void:
 # ------------------------------------------------------------- public API
 
 func set_panels_visible(on: bool) -> void:
-	for p in _panels.values():
-		p.visible = on
+	for element in _panels:
+		set_panel_visible(element, on)
 
 
 func set_panel_visible(element: String, on: bool) -> void:
 	if _panels.has(element):
-		_panels[element].visible = on
+		_panels[element].visible = element == "call_panel" if _escaped else on
+
+
+## Only the flashing support sign-off remains after the final escape.
+func set_escaped(on: bool) -> void:
+	if on == _escaped:
+		return
+	_escaped = on
+	if on:
+		_before_escape = {"overlay": overlay.visible, "banner": banner.visible}
+		for element in _panels:
+			_before_escape[element] = _panels[element].visible
+		set_panels_visible(false)
+		overlay.clear()
+		overlay.hide()
+		overlay.set_process(false)
+		banner.hide()
+	else:
+		for element in _panels:
+			set_panel_visible(element, _before_escape.get(element, false))
+		overlay.visible = _before_escape.get("overlay", true)
+		overlay.set_process(true)
+		banner.visible = _before_escape.get("banner", false)
+		_before_escape.clear()
+	_refresh_call()
 
 
 func is_panel_visible(element: String) -> bool:
@@ -257,6 +284,8 @@ func reveal() -> void:
 ## owns the middle of the screen, so the log and status panels step aside
 ## (the call panel stays for the sign-off).
 func show_banner(title: String, lines: Array, seconds := 0.0) -> void:
+	if _escaped:
+		return
 	_banner_title.text = title
 	_banner_body.text = "\n".join(lines)
 	banner.visible = true
@@ -374,7 +403,7 @@ func _on_entry(entry: Dictionary) -> void:
 
 
 func _refresh_status() -> void:
-	if status_label == null or _adapter == null or not is_instance_valid(_adapter):
+	if _escaped or status_label == null or _adapter == null or not is_instance_valid(_adapter):
 		return
 	var pose: Dictionary = _adapter.pose()
 	var fwd: Vector3 = pose["forward"]
@@ -401,9 +430,12 @@ func _refresh_status() -> void:
 func _refresh_call() -> void:
 	if call_status == null:
 		return
-	var waiting := _call_state == "idle" and _link_up and _support_number != ""
+	var waiting := _escaped or (_call_state == "idle" and _link_up and _support_number != "")
 	var bright := not waiting or int(_clock * 2.0) % 2 == 0
 	call_status.add_theme_color_override("font_color", AMBER if bright else Color(1, 1, 1))
+	if _escaped:
+		call_status.text = "Dimensional void traversed, Have a nice day!"
+		return
 	match _call_state:
 		"ringing":
 			call_status.text = "Incoming connection... routing you to the next available agent"

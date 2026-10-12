@@ -661,6 +661,13 @@ func _on_escape_changed(escaped: bool) -> void:
 	if escaped == _escape_active:
 		return
 	_escape_active = escaped
+	view.screen_tints.set_suppressed(escaped)
+	var performance := get_node_or_null("/root/PerformanceMenu")
+	if performance != null:
+		performance.set_suppressed(escaped)
+	var cc := get_node_or_null("/root/CallCenter")
+	if cc != null and cc.hud != null:
+		cc.hud.set_escaped(escaped)
 	fly.movement_locked = escaped
 	_axis_controller.set_process(not escaped and not preparing)
 	_files.quick_save_enabled = not escaped

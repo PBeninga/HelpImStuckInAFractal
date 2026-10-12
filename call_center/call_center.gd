@@ -370,6 +370,7 @@ func _find_adapter(node: Node, depth: int) -> Node:
 func _check_positions() -> void:
 	var state: Dictionary = adapter.escape_state()
 	var outside: bool = state.get("escaped", false)
+	hud.set_escaped(outside)
 	if outside and not _at_exit:
 		notify_agent("escaped", "The player crossed the fractal's exit sphere and escaped.", adapter.navigation_pose())
 		exit_reached.emit("")

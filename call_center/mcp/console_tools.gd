@@ -163,6 +163,8 @@ func act(args: Dictionary) -> Dictionary:
 		return {"ok": true, "message": "Game start requested. Check get_ship_status shortly."}
 	if main == null:
 		return _fail("No console is open. Start the game first.")
+	if action in ["show_console", "show_noise"] and main.view.is_escaped():
+		return _fail("Gameplay panels stay hidden after escape. Return to spawn to start another flight.")
 	var index := int(args.get("shape_index", main.params.active))
 	if action in ["remove_shape", "select_shape", "rename_shape"] and (index < 0 or index >= main.shapes().count()):
 		return _fail("Shape index is out of range.")
