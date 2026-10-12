@@ -1,7 +1,8 @@
 class_name MainMenu
 extends Control
 ## The title screen: "Icebox Nav" over Play Game, Settings and Quit. Settings
-## swaps the list for the shared SettingsMenu. Play loads the explorer.
+## swaps the list for the shared SettingsMenu. The console edits a prepared
+## explorer; Play activates that same instance, preserving unsaved edits.
 
 const GAME_SCENE := "res://src/main.tscn"
 ## The main window's size in points (logical units); see UiScale.
@@ -13,6 +14,9 @@ var quit_button: Button
 var settings_menu: SettingsMenu
 
 var _list: VBoxContainer
+var _center: CenterContainer
+var _prepared_game: Main
+var _leaving := false
 
 
 func _ready() -> void:
@@ -30,6 +34,7 @@ func _ready() -> void:
 	add_child(bg)
 
 	var center := CenterContainer.new()
+	_center = center
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var stack := VBoxContainer.new()
@@ -57,15 +62,46 @@ func _ready() -> void:
 	settings_menu.visible = false
 	stack.add_child(settings_menu)
 
-	play_button.pressed.connect(play)
+	play_button.pressed.connect(play, CONNECT_DEFERRED)
 	settings_button.pressed.connect(show_settings.bind(true))
 	quit_button.pressed.connect(func(): get_tree().quit())
 	settings_menu.back.connect(show_settings.bind(false))
 	play_button.grab_focus.call_deferred()
+	_prepare_game.call_deferred()
+
+
+func _prepare_game() -> void:
+	if _leaving or is_instance_valid(_prepared_game) or not is_inside_tree():
+		return
+	_prepared_game = load(GAME_SCENE).instantiate() as Main
+	_prepared_game.preparing = true
+	# Keep it under the root so Play never removes its windows or signal
+	# subscriptions from the tree. Only the menu is the active scene for now.
+	get_tree().root.add_child(_prepared_game)
+	get_tree().root.move_child(_prepared_game, get_index())
+
+
+func _process(_delta: float) -> void:
+	if is_instance_valid(_prepared_game):
+		# Leave room for the console when fullscreen docks it inside this window.
+		_center.offset_right = _prepared_game.view.offset_right
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(_prepared_game):
+		_prepared_game.queue_free()
 
 
 func play() -> void:
-	get_tree().change_scene_to_file(GAME_SCENE)
+	if _leaving:
+		return
+	_prepare_game()
+	_leaving = true
+	var game := _prepared_game
+	_prepared_game = null
+	game.begin_play()
+	get_tree().current_scene = game
+	queue_free()
 
 
 func show_settings(on: bool) -> void:

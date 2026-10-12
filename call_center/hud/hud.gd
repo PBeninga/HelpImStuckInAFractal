@@ -1,22 +1,22 @@
 extends CanvasLayer
-## The call centre's HUD over the game, down the left (McpBridge's pilot chat,
-## where the conversation itself shows, has the right): ship status, the
-## scrolling SHIP DIAGNOSTICS log, the SUB-DIMENSIONAL SUPPORT panel (the
-## number to call, the call's state), the feature overlay's brackets, and a
-## banner for big moments. Never takes the mouse.
+## The call centre's HUD over the game: ship status upper-left, the diagnostics
+## log lower-right, and SUB-DIMENSIONAL SUPPORT lower-left. McpBridge's pilot
+## chat sits upper-right. Also draws feature brackets and big-moment banners.
+## Never takes the mouse.
 
 const Features := preload("res://call_center/features.gd")
 const FeatureOverlay := preload("res://call_center/hud/feature_overlay.gd")
 const IssueLog := preload("res://call_center/log/issue_log.gd")
+const FrostedGlass := preload("res://src/ui/frosted_glass.gd")
 
 const LAYER := 4
-const PANEL_BG := Color(0.02, 0.05, 0.1, 0.78)
-const PANEL_BORDER := Color(0.35, 0.75, 1.0, 0.55)
-const FLASH_BORDER := Color(1.0, 0.82, 0.3, 1.0)
+const PANEL_BG := Color(0.025, 0.14, 0.06, 0.68)
+const PANEL_BORDER := Color(0.22, 0.82, 0.38, 0.68)
+const FLASH_BORDER := Color(0.62, 1.0, 0.28, 1.0)
 const AMBER := Color(1.0, 0.85, 0.4)
 const STYLE_COLORS := {
 	"error": "#ff7b7b", "ok": "#7dffa8", "fail": "#ff4d4d", "pilot": "#ffd166",
-	"info": "#b9cdf5", "agent": "#8fd8ff", "system": "#9aa3c7",
+	"info": "#b4d9b5", "agent": "#87f59a", "system": "#93a894",
 }
 const STYLE_PREFIX := {
 	"error": "", "ok": "  -> ", "fail": "!! ", "pilot": "?? ", "info": "", "agent": "AGENT> ", "system": "-- ",
@@ -109,6 +109,7 @@ func _panel(element: String, anchor_preset: int, at: Vector2, panel_size: Vector
 	sb.set_corner_radius_all(4)
 	sb.set_content_margin_all(10)
 	p.add_theme_stylebox_override("panel", sb)
+	FrostedGlass.apply(p)
 	_root.add_child(p)
 	p.set_anchors_preset(anchor_preset)
 	if anchor_preset != Control.PRESET_LEFT_WIDE:
@@ -123,6 +124,11 @@ func _panel(element: String, anchor_preset: int, at: Vector2, panel_size: Vector
 		Control.PRESET_BOTTOM_LEFT:
 			p.offset_left = at.x
 			p.offset_right = at.x + panel_size.x
+			p.offset_top = -panel_size.y - at.y
+			p.offset_bottom = -at.y
+		Control.PRESET_BOTTOM_RIGHT:
+			p.offset_left = -panel_size.x - at.x
+			p.offset_right = -at.x
 			p.offset_top = -panel_size.y - at.y
 			p.offset_bottom = -at.y
 		Control.PRESET_LEFT_WIDE:
@@ -144,16 +150,17 @@ func _panel(element: String, anchor_preset: int, at: Vector2, panel_size: Vector
 func _title(box: VBoxContainer, text: String) -> Label:
 	var t := Label.new()
 	t.text = text
+	t.add_theme_font_override("font", _mono_bold)
 	t.add_theme_font_size_override("font_size", 13)
-	t.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
+	t.add_theme_color_override("font_color", Color(0.53, 0.95, 0.58))
 	box.add_child(t)
 	return t
 
 
 func _build_diagnostics() -> void:
-	# between the status panel and the support panel
-	var box := _panel("diagnostics_log", Control.PRESET_LEFT_WIDE, Vector2(16, 162), Vector2(440, 122))
-	_title(box, "SHIP DIAGNOSTICS  //  AUTO-RESOLUTION ACTIVE")
+	var box := _panel(
+		"diagnostics_log", Control.PRESET_BOTTOM_RIGHT, Vector2(16, 16), Vector2(256, 256))
+	_title(box, "ERROR LOG  //  AUTO-RESOLUTION")
 	log_label = RichTextLabel.new()
 	log_label.bbcode_enabled = true
 	log_label.scroll_following = true
@@ -172,7 +179,7 @@ func _build_status() -> void:
 	status_label = Label.new()
 	status_label.add_theme_font_override("font", _mono)
 	status_label.add_theme_font_size_override("font_size", 12)
-	status_label.add_theme_color_override("font_color", Color(0.8, 0.9, 1.0))
+	status_label.add_theme_color_override("font_color", Color(0.78, 0.94, 0.80))
 	box.add_child(status_label)
 
 
@@ -192,12 +199,13 @@ func _build_banner() -> void:
 	banner.name = "Banner"
 	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.02, 0.04, 0.09, 0.92)
-	sb.border_color = Color(0.45, 0.95, 1.0, 0.8)
+	sb.bg_color = PANEL_BG
+	sb.border_color = PANEL_BORDER
 	sb.set_border_width_all(2)
 	sb.set_corner_radius_all(6)
 	sb.set_content_margin_all(24)
 	banner.add_theme_stylebox_override("panel", sb)
+	FrostedGlass.apply(banner)
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -209,11 +217,12 @@ func _build_banner() -> void:
 	_banner_title = Label.new()
 	_banner_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_banner_title.add_theme_font_size_override("font_size", 30)
-	_banner_title.add_theme_color_override("font_color", Color(0.6, 0.97, 1.0))
+	_banner_title.add_theme_color_override("font_color", Color(0.48, 1.0, 0.56))
 	box.add_child(_banner_title)
 	_banner_body = Label.new()
 	_banner_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_banner_body.add_theme_font_size_override("font_size", 17)
+	_banner_body.add_theme_color_override("font_color", Color(0.78, 0.94, 0.80))
 	box.add_child(_banner_body)
 	banner.visible = false
 

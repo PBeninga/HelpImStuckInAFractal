@@ -39,6 +39,12 @@ var _gen := 0          # bumps per connection; stale loops stop
 var _backoff := BACKOFF_MIN
 var _retry_in := -1.0
 var _was_open := false
+var _chat_agent_id := ""
+var _chat_agent_wait := 0.0
+
+
+func _chat_log() -> ChatLog:
+	return bridge.get("chat") as ChatLog if bridge != null else null
 
 
 ## {url, token, from} for the server to link to, or {} when there is none.
@@ -90,11 +96,14 @@ func _ready() -> void:
 	var chat: Object = bridge.get("chat") if bridge != null else null
 	if chat != null:
 		chat.message_added.connect(_on_chat_message)
+		chat.chat_agent_requested.connect(_on_chat_agent_request)
 	_connect()
 
 
 func _exit_tree() -> void:
 	_gen += 1
+	_send({"type": "chat_agent_control", "action": "stop", "callSid": _chat_agent_id})
+	_reset_chat_agent()
 	if _ws != null:
 		_ws.close()
 
@@ -119,6 +128,11 @@ func _connect() -> void:
 
 
 func _process(delta: float) -> void:
+	if _chat_agent_wait > 0.0:
+		_chat_agent_wait -= delta
+		if _chat_agent_wait <= 0.0:
+			_on_chat_agent_request("stop")
+			_chat_log().add("system", "Text agent connection timed out. Check the server and try again.")
 	if _retry_in >= 0.0:
 		_retry_in -= delta
 		if _retry_in < 0.0:
@@ -155,6 +169,11 @@ func _on_closed(code: int) -> void:
 	_ws = null
 	_was_open = false
 	_gen += 1
+	if _chat_log() != null:
+		_chat_log().chat_agent_available = false
+		if _chat_log().chat_agent_state != "off":
+			_chat_log().add("system", "Text agent ended: server disconnected.")
+	_reset_chat_agent()
 	if was_open:
 		_call_center({"link_up": false})
 	if code == CLOSE_REPLACED:
@@ -207,9 +226,12 @@ func _on_event(e: Dictionary) -> void:
 	var text := str(e.get("text", ""))
 	match str(e.get("type", "")):
 		"config":
+			if _chat_log() != null:
+				_chat_log().chat_agent_available = bool(e.get("chatbox_text", false))
+				_chat_log().state_changed.emit()
 			# The voice agent flies the ship with the call centre's tools: start it
 			# if the game was launched without it.
-			if str(e.get("voice_agent", "")) == "openai" and not bridge.has_command("call_center") \
+			if (str(e.get("voice_agent", "")) == "openai" or e.get("chatbox_text", false)) and not bridge.has_command("call_center") \
 					and bridge.has_method("start_call_center") and bridge.start_call_center():
 				print("ServerLink: the phone server's voice agent needs the call centre; starting it")
 				await get_tree().process_frame
@@ -218,17 +240,48 @@ func _on_event(e: Dictionary) -> void:
 		"call_ringing":
 			_call_center({"call_state": "ringing"})
 		"call_started":
+			if e.get("transport", "phone") == "chatbox":
+				if _chat_log() == null or _chat_log().chat_agent_state != "connecting" or str(e.get("callSid", "")) != _chat_agent_id:
+					_send({"type": "chat_agent_control", "action": "stop", "callSid": e.get("callSid", "")})
+					return
+				_chat_agent_id = str(e.get("callSid", ""))
+				return # Wait for chat_agent_ready before accepting messages.
 			await _call_center({"call_state": "connected", "agent_name": str(e.get("agent_name", ""))})
 			bridge.handle("chat_post", {"role": "system", "text": "Phone call connected (%s)" % str(e.get("from", ""))})
+		"chat_agent_ready":
+			if _chat_agent_id.is_empty() or str(e.get("callSid", "")) != _chat_agent_id:
+				return
+			_chat_agent_wait = 0.0
+			_chat_log().set_chat_agent_state("ready")
+			await _call_center({"call_state": "connected"})
+			_chat_log().add("system", "Text agent connected. Type below to test support and ship tools.")
+		"chat_agent_error":
+			if str(e.get("callSid", "")) != _chat_agent_id or _chat_agent_id.is_empty():
+				return
+			if _chat_log() != null:
+				_chat_log().add("system", str(e.get("message", "Text agent unavailable")))
+				if _chat_log().chat_agent_state == "connecting":
+					_on_chat_agent_request("stop")
 		"agent_said":
-			# said on the call already; "phone" keeps it from being spoken twice
-			bridge.handle("chat_say", {"text": text, "source": "phone"})
+			# Skip stale text-session replies, and avoid echoing either agent.
+			var source := "chatbox" if e.get("transport", "phone") == "chatbox" else "phone"
+			if source == "chatbox" and (_chat_agent_id.is_empty() or str(e.get("callSid", "")) != _chat_agent_id):
+				return
+			bridge.handle("chat_say", {"text": text, "source": source})
 		"utterance":
 			if e.get("final", false):
 				bridge.handle("chat_post", {"text": text, "source": "voice"})
 			else:
 				bridge.handle("chat_draft", {"text": text})
 		"call_ended":
+			if e.get("transport", "phone") == "chatbox":
+				if _chat_agent_id.is_empty() or str(e.get("callSid", "")) != _chat_agent_id:
+					return
+				_reset_chat_agent()
+				await _call_center({"call_state": "ended"})
+				bridge.handle("chat_draft", {"text": ""})
+				bridge.handle("chat_post", {"role": "system", "text": str(e.get("reason", "Text agent disconnected"))})
+				return
 			await _call_center({"call_state": "ended"})
 			bridge.handle("chat_draft", {"text": ""})
 			bridge.handle("chat_post", {"role": "system", "text": "Phone call ended"})
@@ -246,10 +299,41 @@ func _call_center(args: Dictionary) -> void:
 func _on_chat_message(m: Dictionary) -> void:
 	var role := str(m.get("role", ""))
 	var source := str(m.get("source", ""))
-	if role == "agent" and source != "phone":
+	if role == "agent" and source not in ["phone", "chatbox"]:
 		_send({"type": "say", "text": m["text"]})
 	elif role == "human" and source == "typed":
 		_send({"type": "chat", "text": m["text"]})
+
+
+func _on_chat_agent_request(action: String) -> void:
+	var chat := _chat_log()
+	if chat == null:
+		return
+	if action == "stop":
+		var was_active := chat.chat_agent_state != "off"
+		var was_ready := chat.chat_agent_state == "ready"
+		_send({"type": "chat_agent_control", "action": "stop", "callSid": _chat_agent_id})
+		_reset_chat_agent()
+		if was_active:
+			if was_ready:
+				_call_center({"call_state": "ended"})
+			chat.set_draft("")
+			chat.add("system", "Text agent disconnected")
+	elif action == "start" and chat.chat_agent_state == "off":
+		if state != "linked" or not chat.chat_agent_available:
+			chat.add("system", "Text mode needs a linked server with OPENAI_API_KEY configured.")
+			return
+		chat.set_chat_agent_state("connecting")
+		_chat_agent_id = "chatbox-%d-%d" % [Time.get_ticks_usec(), get_instance_id()]
+		_chat_agent_wait = 20.0
+		_send({"type": "chat_agent_control", "action": "start", "callSid": _chat_agent_id})
+
+
+func _reset_chat_agent() -> void:
+	_chat_agent_id = ""
+	_chat_agent_wait = 0.0
+	if _chat_log() != null:
+		_chat_log().set_chat_agent_state("off")
 
 
 ## Follow the call centre's ship events (waypoints, questions for the pilot,

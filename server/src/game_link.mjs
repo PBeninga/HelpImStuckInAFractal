@@ -90,6 +90,9 @@ export class GameLink extends EventEmitter {
       case "ship_event":
         if (msg.event && typeof msg.event === "object") this.emit("ship_event", msg.event);
         break;
+      case "chat_agent_control":
+        this.emit(msg.type, msg);
+        break;
       case "rpc_result": {
         const p = this.#pending.get(msg.id);
         if (!p) return;

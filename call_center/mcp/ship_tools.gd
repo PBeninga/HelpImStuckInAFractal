@@ -15,6 +15,8 @@ func _init(p_cc: Node = null) -> void:
 func definitions() -> Array:
 	var point := {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
 		"description": "World coordinates [x,y,z], in world units (1000 metres per world unit)."}
+	var direction := {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
+		"description": "Nonzero world-space direction [x,y,z], normalized by the tool; not a destination point."}
 	var out := [
 		_tool("get_ship_status", "Compact telemetry: position, player facing, Gameplay speed, autopilot and real exit-sphere boundary. Includes shape_run: required commands, active stage, run_id and escape distances. Read it on startup."),
 		_tool("apply_shape_command", "Apply the next required scripted command ONLY to the gameplay-active shape, ONLY in response to a new human utterance (one command per utterance). Never invoke on startup, timers, stage events or movement completion. Read shape_run in get_ship_status; refresh it after the human speaks and pass run_id, active_shape, command_index, human_turn and next_command. Rejects stale stages, duplicates and unsolicited edits. Inversion is a delta to the existing radius; other commands set a numeric attribute.", {
@@ -23,14 +25,18 @@ func definitions() -> Array:
 			"command_index": {"type": "integer", "minimum": 0}, "human_turn": {"type": "integer", "minimum": 1}},
 			["command", "run_id", "shape_index", "command_index", "human_turn"]),
 		_tool("scan_surroundings", "Request a low-fidelity multidirectional raycast around the player. Fidelity is tunable in Gameplay. Includes world directions and measured distances; misses are unknown, not proof of open space."),
-		_tool("scan_ship_depth", "EXPENSIVE, optional fallback when the current screen has no promising direction. Computes fresh CPU ray depths around the entire ship, including behind/above/below: 96 rays by default, at most 256. Returns captured pose, per-ray world direction/depth/status and broad distant-region recommendations. Runs only on request, yields between batches, stops after an 8-second budget (partial coverage is explicit), with a 5-second cooldown. Do not poll. CPU geometry excludes shader-only displacement; unknown/step-limited depths are not open space. Use recommended look_at with face_point, then inspect the new screen.", {
+		_tool("scan_ship_depth", "EXPENSIVE on-demand raycast scan. Supply direction to refine a candidate with a wide cone (default 90 degrees); omit it for a full-ship sphere when no good direction is visible. Default 96 rays, maximum 256. Returns compact broad-depth recommendations and status counts; include_rays=true explicitly requests raw depths. Pass recommended direction vectors to plan_escape.candidate_directions for travel-time ranking. Shared 5-second cooldown and 8-second work budget; partial coverage and stale pose are explicit. Stop before scanning to keep the snapshot useful. No polling. CPU geometry excludes shader-only displacement; unknown/step-limited rays are not open space. look_at is for turning only.", {
+			"direction": direction,
+			"cone_degrees": {"type": "number", "minimum": 15, "maximum": 180, "default": 90, "description": "Full cone angle; requires direction."},
+			"include_rays": {"type": "boolean", "default": false},
 			"ray_count": {"type": "integer", "minimum": 24, "maximum": 256, "default": 96},
 			"max_distance": {"type": "number", "exclusiveMinimum": 0, "description": "Maximum depth in world units; defaults to twice the Gameplay exit radius."}}),
 		_tool("get_depth_scan", "Read the latest locally cached screen depth scan. Returns a small summary and broad far-distance patches by default. Set include_grid=true only when the 2D array is needed. Refreshes locally every few frames; nothing is pushed to you. Requests are throttled for two seconds. Use after_frame to suppress duplicates. Censored range/step limits are NOT open space; inspect the captured pose and age.", {
 			"include_grid": {"type": "boolean", "default": false},
 			"after_frame": {"type": "integer", "minimum": 0},
 			"max_columns": {"type": "integer", "minimum": 8, "maximum": 64, "default": 32}}),
-		_tool("plan_escape", "Estimate the fastest sampled path outside the actual exit sphere, integrating player Gameplay speed and turn time. Uses nearby geometry and locally cached far-depth patches without returning the grid. Returns points in world units; execute one leg, wait for completion, then replan. Approximate, not a global shortest-time guarantee."),
+		_tool("plan_escape", "Estimate the fastest sampled path outside the actual exit sphere, integrating player Gameplay speed and turn time. Supply up to six candidate_directions from a wide cone scan to refine the search. Uses these plus nearby geometry and locally cached far-depth patches, without returning grids. Returns points in world units; execute one leg, wait for completion or a slowdown alert, then reassess. Approximate, not a global shortest-time guarantee.", {
+			"candidate_directions": {"type": "array", "items": direction, "maxItems": 6}}),
 		_tool("face_point", "Turn to face world coordinates. Wait for instruction_completed or instruction_cancelled.", {"point": point}, ["point"]),
 		_tool("fly_to_point", "Turn and fly directly to world coordinates at the SAME speed as player Gameplay movement, including distance slowdown, wheel and current Shift state. Ignores collision and movement bounds. Speed varies along the path; wait for instruction_completed or instruction_cancelled.", {"point": point}, ["point"]),
 		_tool("turn_ship", "Turn in place. Positive yaw is right, positive pitch is up. Completion is reported with the resulting facing direction.", {
@@ -43,6 +49,14 @@ func definitions() -> Array:
 		_tool("point_direction", "Show a turning arrow toward a world point for the pilot. Does not move the ship.", {
 			"point": point, "label": {"type": "string"}, "seconds": {"type": "number", "minimum": 1, "maximum": 300}}, ["point"]),
 		_tool("clear_direction", "Clear the turning arrow."),
+		_tool("set_screen_tints", "Paint up to 8 soft color regions over the fractal view in SCREEN SPACE. Use open_patches[].uv from get_depth_scan directly as center. Replaces all previous regions; marks stay at their screen coordinates and do not track geometry. Refresh using current observations. Radius is a fraction of view height; colors are RGB 0..1. Automatically clears after seconds (default 5). No raycasting or shape IDs required.", {
+			"regions": {"type": "array", "maxItems": 8, "items": {"type": "object", "properties": {
+				"center": {"type": "array", "items": {"type": "number", "minimum": 0, "maximum": 1}, "minItems": 2, "maxItems": 2, "description": "[u,v], top-left [0,0], bottom-right [1,1]."},
+				"radius": {"type": "number", "minimum": 0.005, "maximum": 1},
+				"color": {"type": "array", "items": {"type": "number", "minimum": 0, "maximum": 1}, "minItems": 3, "maxItems": 3},
+				"strength": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.45}}, "required": ["center", "radius", "color"], "additionalProperties": false}},
+			"seconds": {"type": "number", "minimum": 1, "maximum": 30, "default": 5}}, ["regions"]),
+		_tool("clear_screen_tints", "Clear all screen-space navigation colors."),
 		_tool("highlight", "Flash a HUD panel.", {"target": {"type": "string", "enum": HUD_ELEMENTS}, "label": {"type": "string"}}, ["target"]),
 		_tool("clear_highlights", "Clear HUD highlights."),
 		_tool("resolve_issue", "Resolve a diagnostics issue using the pilot's answer; never invent an answer.", {"issue_id": {"type": "string"}, "answer": {"type": "string"}}, ["issue_id", "answer"]),
@@ -78,11 +92,13 @@ func call_tool(tool_name: String, args: Variant) -> Dictionary:
 		"plan_escape":
 			if cc.adapter == null:
 				return _no_flight()
+			if not a.get("candidate_directions", []) is Array:
+				return {"ok": false, "message": "candidate_directions must be an array of direction vectors."}
 			if _planning:
 				return {"ok": false, "message": "A route estimate is already in progress."}
 			_planning = true
 			var generation := _plan_generation
-			var result: Dictionary = await cc.adapter.plan_escape()
+			var result: Dictionary = await cc.adapter.plan_escape(a.get("candidate_directions", []))
 			if generation != _plan_generation:
 				return _no_flight()
 			_planning = false
@@ -110,6 +126,11 @@ func call_tool(tool_name: String, args: Variant) -> Dictionary:
 			if cc.hud != null:
 				cc.hud.overlay.clear_direction()
 			return {"ok": true}
+		"set_screen_tints": return cc.adapter.set_screen_tints(a) if cc.adapter != null else _no_flight()
+		"clear_screen_tints":
+			if cc.adapter == null:
+				return _no_flight()
+			return cc.adapter.clear_screen_tints()
 		"highlight":
 			if not HUD_ELEMENTS.has(a.get("target", "")):
 				return {"ok": false, "message": "Unknown HUD element."}
@@ -175,6 +196,7 @@ func _point_direction(a: Dictionary) -> Dictionary:
 	var p: Array = a.point
 	cc.hud.overlay.point_direction(Vector3(p[0], p[1], p[2]), str(a.get("label", "Agent target")), clampf(a.get("seconds", 30), 1, 300))
 	return {"ok": true, "target": p, "message": "Direction arrow set."}
+
 
 static func _number(v: Variant) -> bool:
 	return (v is int or v is float) and is_finite(float(v))

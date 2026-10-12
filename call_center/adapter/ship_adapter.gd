@@ -20,6 +20,8 @@ signal maneuver_started(kind: String, info: Dictionary)
 signal maneuver_finished(kind: String, info: Dictionary)
 ## The pilot grabbed the controls during a manoeuvre.
 signal manual_override
+## Compact, throttled telemetry while an autopilot translation loses speed.
+signal autopilot_slowdown(info: Dictionary)
 
 
 ## Metres per world unit, for everything the agent and the HUD say.
@@ -106,6 +108,14 @@ func set_palette(_name: String) -> Dictionary:
 	return unsupported("palettes")
 
 
+func set_screen_tints(_args: Dictionary) -> Dictionary:
+	return unsupported("screen tints")
+
+
+func clear_screen_tints() -> Dictionary:
+	return unsupported("screen tints")
+
+
 # ------------------------------------------------------------- helpers
 
 func meters(units: float) -> int:
@@ -133,7 +143,7 @@ func depth_scan(_args: Dictionary = {}) -> Dictionary:
 func scan_ship_depth(_args: Dictionary = {}) -> Dictionary:
 	return unsupported("full-ship depth scans")
 
-func plan_escape() -> Dictionary:
+func plan_escape(_candidate_directions: Array = []) -> Dictionary:
 	return unsupported("route planning")
 
 func face_point(point: Array) -> Dictionary:

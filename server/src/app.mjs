@@ -20,6 +20,7 @@ import { WebSocketServer } from "ws";
 import { GameLink } from "./game_link.mjs";
 import { Calls, mask } from "./calls.mjs";
 import { VoiceCalls } from "./voice/voice_calls.mjs";
+import { connectChatboxAgent } from "./voice/chatbox_agent.mjs";
 import { handleMcp } from "./mcp_http.mjs";
 import { formatPhoneNumber } from "./config.mjs";
 
@@ -27,6 +28,7 @@ export function createApp(config, { log = console, WebSocketImpl, heartbeatMs = 
   const game = new GameLink();
   const calls = new Calls(game, { allowedCallers: config.allowedCallers, log });
   const voice = new VoiceCalls(game, config, { log, WebSocketImpl });
+  connectChatboxAgent(game, voice, config, { phoneBusy: () => calls.active.length > 0 });
   game.on("connected", () => {
     log.info("game linked");
     // the support number and who answers, for the call centre's HUD
@@ -35,6 +37,7 @@ export function createApp(config, { log = console, WebSocketImpl, heartbeatMs = 
       support_number: formatPhoneNumber(config.supportNumber),
       voice_agent: config.voiceAgent,
       agent_name: config.agentName,
+      chatbox_text: Boolean(config.openai.apiKey),
     });
   });
   game.on("disconnected", () => log.info("game unlinked"));
@@ -72,6 +75,9 @@ export function createApp(config, { log = console, WebSocketImpl, heartbeatMs = 
       vr.hangup();
     } else if (!game.connected) {
       vr.say("The fractal is offline. Start the game and its phone link on your computer, then call back.");
+      vr.hangup();
+    } else if (voice.current?.transport === "chatbox") {
+      vr.say("Support is already connected through the game. Please end text chat before calling.");
       vr.hangup();
     } else if (config.voiceAgent === "openai") {
       if (voice.busy) {
@@ -157,6 +163,7 @@ export function createApp(config, { log = console, WebSocketImpl, heartbeatMs = 
       relayWss.handleUpgrade(req, socket, head, (ws) => {
         relayWss.emit("connection", ws, req);
         if (pathname === "/twilio/media") voice.attach(ws);
+        else if (voice.busy) ws.close(1008, "A voice session is already active");
         else calls.attach(ws);
       });
     } else if (pathname === "/game/link") {

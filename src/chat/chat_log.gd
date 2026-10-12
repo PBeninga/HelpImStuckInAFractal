@@ -13,6 +13,12 @@ signal cleared
 signal state_changed
 ## Text in progress (a live voice transcript), shown in the panel's input box.
 signal draft_changed(text: String)
+signal chat_agent_requested(action: String)
+
+var chat_agent_available := false
+## off, connecting, ready: direct text session with the support agent.
+var chat_agent_state := "off"
+
 
 enum AgentState { OFFLINE, LISTENING, WORKING }
 
@@ -34,6 +40,11 @@ var busy := false:
 			state_changed.emit()
 
 var _next_id := 1
+
+
+func set_chat_agent_state(value: String) -> void:
+	chat_agent_state = value
+	state_changed.emit()
 
 
 func add(role: String, text: String, source := "") -> Dictionary:

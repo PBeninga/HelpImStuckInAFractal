@@ -70,7 +70,7 @@ or `server/.env`).
 
 ## What the pilot sees
 
-- **Down the left: ship status, then the SHIP DIAGNOSTICS log.** The log
+- **Ship status upper-left; diagnostics lower-right.** The square log
   starts with the crash report: *Error: punch jump not completed successfully
   · Error #13432 Mandelbrought recurrence generator has animalifolds instead
   of manifolds · Resolved successfully, via forced evfoldlution · … · Error
@@ -81,7 +81,7 @@ or `server/.env`).
   to carry out a pilot request.
 - **The SUB-DIMENSIONAL SUPPORT panel** (bottom left). It shows the number to
   call, then who is on the line and for how long.
-- **The pilot chat** (McpBridge's, down the right). It holds the conversation:
+- **The pilot chat** (McpBridge's, upper-right). It holds the conversation:
   the caller's words as voice messages, the agent's as "Support (phone)"
   lines. What the pilot types there goes to the agent, and while a call is
   up the panel shows an agent listening.
@@ -95,7 +95,7 @@ or `server/.env`).
 |---|---|
 | `ship_tools` | `{tools: [{name, description, inputSchema}]}`: the ship's tools (below) |
 | `ship_tool {name, arguments}` | run one; returns `{ok, message, …}` |
-| `ship_events {after, timeout}` | long-poll the agent's news `{events: [{id, kind, summary, notify_agent, …}], last_id}`: stages, instruction completion/cancellation, `tools_changed`, escape |
+| `ship_events {after, timeout}` | long-poll the agent's news `{events: [{id, kind, summary, notify_agent, …}], last_id}`: stages, instruction completion/cancellation, autopilot slowdown, `tools_changed`, escape |
 | `call_center {support_number, call_state, agent_name, link_up}` | the phone side reports in (the link sends these) |
 
 **For Claude.** `mcp/server.mjs` exposes the same tools as `ship_tools`,
@@ -107,13 +107,14 @@ or `server/.env`).
 |---|---|
 | `get_ship_status` | compact position, facing, Gameplay speed, autopilot and exit-sphere boundary; no scan arrays |
 | `scan_surroundings` | tunable multidirectional raycast geometry, requested explicitly |
-| `scan_ship_depth` | **expensive**, optional fresh full-sphere ray depths when the screen has no good direction; 96 rays by default, configurable 24–256 |
+| `scan_ship_depth` | **expensive**, full sphere or a wide cone around `direction`; compact recommendations by default, raw depths with `include_rays: true`; 96 rays, configurable 24–256 |
 | `get_depth_scan` | cached screen-depth summary; `include_grid: true` requests the 2D distance array and status mask |
-| `plan_escape` | fastest sampled direct or two-leg route by estimated travel time, using Gameplay speed |
+| `plan_escape` | fastest sampled direct or two-leg route by Gameplay travel time; accepts up to six `candidate_directions` from a cone scan |
 | `highlight` / `clear_highlights` | flash or clear HUD panels |
 | `turn_ship`, `face_point`, `thrust` | rotate or move at player Gameplay speed; no collision or zoom-floor movement gates |
 | `fly_to_point`, `full_stop` | fly to world coordinates or cancel the active instruction |
 | `point_direction`, `clear_direction` | show/clear a turning arrow toward `point: [x,y,z]`; optional label and seconds (1–300, default 30) |
+| `set_screen_tints`, `clear_screen_tints` | color up to 8 screen regions using depth-scan `uv` coordinates; radius, RGB and strength per region; expires after 1–30 seconds (default 5) |
 | `get_console_controls` | inspect shapes, light/material/palette, view/renderer, gameplay, axes and noise |
 | `set_console_controls` | edit those settings through the same models as the console |
 | `console_action` | add/remove/select/rename shapes, resets, spawn, levels, windows, start, pause/resume |
@@ -121,6 +122,22 @@ or `server/.env`).
 | `post_to_log` | write an AGENT line to the diagnostics log |
 | `set_visual_filter` | change the palette, when the adapter supports it |
 | *game-registered tools* | added and removed at runtime (`tools_changed` updates a live call) |
+
+### Screen-space guidance
+
+`set_screen_tints` draws soft circular color overlays using a small canvas shader,
+after the fractal and below the cockpit UI. It adds no raycasts or shape lookup.
+Take `open_patches[].uv` from a current `get_depth_scan` and use it directly:
+
+```json
+{"name":"set_screen_tints","arguments":{"regions":[{"center":[0.7,0.4],"radius":0.12,"color":[0.2,1,0.4],"strength":0.45}],"seconds":5}}
+```
+
+Coordinates are normalized with `[0,0]` at the top left. Radius is measured as
+a fraction of view height. Each call replaces the previous marks (up to eight).
+They remain at their screen coordinates when the camera moves: refresh using a
+new observation, call `clear_screen_tints`, or let them expire. The shader colors
+screen pixels, including background, and does not identify or track world shapes.
 
 Positions, route points, route lengths and screen-depth distances are in **world
 units**; one explorer world unit is 1000 metres. `thrust.meters` and fields
@@ -146,11 +163,20 @@ Unknown, fog/range-limited and step-budget-limited cells are not open corridors.
 If the visible screen offers no promising route, the agent can explicitly call
 `scan_ship_depth {ray_count: 96}` (or pass `max_distance` in world units).
 It computes new rays around the full ship, including the six camera axes and
-uniformly spread spherical samples. Each ray returns a world direction, depth,
-status and step count. Unknown/exhausted rays have null depth; range-limited
-rays remain marked as incomplete. Up to six recommendations rank the minimum
+uniformly spread spherical samples. The default response contains status counts
+and up to six recommendations; `include_rays: true` adds each ray's world
+direction, depth, status and step count. Unknown/exhausted rays have null depth;
+range-limited rays remain marked as incomplete. Recommendations rank the minimum
 depth across five neighbouring rays; their `look_at` coordinates can be passed
 to `face_point` to inspect another direction before planning a flight.
+
+Once a candidate direction is identified, refine it with
+`scan_ship_depth {direction: [x, y, z], cone_degrees: 90}`. The vector is a world
+direction, not a target point. The full cone angle is configurable from 15° to
+180°; samples cover the centre, edges and interior. Pass up to six recommended
+`direction` vectors to `plan_escape {candidate_directions: [...]}` to compare
+travel times against the ordinary escape candidates. Large depth alone does
+not establish the quickest route. Both scan modes share the same cooldown.
 
 This call is marked **expensive** in both MCP and the voice-agent instructions.
 It has an eight-second work budget, yields between small ray batches, reports
@@ -164,6 +190,21 @@ screen before selecting the next flight leg.
 bounded direct and two-leg candidates. It returns a few routes, never the depth
 field. This is an approximate search: narrow slow regions and globally faster
 paths may be missed. Execute one leg, wait for its terminal event, then replan.
+
+During translation, the adapter emits `autopilot_slowdown` when the Gameplay
+speed used for movement drops at least 10% below its reference for 0.75 seconds.
+It sends at most one alert every five seconds across instructions. Each alert
+resets the reference to the current speed, so steady slow travel does not keep
+alerting; recovered speed raises the reference again. Turns and the shortened
+final arrival step do not trigger alerts. Speed changes can reflect geometry,
+wheel/Shift settings or load shedding; the event does not assume a cause.
+
+Alerts include the instruction ID, previous/current speed in world units per
+second, drop fraction, actual motion direction, pose, target and approximate
+remaining time. No ray arrays or depth grids are attached. The agent ignores
+obsolete instruction IDs and may stop the current instruction to replan before
+arrival. It waits for cancellation, obtains a candidate, requests a wide cone
+scan and compares travel times. No expensive scan runs automatically.
 
 Every accepted movement or turn returns an `instruction_id`. Exactly one
 `instruction_completed` or `instruction_cancelled` event carries that ID,

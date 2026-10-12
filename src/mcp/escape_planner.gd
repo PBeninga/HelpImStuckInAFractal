@@ -3,12 +3,21 @@ extends RefCounted
 ## this is the fastest sampled route, never a guarantee of a global optimum.
 const SAMPLES := 12
 const TURN_SPEED := 110.0
+const DepthScan := preload("res://src/mcp/ship_depth_scan.gd")
 var _params: FractalParams
 var _speed_factor := 1.0
 var _speed_limit := 1.0
 var _sprint := false
 
-func plan(game: Node) -> Dictionary:
+func plan(game: Node, candidate_directions: Array = []) -> Dictionary:
+	if candidate_directions.size() > 6:
+		return {"ok": false, "message": "Supply at most six candidate_directions."}
+	var extra: Array[Vector3] = []
+	for candidate in candidate_directions:
+		var direction := DepthScan.unit_direction(candidate)
+		if direction == Vector3.ZERO:
+			return {"ok": false, "message": "Each candidate direction must be three finite numbers forming a nonzero vector."}
+		extra.append(direction)
 	_params = game.params.duplicate(true) as FractalParams
 	# Shapes and gameplay are runtime fields, not exported Resource properties.
 	# Resource.duplicate alone would silently plan against the default scene.
@@ -30,6 +39,10 @@ func plan(game: Node) -> Dictionary:
 	if radial == Vector3.ZERO:
 		radial = forward
 	var directions: Array = [radial, forward]
+	# Wide cone scans supply additional measured candidates for the same
+	# travel-time integration used by the ordinary escape search.
+	for candidate in extra:
+		directions.append(candidate)
 	var scan: Dictionary = game.view.depth_scan()
 	if scan.get("available", false) and not scan.get("scene_or_pose_changed", true):
 		for patch in scan.get("open_patches", []):
@@ -62,6 +75,7 @@ func plan(game: Node) -> Dictionary:
 	var best: Dictionary = candidates[0].duplicate(true)
 	best.merge({"ok": true, "start": start, "facing": [forward.x, forward.y, forward.z],
 		"units": "world", "candidate_count": candidates.size(), "approximate": true,
+		"extra_direction_count": candidate_directions.size(),
 		"sprint": _sprint, "speed_factor": _speed_factor, "speed_limit": _speed_limit,
 		"scene_or_pose_changed": start != Array(game.camera.eye64()) or not forward.is_equal_approx(game.camera.forward()) or not _matches_scene(game.params) or _speed_factor != game.camera.speed_factor or _speed_limit != game.fly.speed_limit or _sprint != game.fly.sprinting,
 		"speed_model": "Player Gameplay speed, including CPU center ray; shader-only noise displacement does not affect player speed.",

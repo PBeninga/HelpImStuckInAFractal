@@ -320,6 +320,7 @@ func _attach(scene: Node) -> void:
 		_owns_adapter = true
 	adapter.maneuver_finished.connect(_on_maneuver_finished)
 	adapter.manual_override.connect(_on_manual_override)
+	adapter.autopilot_slowdown.connect(_on_autopilot_slowdown)
 	features.visited.clear()
 	_at_exit = false
 	hud.set_adapter(adapter)
@@ -339,6 +340,7 @@ func _detach() -> void:
 		adapter.stop("the flight ended")
 		adapter.maneuver_finished.disconnect(_on_maneuver_finished)
 		adapter.manual_override.disconnect(_on_manual_override)
+		adapter.autopilot_slowdown.disconnect(_on_autopilot_slowdown)
 		if _owns_adapter:
 			adapter.queue_free()
 	adapter = null
@@ -381,6 +383,12 @@ func _on_maneuver_finished(kind: String, info: Dictionary) -> void:
 		"completed" if completed else "cancelled", str(info.get("reason", ""))]
 	# One terminal event per accepted instruction. Never attach sensor arrays.
 	notify_agent(event, summary, info)
+
+
+func _on_autopilot_slowdown(info: Dictionary) -> void:
+	var summary := "Instruction %s is still moving, but travel speed has fallen by %d%%. Reassess the route; this is not completion. Stop before scanning if replanning is needed." % [
+		info.instruction_id, roundi(float(info.drop_fraction) * 100.0)]
+	notify_agent("autopilot_slowdown", summary, info)
 
 
 func _on_manual_override() -> void:

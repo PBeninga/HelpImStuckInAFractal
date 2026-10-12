@@ -80,6 +80,28 @@ one-time token its webhook issued.
 
 ## Set up
 
+### Text test mode in the chatbox
+
+Set `OPENAI_API_KEY` and `GAME_LINK_TOKEN` on the server. Link the game with
+`FRACTAL_SERVER_URL` and the same `GAME_LINK_TOKEN`, using the game's built-in
+ServerLink. Start a flight and click **Start text agent** in the pilot chat.
+Type messages and read its replies there. **End text agent**, leaving the
+cockpit, or losing the game link closes the session.
+
+This uses the same support agent, model, ship tools and events as phone mode,
+with Realtime configured for text output. There is no microphone capture or
+spoken audio. You can test navigation, raycasts and screen tints from chat
+without making a phone call or setting up Twilio. The API key stays on the
+server. Model usage still applies; this is not a mock or offline mode.
+
+Restart the server and game after updating. For a local server,
+`FRACTAL_SERVER_URL=http://127.0.0.1:3000` works without a tunnel. The server's
+missing Twilio configuration warnings can be ignored for text mode.
+Use the built-in game link; the separate `npm run link` relay does not carry
+these session controls. Phone and text sessions share a one-session limit.
+
+### Phone calls
+
 **1. Deploy to Railway.** Create a service from this repository with its
 **Root Directory** set to `/server`; `railway.json` gives the build (Railpack,
 Node), the start command and the `/health` healthcheck. Generate a public domain

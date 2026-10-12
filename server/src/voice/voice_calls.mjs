@@ -63,9 +63,9 @@ export class VoiceCalls {
   }
 
   // One call at a time: there is one ship.
-  newCall({ callSid = `local-${Date.now()}`, from = "", mode = "audio" } = {}) {
+  newCall({ callSid = `local-${Date.now()}`, from = "", mode = "audio", transport = "phone" } = {}) {
     if (this.current) return null;
-    const call = new VoiceCall({ game: this.game, config: this.config, log: this.log, callSid, from, mode, WebSocketImpl: this.WebSocketImpl });
+    const call = new VoiceCall({ game: this.game, config: this.config, log: this.log, callSid, from, mode, transport, WebSocketImpl: this.WebSocketImpl });
     this.current = call;
     call.on("ended", () => {
       if (this.current === call) this.current = null;
@@ -75,7 +75,7 @@ export class VoiceCalls {
 }
 
 export class VoiceCall extends EventEmitter {
-  constructor({ game, config, log, callSid, from, mode, WebSocketImpl }) {
+  constructor({ game, config, log, callSid, from, mode, transport = "phone", WebSocketImpl }) {
     super();
     this.game = game;
     this.config = config;
@@ -83,6 +83,7 @@ export class VoiceCall extends EventEmitter {
     this.callSid = callSid;
     this.from = from;
     this.mode = mode;
+    this.transport = transport;
     this.WebSocketImpl = WebSocketImpl;
     this.session = null;
     this.ended = false;
@@ -109,6 +110,7 @@ export class VoiceCall extends EventEmitter {
 
   async start() {
     const tools = await this.shipTools();
+    if (this.ended) return this;
     let shapeRun = null;
     if (tools.length > 0) {
       try {
@@ -116,9 +118,10 @@ export class VoiceCall extends EventEmitter {
         shapeRun = status.shape_run ?? null;
       } catch { /* Reconnect/status tools can recover a missing briefing. */ }
     }
+    if (this.ended) return this;
     const opts = {
       config: this.config.openai,
-      instructions: buildInstructions({ agentName: this.config.agentName, mode: this.mode === "audio" ? "voice" : "text", shapeRun }),
+      instructions: buildInstructions({ agentName: this.config.agentName, mode: this.mode === "audio" ? "voice" : "text", transport: this.transport, shapeRun }),
       tools,
       mode: this.mode,
       onToolCall: (name, args) => this.runTool(name, args),
@@ -127,6 +130,8 @@ export class VoiceCall extends EventEmitter {
     if (this.WebSocketImpl) opts.WebSocketImpl = this.WebSocketImpl;
     this.session = new RealtimeSession(opts);
     this.session.on("open", () => {
+      if (this.ended) return;
+      this.emit("ready");
       if (tools.length === 0) this.session.injectSystem(LINK_DOWN_NOTE, { respond: false });
       this.session.requestResponse(); // the greeting
     });
@@ -135,13 +140,14 @@ export class VoiceCall extends EventEmitter {
     this.session.on("error", (err) => this.end(`the AI connection failed: ${err.message}`));
     this.session.on("api_error", (e) => this.emit("api_error", e));
     for (const [event, fn] of Object.entries(this.handlers)) this.game.on(event, fn);
-    this.game.notify({ type: "call_started", callSid: this.callSid, from: mask(this.from), agent_name: this.config.agentName, voice: "openai" });
+    this.game.notify({ type: "call_started", callSid: this.callSid, from: mask(this.from), agent_name: this.config.agentName, voice: "openai", transport: this.transport });
     this.session.connect();
     this.log.info(`voice call ${this.callSid} started with ${this.config.agentName}`);
     return this;
   }
 
   async runTool(name, args) {
+    if (this.ended) return JSON.stringify({ ok: false, message: "The voice session has ended." });
     this.log.info(`voice call: ${name} ${JSON.stringify(args)}`);
     let out;
     try {
@@ -154,9 +160,9 @@ export class VoiceCall extends EventEmitter {
   }
 
   #onTranscript(t) {
-    if (!t.text) return;
+    if (this.ended || !t.text) return;
     if (t.role === "agent") {
-      if (t.final) this.game.notify({ type: "agent_said", callSid: this.callSid, text: t.text });
+      if (t.final) this.game.notify({ type: "agent_said", callSid: this.callSid, transport: this.transport, text: t.text });
     } else {
       this.game.notify({ type: "utterance", callSid: this.callSid, text: t.text, final: t.final });
     }
@@ -183,7 +189,7 @@ export class VoiceCall extends EventEmitter {
     this.ended = true;
     for (const [event, fn] of Object.entries(this.handlers)) this.game.off(event, fn);
     this.session?.close();
-    this.game.notify({ type: "call_ended", callSid: this.callSid });
+    this.game.notify({ type: "call_ended", callSid: this.callSid, transport: this.transport, reason });
     this.log.info(`voice call ${this.callSid} ended: ${reason}`);
     this.emit("ended", reason);
   }

@@ -333,8 +333,8 @@ func coarse_iters(near: float, detail: float = 1.0) -> int:
 	return clampi(int(minf(n, 1e6)), COARSE_ITERS_MIN, DistanceEstimator.ITERATIONS)
 
 
-## How close the fly camera may come to this shape's surface with its eye at
-## the given world point, in world units. The shader works out ray positions in
+## The renderer's recommended surface clearance at the given world eye, in
+## world units. Player collision can shrink below it. The shader works out ray positions in
 ## the shape's own frame, in 32-bit floats, which near the eye can only land on
 ## a grid ulp32(largest |local coordinate|) apart; once the hit threshold
 ## (eps × distance, eps = precision / detail) is much finer than that grid, rays

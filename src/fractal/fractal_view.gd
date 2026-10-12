@@ -84,6 +84,7 @@ var _escaped := false
 var _escape_elapsed := 0.0
 var _stage_fog: ColorRect
 var _stage_fog_alpha := 0.0
+var screen_tints := preload("res://src/ui/screen_tints.gd").new()
 
 
 func _ready() -> void:
@@ -113,6 +114,7 @@ func _ready() -> void:
 	_phosphor = PhosphorScan.new()
 	add_child(_phosphor)
 	_phosphor.setup(self)
+	add_child(screen_tints)
 	_stage_fog = ColorRect.new()
 	_stage_fog.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage_fog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

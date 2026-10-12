@@ -242,13 +242,17 @@ relay(
 relay(
   "scan_ship_depth",
   "scan_ship_depth",
-  "EXPENSIVE optional fallback when the screen has no good direction: compute fresh raycast depths " +
-    "around the entire ship, including behind/above/below. Returns world directions, depths, explicit " +
-    "hit/limit statuses and broad distant-region recommendations. CPU geometry excludes shader-only " +
+  "EXPENSIVE on-demand raycast scan. Supply direction for a wide cone around a candidate (default 90 degrees); " +
+    "omit it for the full ship sphere. Compact depth recommendations and status counts by default; " +
+    "include_rays=true requests per-ray depths. Pass recommended directions to the ship tool " +
+    "plan_escape.candidate_directions for travel-time ranking. CPU geometry excludes shader-only " +
     "displacement. 96 rays by default; max 256, 8-second work budget, 5-second cooldown. " +
     "Partial coverage and stale pose are explicit. Do not poll; nothing is streamed. " +
     "Recommended look_at points are for turning, not flight destinations.",
   {
+    direction: vec3.optional().describe("Nonzero world direction, not a destination point"),
+    cone_degrees: z.number().min(15).max(180).optional().describe("Full cone angle, default 90; requires direction"),
+    include_rays: z.boolean().optional(),
     ray_count: z.number().int().min(24).max(256).optional(),
     max_distance: z.number().positive().optional().describe("World units; defaults to twice the exit-sphere radius"),
   },
@@ -514,8 +518,8 @@ server.registerTool(
 relay(
   "ship_events",
   "ship_events",
-  "What the call centre has to tell an agent: waypoints reached, diagnostics questions for the person " +
-    "(answer them with ship resolve_issue), the escape. Without `after` returns just the newest id; with it, " +
+  "Compact call-centre events: instruction completion/cancellation, throttled autopilot slowdown " +
+    "with motion direction and speed change, and escape. No depth arrays. Without `after` returns just the newest id; with it, " +
     "waits up to `timeout` seconds for events after that id.",
   {
     after: z.number().int().optional(),

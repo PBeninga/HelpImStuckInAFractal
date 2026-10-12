@@ -18,6 +18,9 @@ const MAX_PITCH_DEG := 85.0
 const TURN_DEG_PER_S := 110.0
 const EscapePlanner := preload("res://src/mcp/escape_planner.gd")
 const DIRECTIONS := ["forward", "back", "left", "right", "up", "down"]
+const SLOWDOWN_RATIO := 0.9
+const SLOWDOWN_HOLD_SECONDS := 0.75
+const SLOWDOWN_COOLDOWN_MS := 5000
 
 ## The game scene (duck-typed: camera, params, view, fly, table()).
 var game: Node
@@ -25,6 +28,7 @@ var game: Node
 ## The active manoeuvre: {kind, phase, t, duration, ...}; empty when idle.
 var _m: Dictionary = {}
 var _next_instruction_id := 1
+var _last_slowdown_ms := -SLOWDOWN_COOLDOWN_MS
 
 
 func _init(p_game: Node = null) -> void:
@@ -136,6 +140,15 @@ func set_palette(name: String) -> Dictionary:
 	return {"ok": true}
 
 
+func set_screen_tints(args: Dictionary) -> Dictionary:
+	return game.view.screen_tints.set_tints(args)
+
+
+func clear_screen_tints() -> Dictionary:
+	game.view.screen_tints.clear()
+	return {"ok": true}
+
+
 # ------------------------------------------------------------- controls
 
 func turn(yaw_deg: float, pitch_deg: float) -> Dictionary:
@@ -225,8 +238,8 @@ func scan_ship_depth(args: Dictionary = {}) -> Dictionary:
 	return await game.ship_depth_scanner.scan(game, args)
 
 
-func plan_escape() -> Dictionary:
-	return await EscapePlanner.new().plan(game)
+func plan_escape(candidate_directions: Array = []) -> Dictionary:
+	return await EscapePlanner.new().plan(game, candidate_directions)
 
 
 func stop(reason := "stopped") -> bool:
@@ -289,7 +302,8 @@ func step(delta: float) -> void:
 		_m.phase = "move"
 	if _m.phase == "move":
 		var leg := _leg(_m.target)
-		var distance := minf(travel_speed() * maxf(delta, 0.0), leg.distance)
+		var speed := travel_speed()
+		var distance := minf(speed * maxf(delta, 0.0), leg.distance)
 		if distance >= leg.distance:
 			_camera().set_eye(_m.target[0], _m.target[1], _m.target[2])
 			_complete()
@@ -298,6 +312,33 @@ func step(delta: float) -> void:
 		var f: float = distance / leg.distance
 		c.set_eye(c.eye_x() + leg.dx * f, c.eye_y() + leg.dy * f, c.eye_z() + leg.dz * f)
 		_m.last_eye = Array(c.eye64())
+		_observe_speed(speed, delta, leg.direction, leg.distance - distance)
+
+
+## Observe the speed actually used for this translation, before arrival clamps
+## the last step. No extra raycasts, events during turns, or depth payloads.
+func _observe_speed(speed: float, delta: float, direction: Vector3, remaining: float) -> void:
+	if delta <= 0.0 or not is_finite(speed) or speed < 0.0:
+		return
+	var reference := maxf(float(_m.get("speed_reference", speed)), speed)
+	_m["speed_reference"] = reference
+	if reference <= 0.0 or speed > reference * SLOWDOWN_RATIO:
+		_m["slowdown_seconds"] = 0.0
+		return
+	_m["slowdown_seconds"] = float(_m.get("slowdown_seconds", 0.0)) + delta
+	var now := Time.get_ticks_msec()
+	if _m.slowdown_seconds < SLOWDOWN_HOLD_SECONDS or now - _last_slowdown_ms < SLOWDOWN_COOLDOWN_MS:
+		return
+	_last_slowdown_ms = now
+	_m["speed_reference"] = speed
+	_m["slowdown_seconds"] = 0.0
+	var info := {"instruction_id": _m.instruction_id, "instruction_kind": _m.kind,
+		"previous_speed": reference, "current_speed": speed, "speed_units": "world units/second",
+		"drop_fraction": 1.0 - speed / reference, "motion_direction": _vector(direction),
+		"target": _m.target.duplicate(), "distance_remaining": remaining,
+		"estimated_seconds_remaining": remaining / maxf(speed, 1e-30), "estimate_only": true}
+	info.merge(navigation_pose())
+	autopilot_slowdown.emit(info)
 
 
 func _complete() -> void:

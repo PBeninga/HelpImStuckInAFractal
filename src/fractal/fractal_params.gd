@@ -431,7 +431,7 @@ static func ulp32(x: float) -> float:
 
 
 ## The 32-bit floor at a world eye (64-bit components, as [x, y, z] or a
-## PackedFloat64Array): how close the fly camera may come to the surface while
+## PackedFloat64Array): recommended surface clearance while
 ## the shader forms ray positions in 32-bit floats, in world units. It is the
 ## floor (ShapeParams.zoom_floor) of the shape the eye is nearest to, in that
 ## shape's own frame, at this view's detail: about 1e-4 near the box at the
@@ -441,8 +441,8 @@ func floor32(eye) -> float:
 	return zoom_floor_at(eye[0], eye[1], eye[2])
 
 
-## How close the fly camera may come to the surface (world units), using the
-## nearest shape's 32-bit floor in its own frame.
+## Recommended rendering clearance (world units), using the nearest shape's
+## 32-bit floor in its own frame. Player collision can shrink below this.
 func zoom_floor(eye) -> float:
 	return zoom_floor_at(eye[0], eye[1], eye[2])
 

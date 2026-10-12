@@ -3,7 +3,7 @@ extends VBoxContainer
 ## The Movement pane: one line per virtual axis (editable label, id, live value,
 ## a "0" button, speed, two key-capture buttons and a remove button), an "Add
 ## axis" button, the clock readout and the fly camera's speed-factor readout
-## (with "zoom limit" beside it while the camera is held at the zoom floor).
+## (with "collision limit" beside it while a move is blocked).
 ## Keys and axes are saved inside the level (Gameplay's Save level…). It is a
 ## view over Keymap: it writes through the rebind API and refreshes on
 ## `Keymap.changed`.
@@ -21,7 +21,7 @@ var _speed_label: Label
 ## The governor's load-shed level, shown only while it is above 0.
 var shed_label: Label
 var _shed_level := 0
-## "zoom limit", on the speed readout line, shown only while the fly camera is
+## "collision limit", on the speed readout line, shown only while the fly camera is
 ## refusing to go nearer the surface (FlyCamera.at_zoom_limit).
 var zoom_label: Label
 var _zoom_limit := false
@@ -68,8 +68,8 @@ func _ready() -> void:
 	_speed_label.tooltip_text = "The fly camera's speed factor (the mouse wheel changes it)."
 	speed_row.add_child(_speed_label)
 	zoom_label = Label.new()
-	zoom_label.text = "zoom limit"
-	zoom_label.tooltip_text = "The fly camera is as close to the surface as the renderer can draw: nearer, the shader's 32-bit positions cannot resolve the surface. Moving away is always allowed."
+	zoom_label.text = "collision limit"
+	zoom_label.tooltip_text = "This move would enter the surface clearance. Clearance shrinks as nearby geometry gets smaller, down to a numerical minimum. Moving away is always allowed."
 	speed_row.add_child(zoom_label)
 	show_zoom_limit(_zoom_limit)
 	add_child(speed_row)
@@ -250,7 +250,7 @@ func show_shed_level(level: int) -> void:
 	shed_label.visible = level > 0
 
 
-## Whether the fly camera is held at the zoom floor; the readout shows only then.
+## Whether the fly camera has blocked a move; the readout shows only then.
 func show_zoom_limit(on: bool) -> void:
 	_zoom_limit = on
 	if zoom_label == null:

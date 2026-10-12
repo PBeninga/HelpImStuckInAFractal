@@ -36,6 +36,11 @@ binary.
 Godot runs as a background child without terminal input. The launcher stays
 attached for logs; **Ctrl+C** stops the game (or editor) and returns to the shell.
 
+The console opens alongside the title menu, with the last saved scene loaded.
+Edit shapes or load a different level before pressing **Play Game**. Play keeps
+those edits, including unsaved changes. Movement, time bindings and the phone
+agent's flight session start only after Play; Ctrl can reopen a closed console.
+
 ## Controls
 
 Tap **Ctrl** to open the **console**, a separate OS window: the **Shape** tab
@@ -198,12 +203,16 @@ structure, increase Fractal iterations to 32 and Max march steps to at least
   coordinate `x`, those floats land on a grid
   `ulp32(x) = 2^(floor(log2 |x|) − 23)` apart (about `1.2e-7` near the box).
   Once the hit threshold is much finer than that grid, rays reach the surface
-  only by luck. The fly camera stops at the nearest shape's floor,
+  only by luck. The nearest shape's recommended rendering floor is
   `size × ulp32(largest |local eye coordinate|) / (50 × eps)`, where
   `eps = precision / detail`: about `1e-4` on the default box. Higher Detail
-  needs a finer threshold, so it stops further out. The Movement pane shows
-  `zoom limit` while a move is refused. Moving away is always allowed, so a
-  saved level already past the limit can still leave. Older saves' retired
+  needs a finer threshold, so this rendering floor is further out. Player
+  collision clearance shrinks to the smaller of that floor and 10% of the
+  current nearest-surface gap, with a small coordinate-relative 64-bit minimum.
+  You can therefore fly deeper into smaller spaces, though the renderer may
+  show speckle or pits below its recommended floor. The Movement pane shows
+  `collision limit` when a move is refused. Moving away is always allowed, so a
+  saved level already past the clearance can still leave. Older saves' retired
   perturbation settings are ignored when loaded.
 
 ### Load shedding
@@ -301,9 +310,9 @@ automatically as you approach the fractal. It is capped at 10× the distance to
 the nearest surface in any direction, so looking down a long corridor with a
 wall at your elbow cannot carry you sideways through the wall, and a ray that
 hits nothing takes that cap. The load shedder's speed cap still applies on top.
-It will not fly closer to the surface than the zoom limit (see **Zoom limit**
-under [Deep zoom](#deep-zoom): about `1e-4` on the default box); the Movement pane shows `zoom limit` while it
-is holding you there. The speed follows the distance measured from the 64-bit
+Its collision clearance shrinks with the local surface gap (see **Zoom limit**
+under [Deep zoom](#deep-zoom)); the Movement pane shows `collision limit` when
+a step would breach that clearance. The speed follows the distance measured from the 64-bit
 eye and can fall as low as `1e-14`, so a slow approach stays steady all the
 way down. The centre ray marches whichever fractal is drawn, in that
 fractal's own bounds, and on the Kleinian it stops at the View distance just as
@@ -781,7 +790,7 @@ Elsewhere: `claude mcp add fractal -- node /path/to/repo/mcp/server.mjs`.
 | `move` | move in the camera's frame, in **surface units** by default (multiples of the distance to the nearest surface, so `forward: 0.5` always halves the gap at any zoom depth); movement ignores geometry by default, with `safe: true` for raycast-limited moves |
 | `rotate` | yaw (about +Z) / pitch / roll in degrees |
 | `dive` | fly part of the way to the surface under a pixel and face it: repeat to zoom into a feature |
-| `scan_ship_depth` | **expensive**, optional full-ship depth rays to find off-screen directions; 96 rays by default, configurable 24–256, with a shared five-second cooldown |
+| `scan_ship_depth` | **expensive**, full-ship scan or a wide cone around `direction`; compact recommendations by default, raw depths with `include_rays: true`; 96 rays, configurable 24–256, shared five-second cooldown |
 | `raycast`, `probe`, `project` | surface point + normal under a pixel; distance estimate at a point; pixel of a point |
 | `get_shape`, `set_shape` | every Mandelbox knob with ranges and descriptions; set any of them by id |
 | `list_views`, `load_view`, `save_view` | the JSON views in `saves/` |

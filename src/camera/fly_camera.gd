@@ -5,9 +5,9 @@ extends Node
 ## follows how far away the surface straight ahead is (the CenterRay), capped
 ## by the distance to the nearest surface (of any shape) in any direction, so
 ## inside a small nested shape it crawls at that shape's scale. Holding Shift
-## applies the level's sprint multiplier (default 2). A move that would take the camera below the zoom floor of
-## the nearest shape (FractalParams.zoom_floor: the shader's 32-bit floor)
-## is refused. Reads and writes a shared CameraState, moving its eye in 64-bit.
+## applies the level's sprint multiplier (default 2). Collision clearance shrinks
+## with nearby geometry, allowing travel below the shader's 32-bit zoom floor.
+## Reads and writes a shared CameraState, moving its eye in 64-bit.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
@@ -21,6 +21,11 @@ const SPRINT_MULTIPLIER := 2.0
 ## so it must be able to fall below any zoom floor or the camera would outrun its
 ## own stop.
 const SPEED_FLOOR := 1e-14
+## Keep at most 10% of the current surface gap as collision clearance. The
+## shader's zoom floor caps it in open space; it shrinks as the ship goes deeper.
+const COLLISION_GAP_RATIO := 0.1
+## A small coordinate-relative margin for the CPU's 64-bit position arithmetic.
+const COLLISION_NUMERIC_MARGIN := 32.0 * 2.220446049250313e-16
 
 var enabled := false
 ## Escape keeps look enabled while holding the full-precision eye still.
@@ -30,7 +35,7 @@ var speed_limit := 1.0
 ## Whether Shift was held on the last physics tick.
 var sprinting := false
 ## True on a tick that refused a move because it would take the camera below
-## FractalParams.zoom_floor. Cleared by the next accepted move, a tick with no
+## the adaptive collision clearance. Cleared by the next accepted move, a tick with no
 ## move key held, or disabling the camera. Main shows it in the Movement pane.
 var at_zoom_limit := false
 
@@ -102,23 +107,30 @@ func _step_movement(delta: float) -> void:
 
 
 ## Whether the camera may move from `from` to `to` (Vector3s, or 64-bit
-## [x, y, z] / PackedFloat64Array eyes): yes when `to` is at least the zoom
-## floor from the surface, or no closer than `from` is (backing away is always
-## allowed, so a camera already past the floor, say from a loaded save, can
-## leave). The speed already shrinks with the distance, so the last accepted
-## step before the floor is tiny and the stop does not pop.
+## [x, y, z] / PackedFloat64Array eyes): yes when `to` clears the adaptive
+## collision margin, or is no closer than `from` (so a loaded position inside
+## the margin can still back out). The margin uses the starting gap rather
+## than the destination gap so an inward move must preserve some clearance.
 func move_allowed(from, to) -> bool:
 	return move_allowed_at([from[0], from[1], from[2]], [to[0], to[1], to[2]])
 
 
-## move_allowed() on 64-bit points ([x, y, z] each). The nearest shape at `to`
-## gives both its distance and its 32-bit floor, with one scene estimate.
+## move_allowed() on 64-bit points ([x, y, z] each). The renderer's floor is
+## only an upper bound on the collision margin, not a hard depth limit.
 func move_allowed_at(from: Array, to: Array) -> bool:
+	var from_distance := DistanceEstimator.scene_estimate_at(from[0], from[1], from[2], _params)
 	var nearest := DistanceEstimator.nearest_at(to[0], to[1], to[2], _params)
-	var floor_at_to := _params.shapes[nearest["index"]].zoom_floor(to[0], to[1], to[2], _params.detail)
-	if nearest["distance"] >= floor_at_to:
+	var distance: float = nearest["distance"]
+	if not is_finite(from_distance) or not is_finite(distance):
+		return false
+	if distance >= from_distance:
 		return true
-	return nearest["distance"] >= DistanceEstimator.scene_estimate_at(from[0], from[1], from[2], _params)
+	var shape: ShapeParams = _params.shapes[nearest["index"]]
+	var render_floor := shape.zoom_floor(to[0], to[1], to[2], _params.detail)
+	var coordinate_scale := maxf(shape.size, maxf(absf(to[0]), maxf(absf(to[1]), absf(to[2]))))
+	var numeric_floor := coordinate_scale * COLLISION_NUMERIC_MARGIN
+	var clearance := maxf(numeric_floor, minf(render_floor, maxf(from_distance, 0.0) * COLLISION_GAP_RATIO))
+	return distance >= clearance
 
 
 ## Rotate the view by a mouse delta (pixels). Yaw turns the heading about world

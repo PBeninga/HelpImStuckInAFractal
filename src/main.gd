@@ -29,6 +29,8 @@ const NEW_SHAPE_DISTANCE := 7.0
 var params: FractalParams
 var camera: CameraState
 var shape_run: ShapeRun
+## Set before entering the tree when the title menu owns this editable scene.
+var preparing := false
 ## Shared by direct MCP and phone tools; runs only on explicit request.
 var ship_depth_scanner := preload("res://src/mcp/ship_depth_scan.gd").new()
 
@@ -115,6 +117,11 @@ func _ready() -> void:
 	_build_chat()
 	view.escape_changed.connect(_on_escape_changed)
 	_on_escape_changed(view.is_escaped())
+	_clock.set_process(not preparing)
+	_axis_controller.set_process(not preparing)
+	_chat.visible = not preparing
+	_chat.process_mode = Node.PROCESS_MODE_DISABLED if preparing else Node.PROCESS_MODE_INHERIT
+	_view_pane.menu_button.disabled = preparing
 
 	# The sensitivity is the player's, not the view's: Settings owns it.
 	params.mouse_sensitivity = Settings.mouse_sensitivity
@@ -155,6 +162,22 @@ func _ready() -> void:
 	if OPEN_CONSOLE_AT_START:
 		# Deferred so the main window has its final size and place to sit beside.
 		_open_console_at_start.call_deferred()
+
+
+## Activate the scene already edited in the title screen's console.
+func begin_play() -> void:
+	_drop_side_focus()   # Commit any text still being edited in a spin box.
+	_resolve_once()
+	preparing = false
+	_clock.set_process(true)
+	_axis_controller.set_process(true)
+	_chat.show()
+	_chat.process_mode = Node.PROCESS_MODE_INHERIT
+	_view_pane.menu_button.disabled = false
+	_free_requested = false
+	_apply_mode()
+	_restart_shape_run()
+	get_window().grab_focus()
 
 
 func workspace_files() -> WorkspaceFiles:
@@ -453,6 +476,8 @@ func _after_window_settles(then: Callable) -> void:
 
 
 func back_to_menu() -> void:
+	if preparing:
+		return
 	get_tree().change_scene_to_file(MENU_SCENE)
 
 
@@ -490,7 +515,7 @@ func _build_workspace_files() -> void:
 # ------------------------------------------------------------- per-frame
 
 func _process(_delta: float) -> void:
-	if shape_run != null:
+	if shape_run != null and not preparing:
 		shape_run.step(_delta)
 		shape_run.check_position()
 	_resolve_once()
@@ -636,7 +661,7 @@ func _on_escape_changed(escaped: bool) -> void:
 		return
 	_escape_active = escaped
 	fly.movement_locked = escaped
-	_axis_controller.set_process(not escaped)
+	_axis_controller.set_process(not escaped and not preparing)
 	_files.quick_save_enabled = not escaped
 	if _marker:
 		_marker.suppressed = escaped
@@ -662,9 +687,9 @@ func _on_escape_changed(escaped: bool) -> void:
 
 func _apply_mode() -> void:
 	var is_fly := _escape_active or params.camera_mode == FractalParams.CameraMode.FLY
-	fly.enabled = is_fly
+	fly.enabled = is_fly and not preparing
 	if _orbit:
-		_orbit.enabled = not is_fly
+		_orbit.enabled = not is_fly and not preparing
 		if not is_fly and params.camera_mode != _last_mode:
 			_orbit.enter()
 	_last_mode = params.camera_mode
@@ -672,7 +697,7 @@ func _apply_mode() -> void:
 
 
 func _update_mouse() -> void:
-	_captured = (_escape_active or params.camera_mode == FractalParams.CameraMode.FLY) \
+	_captured = not preparing and (_escape_active or params.camera_mode == FractalParams.CameraMode.FLY) \
 			and not _free_requested \
 			and not (_noise != null and _noise.visible)
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED if _captured else Input.MOUSE_MODE_VISIBLE)
@@ -715,6 +740,8 @@ func _drop_side_focus() -> void:
 ## keyboard focus and, as a click in the view would, close the noise editor and
 ## recapture the mouse, so the key that asked flies.
 func return_to_game() -> void:
+	if preparing:
+		return
 	if _noise != null:
 		_noise.close()
 	get_window().grab_focus()
@@ -766,6 +793,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _ctrl.feed(event):
 		_on_console_toggle()
 		get_viewport().set_input_as_handled()
+		return
+	if preparing:
 		return
 
 	# Escape frees the mouse and nothing else: the console and the noise window
@@ -852,17 +881,19 @@ func _on_stage_activated(_index: int) -> void:
 	_send_run_briefing("active_shape_changed")
 
 func _send_run_briefing(kind: String) -> void:
+	if preparing:
+		return
 	var cc := get_node_or_null("/root/CallCenter")
 	if cc != null:
 		cc.notify_agent(kind, "Active shape briefing: " + JSON.stringify(shape_run.briefing()), {}, true)
 
 func _on_run_chat_message(message: Dictionary) -> void:
-	if message.get("role", "") == "human":
+	if not preparing and message.get("role", "") == "human":
 		shape_run.note_human_message(str(message.get("text", "")))
 
 
 func _check_shape_progress() -> void:
-	if not _loading:
+	if not _loading and not preparing:
 		shape_run.check_position()
 
 
