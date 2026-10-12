@@ -15,6 +15,8 @@ func run() -> void:
 
 	var r: Dictionary = await bridge.handle("get_camera", {})
 	check(r.has("error"), "camera commands need an open view")
+	r = await bridge.handle("find_nearest_surface", {})
+	check(r.has("error"), "surface recovery requires an open view")
 	r = await bridge.handle("nonsense", {})
 	check(r.has("error"), "an unknown command is an error")
 
@@ -53,6 +55,9 @@ func run() -> void:
 	root.add_child(main)
 	current_scene = main
 	await frames(2)
+	# These traversal fixtures use the Mandelbox independently of startup defaults.
+	main.shapes().table(0).set_default(&"shape", FractalParams.Shape.MANDELBOX)
+	main._resolve_once()
 
 	r = await bridge.handle("status", {})
 	check(r.get("in_game"), "status reports the open view")
@@ -67,6 +72,26 @@ func run() -> void:
 	r = await bridge.handle("get_camera", {})
 	check_eq(r["surrounding_geometry"]["ray_count"], 20, "geometry fidelity changes live with Gameplay settings")
 	main.params.gameplay.surrounding_ray_count = 12
+
+	# Recovery works when looking away and reports a miss without moving.
+	var recovery_eye: PackedFloat64Array = main.camera.eye64()
+	main.camera.set_basis(CameraState.facing_basis(-main.camera.forward()))
+	r = await bridge.handle("find_nearest_surface", {})
+	check(r.get("ok", false), "MCP can point a lost player toward the surface")
+	check(main.view.center_ray().hit(), "MCP recovery actually faces a surface")
+	check_eq(main.camera.eye64(), recovery_eye, "MCP recovery preserves the eye")
+	check(r.get("distance", 0.0) > 0.0, "MCP reports the confirmed hit distance")
+	var recovery_basis: Basis = main.camera.transform.basis
+	main.params.gameplay.exit_radius = 0.000001
+	main.shapes().table(0).set_default(&"pos_x", 100.0)
+	main._resolve_once()
+	r = await bridge.handle("find_nearest_surface", {})
+	check(r.get("ok") == false and r.get("message", "").contains("No surface"),
+		"MCP reports a miss honestly")
+	check_eq(main.camera.transform.basis, recovery_basis, "MCP miss keeps the heading")
+	main.params.gameplay.exit_radius = 20.0
+	main.shapes().table(0).set_default(&"pos_x", 0.0)
+	main._resolve_once()
 
 	# set_camera: eye + look_at
 	r = await bridge.handle("set_camera", {"eye": [6, 0, 0], "look_at": [0, 0, 0]})

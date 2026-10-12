@@ -240,6 +240,7 @@ func handle(cmd: String, args: Dictionary) -> Dictionary:
 	match cmd:
 		"get_camera": return _camera_json(main, true)
 		"get_depth_scan": return main.view.request_depth_scan(args)
+		"find_nearest_surface": return _find_nearest_surface(main)
 		"set_camera": return await _set_camera(main, args)
 		"move": return await _move(main, args)
 		"rotate": return await _rotate(main, args)
@@ -296,6 +297,17 @@ func _start_game() -> Dictionary:
 
 
 # ------------------------------------------------------------- camera
+
+func _find_nearest_surface(main: Main) -> Dictionary:
+	var result := main.find_nearest_surface()
+	if result.get("ok", false):
+		# A queued ship turn/flight must not overwrite the recovered heading.
+		var cc := get_node_or_null("/root/CallCenter")
+		if cc != null and cc.adapter != null:
+			cc.adapter.stop("surface recovery")
+	result["camera"] = _camera_json(main)
+	return result
+
 
 func _camera_json(main: Main, include_surroundings := false) -> Dictionary:
 	var cam := main.camera

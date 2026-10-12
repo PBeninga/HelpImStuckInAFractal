@@ -152,6 +152,9 @@ func _ctrl_opens_console() -> void:
 
 
 func _scale_row_reaches_shader() -> void:
+	# This part of the journey edits Mandelbox-specific controls.
+	main.table().set_default(&"shape", FractalParams.Shape.MANDELBOX)
+	await ui.frames(1)
 	var row: AttributeRow = main.console().inspector().row(&"box_scale")
 	check(await ui.scroll_to(_scroll(), row.spin_box()), "the Scale row is in view")
 	await ui.type_text(row.spin_box().get_line_edit(), "-1.5")

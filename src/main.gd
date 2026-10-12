@@ -77,6 +77,7 @@ func _ready() -> void:
 	camera = CameraState.make_default()
 
 	_shapes = ShapeList.new()
+	_shapes.table(0).set_default(&"shape", FractalParams.Shape.KLEINIAN)
 	_shapes.changed.connect(_sync_shapes)
 	_look = AttributeTable.new(ShapeCatalogue.scene_specs())
 	_keymap = Keymap.new()
@@ -569,18 +570,21 @@ func return_to_spawn() -> void:
 
 
 ## Recover a lost shape without moving the eye or changing flight speed.
-func find_nearest_surface() -> void:
+func find_nearest_surface() -> Dictionary:
 	var hit := SurfaceFinder.find(params, camera)
 	if hit.is_empty():
-		_report("No surface found within the visible scene.")
-		return
+		var message := "No surface found within the visible scene."
+		_report(message)
+		return {"ok": false, "message": message}
 	var direction: Vector3 = hit.direction
 	camera.set_basis(CameraState.facing_basis(direction))
 	if _orbit and params.camera_mode == FractalParams.CameraMode.ORBIT:
 		var distance: float = hit.distance
 		_orbit.recenter_on(Vector3(camera.eye_x() + direction.x * distance,
 			camera.eye_y() + direction.y * distance, camera.eye_z() + direction.z * distance))
-	_report("Facing nearest surface (distance %s)." % hit.distance)
+	var message := "Facing nearest surface (distance %s)." % hit.distance
+	_report(message)
+	return {"ok": true, "message": message, "distance": hit.distance}
 
 
 ## Cmd/Ctrl+P: put the fractal (without any UI) on the clipboard.

@@ -195,6 +195,22 @@ relay(
 
 // ---------------------------------------------------------------- traversal
 
+server.registerTool(
+  "find_nearest_surface",
+  {
+    description: "Help a lost player who asks to be pointed back toward the shape. Cast rays in all directions and face the closest confirmed surface hit, keeping position and speed. Cancels any active ship manoeuvre on success. Returns ok, message, hit distance in world units and camera state; a miss leaves the view unchanged. This points at a surface, not an escape route.",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const result = await call("find_nearest_surface");
+      return { ...json(result), isError: result.ok === false || Boolean(result.error) };
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
 const COORDS =
   "All positions are fractal coordinates (the space the distance estimator is evaluated in); " +
   "+Z is world up. The default view puts the eye at (8.18, 3.81, 3.28) looking at the origin.";

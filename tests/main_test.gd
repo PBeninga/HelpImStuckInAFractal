@@ -24,6 +24,12 @@ func run() -> void:
 	root.add_child(main)
 	await frames(2)
 
+	check_eq(main.params.shape().shape, FractalParams.Shape.KLEINIAN, "a fresh session starts with Kleinian")
+	check(main.console().inspector().heading("Kleinian").visible, "the startup inspector shows Kleinian controls")
+	# The remaining input checks exercise Mandelbox controls.
+	main.table().set_default(&"shape", FractalParams.Shape.MANDELBOX)
+	await frames(1)
+
 	var fly: FlyCamera = main.get_node("FlyCamera")
 	var console: ConsoleWindow = main.console()
 

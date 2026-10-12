@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## F3 is global, including while a child window or text field owns keyboard focus.
-## This canvas sits above Godot's embedded-window layer (1024).
+## Only the game window draws the overlay, below embedded windows (layer 1024).
 
 const REFRESH_SECONDS := 0.25
 
@@ -24,12 +24,10 @@ var _rendered := false
 var _render_samples := 0
 var _render_cpu := 0.0
 var _render_gpu := 0.0
-## Native windows need their own canvas; embedded ones use the root canvas.
-var _window_layers: Dictionary = {}
 
 
 func _ready() -> void:
-	layer = 1025
+	layer = 1023
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	process_priority = 1000
 	visible = false
@@ -76,24 +74,6 @@ func _add_shortcut(window_id: int) -> void:
 	shortcut.process_mode = Node.PROCESS_MODE_ALWAYS
 	shortcut.toggle = func() -> void: visible = not visible
 	window.add_child(shortcut)
-	if window == get_tree().root:
-		return
-	var overlay := CanvasLayer.new()
-	overlay.name = "PerformanceOverlay"
-	overlay.layer = layer
-	overlay.visible = false
-	window.add_child(overlay)
-	overlay.add_child(panel.duplicate())
-	_window_layers[window_id] = overlay
-	window.visibility_changed.connect(_sync_window.bind(window_id))
-	window.tree_exiting.connect(func() -> void: _window_layers.erase(window_id), CONNECT_ONE_SHOT)
-	_sync_window(window_id)
-
-
-func _sync_window(window_id: int) -> void:
-	var window := instance_from_id(window_id) as Window
-	if window != null and _window_layers.has(window_id):
-		_window_layers[window_id].visible = visible and window.visible and not window.is_embedded()
 
 
 func watch_viewport(viewport: SubViewport) -> void:
@@ -135,8 +115,6 @@ func _visibility_changed() -> void:
 			RenderingServer.frame_pre_draw.disconnect(_before_draw)
 		if RenderingServer.frame_post_draw.is_connected(_after_draw):
 			RenderingServer.frame_post_draw.disconnect(_after_draw)
-	for window_id: int in _window_layers:
-		_sync_window(window_id)
 
 
 func _exit_tree() -> void:
@@ -196,10 +174,6 @@ func _refresh(rows: Array) -> void:
 	lines.append("F3 to close · measurement stops when hidden")
 	readout.text = "\n".join(lines)
 	panel.reset_size()
-	for overlay: CanvasLayer in _window_layers.values():
-		var copy := overlay.get_child(0) as PanelContainer
-		(copy.get_child(0) as Label).text = readout.text
-		copy.reset_size()
 
 
 func _render_line(label: String, ms: float) -> String:

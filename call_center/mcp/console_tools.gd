@@ -2,7 +2,7 @@ extends RefCounted
 ## Voice/MCP access to the same models and actions as the game's console.
 ## No arbitrary property writes or script execution.
 const SECTIONS := ["overview", "shape", "look", "view", "gameplay", "axes", "noise"]
-const ACTIONS := ["start_game", "pause", "resume", "add_shape", "remove_shape", "select_shape", "rename_shape", "return_to_spawn", "reset_renderer", "reset_palette", "reset_axes", "toggle_fullscreen", "reset_window", "show_console", "hide_console", "show_noise", "hide_noise", "back_to_menu", "list_levels", "save_level", "load_level"]
+const ACTIONS := ["start_game", "pause", "resume", "add_shape", "remove_shape", "select_shape", "rename_shape", "return_to_spawn", "find_nearest_surface", "reset_renderer", "reset_palette", "reset_axes", "toggle_fullscreen", "reset_window", "show_console", "hide_console", "show_noise", "hide_noise", "back_to_menu", "list_levels", "save_level", "load_level"]
 var bridge: Node
 
 func _init(p_bridge: Node) -> void:
@@ -15,7 +15,7 @@ func register(cc: Node) -> void:
 		{"type": "object", "properties": {"section": section, "shape_index": index}, "additionalProperties": false}, inspect)
 	cc.register_tool("set_console_controls", "Edit console settings. Read the section first. Shape/look values use {defaults: {attribute_id: value}, bindings: {attribute_id: {source, gain, waveform, period}}}; source empty clears a binding, time or an axis id drives it. View/gameplay values are a partial field map. Axes uses {entries: [...]} replacing the complete list. Noise uses the complete graph returned by inspection. Other settings stay unchanged. Results include actual applied values and warnings.",
 		{"type": "object", "properties": {"section": section, "shape_index": index, "values": {"type": "object"}}, "required": ["section", "values"], "additionalProperties": false}, edit)
-	cc.register_tool("console_action", "Run a console button/action, start the game, or pause/resume. Shape actions take shape_index; rename takes name. Save/load use a level name within the game's saves directory; list_levels lists them. Saving overwrites that named level; back_to_menu discards unsaved changes. Only do these when requested by the pilot.",
+	cc.register_tool("console_action", "Run a console button/action, start the game, or pause/resume. find_nearest_surface helps a lost pilot: cast rays in all directions and turn toward the closest hit without moving or changing speed; cancels any active manoeuvre on success and reports if nothing was found. Shape actions take shape_index; rename takes name. Save/load use a level name within the game's saves directory; list_levels lists them. Saving overwrites that named level; back_to_menu discards unsaved changes. Only do these when requested by the pilot.",
 		{"type": "object", "properties": {"action": {"type": "string", "enum": ACTIONS}, "shape_index": index, "name": {"type": "string"}}, "required": ["action"], "additionalProperties": false}, act)
 
 func _main() -> Node:
@@ -182,6 +182,9 @@ func act(args: Dictionary) -> Dictionary:
 				return _fail("A non-empty shape name is required.")
 			main.shapes().set_label(index, str(args.name))
 		"return_to_spawn": main.return_to_spawn()
+		"find_nearest_surface":
+			main._resolve_once()
+			return bridge._find_nearest_surface(main)
 		"reset_renderer": main.view_pane().renderer.reset_defaults()
 		"reset_palette": main.console().palette().reset()
 		"reset_axes": main.keymap().reset_to_default()

@@ -15,6 +15,9 @@ func run() -> void:
 		await frames(1)
 		return
 	var params: FractalParams = main.params
+	params.shape().shape = FractalParams.Shape.MANDELBOX
+	# Recovery fixtures use a bounded Mandelbox, unlike the startup Kleinian.
+	params.shape().shape = FractalParams.Shape.MANDELBOX
 	var camera: CameraState = main.camera
 	camera.set_eye(0.123456789012345, 0.0, 0.0)
 	camera.speed_factor = 3.25

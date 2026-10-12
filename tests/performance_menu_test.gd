@@ -24,7 +24,7 @@ func run() -> void:
 	check(profiler.take_snapshot(1).is_empty(), "hidden work is never recorded")
 	root.push_input(key())
 	check(menu.visible and profiler.enabled, "F3 opens and enables profiling")
-	check(menu.layer > 1024, "overlay draws above embedded windows")
+	check(menu.layer < 1024, "overlay stays below embedded console windows")
 	check_eq(menu.panel.get_theme_stylebox("panel").bg_color.a, 1.0, "panel is fully opaque")
 	root.push_input(key(true))
 	check(menu.visible, "key repeat does not close the menu")
@@ -51,10 +51,8 @@ func run() -> void:
 	check(names.has(&"Console readouts"), "actual console refresh is instrumented")
 	check(names.has(&"CPU centre ray"), "actual centre march is instrumented")
 	var mirror: CanvasLayer = main.console().get_node_or_null("PerformanceOverlay")
-	check(mirror != null, "separate windows have their own overlay above their controls")
-	if mirror != null:
-		check(mirror.layer > 1024, "native-window readout is above its menus")
-		check(not mirror.visible, "embedded windows use the main overlay without duplicate panels")
+	check(mirror == null, "console has no performance overlay")
+	check(menu.get_viewport() == root, "performance overlay belongs to the game window")
 	var edit := LineEdit.new()
 	main.console().add_child(edit)
 	edit.grab_focus()
@@ -71,8 +69,7 @@ func run() -> void:
 	check(menu.visible and profiler.enabled, "F3 reopens from the noise window")
 	await create_timer(0.3).timeout
 	check(menu.readout.text.contains("FPS") and menu.readout.text.contains("16.67"), "readout shows FPS and the frame budget")
-	if mirror != null:
-		check_eq(mirror.get_child(0).get_child(0).text, menu.readout.text, "native readouts share the same samples")
+	check(main.noise_window().get_node_or_null("PerformanceOverlay") == null, "noise window has no performance overlay")
 	main.queue_free()
 	await frames(2)
 	check(menu.measured_viewport == null, "scene exit releases render measurement target")
