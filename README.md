@@ -525,14 +525,14 @@ id) applies those values onto the axes in hand and leaves the keys alone; a
 writes version 4. An exported build cannot write into the
 project, so it saves to `user://saves/` instead.
 
-**Play Game** opens the level named by `application/run/default_level` in
-`project.godot`, currently `res://saves/nestedEscape.json`. This Git-tracked
-pointer uses a project-relative path so teammates open the same level after
-pulling. Change that setting to choose
-another opening level; saving or loading a different level does not change it.
-An empty setting starts the built-in scene. If the configured file is missing
-or invalid, the built-in scene remains available and Gameplay reports the load
-failure.
+**Play Game** opens the level named in `last_saved.txt` in the project root.
+Every successful save (including quick-save) updates this pointer; loading a
+different level leaves it alone. Paths inside the project use `res://` so the
+pointer stays portable; saves outside the project retain their absolute path.
+An exported build keeps its pointer at `user://last_saved.txt` instead.
+A missing or empty pointer starts the built-in scene. If the pointed-to save
+is missing or invalid, the built-in scene remains available and Gameplay
+reports the load failure.
 
 | file | what it is |
 |---|---|

@@ -119,9 +119,8 @@ func _ready() -> void:
 
 	params.changed.connect(_apply_mode)
 	camera.changed.connect(func(): governor.mark_changed())
-	# This portable pointer lives in project.godot so every checkout opens
-	# the same level, through the ordinary loader.
-	var default_level: String = ProjectSettings.get_setting("application/run/default_level", "")
+	# Reopen the last successful save through the ordinary level loader.
+	var default_level := WorkspaceFiles.last_saved_file()
 	if default_level != "":
 		load_level_from(default_level)
 	_resolve_once()
@@ -524,6 +523,10 @@ func save_level_to(path: String) -> void:
 		_report("Save failed (error %d): %s" % [err, path])
 		return
 	_files.note_saved(path)
+	var pointer_err := WorkspaceFiles.remember_saved(path)
+	if pointer_err != OK:
+		_report("Saved %s, but could not update startup pointer (error %d)." % [path.get_file(), pointer_err])
+		return
 	_report("Saved %s" % path.get_file())
 
 

@@ -2,8 +2,8 @@ class_name WorkspaceFiles
 extends Node
 ## Which file a level is saved to or loaded from, and which one is current.
 ##
-## It owns the two file panels and the current file's path, and nothing
-## else: it never reads a save, never writes one, and knows nothing about the
+## It owns the two file panels, the current file's path and the startup
+## pointer: it never reads a save, never writes one, and knows nothing about the
 ## fractal, the camera or the JSON format. Picking a file emits `save_to` or
 ## `load_from`; whoever does the work calls `note_saved` or `note_loaded` if it
 ## worked, so a failed save never becomes the current file.
@@ -46,6 +46,38 @@ static func directory_for(source_build: bool) -> String:
 
 static func directory() -> String:
 	return directory_for(OS.has_feature("editor"))
+
+
+## Source runs keep the pointer in the project root; exports need writable storage.
+static func startup_pointer_path() -> String:
+	var default_path := "res://last_saved.txt" if OS.has_feature("editor") else "user://last_saved.txt"
+	return ProjectSettings.get_setting("application/run/last_saved_pointer", default_path)
+
+
+static func last_saved_file() -> String:
+	var pointer := startup_pointer_path()
+	if not FileAccess.file_exists(pointer):
+		return ""
+	return FileAccess.get_file_as_string(pointer).strip_edges()
+
+
+## Replace the pointer only after its complete contents have reached disk.
+## Local paths inside the project stay portable when the checkout moves.
+static func remember_saved(path: String) -> Error:
+	var pointer := startup_pointer_path()
+	var temporary := pointer + ".tmp"
+	var file := FileAccess.open(temporary, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	file.store_string(ProjectSettings.localize_path(path) + "\n")
+	file.flush()
+	var err := file.get_error()
+	file.close()
+	if err == OK:
+		err = DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary), ProjectSettings.globalize_path(pointer))
+	if err != OK:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(temporary))
+	return err
 
 
 ## Create the saves directory if it is missing. Returns OK when it is there.

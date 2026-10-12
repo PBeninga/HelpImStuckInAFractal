@@ -8,12 +8,14 @@ extends SceneTree
 
 var _failures := 0
 var _checks := 0
+var _startup_pointer: String
 
 
 func _initialize() -> void:
-	# Most suites need a fresh, unsaved scene independent of the team's chosen
-	# opening level. Startup tests explicitly restore or replace this setting.
-	ProjectSettings.set_setting("application/run/default_level", "")
+	# Keep startup and saves isolated from the player's real pointer file.
+	_startup_pointer = "user://%s_last_saved.txt" % get_script().resource_path.get_file()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_startup_pointer))
+	ProjectSettings.set_setting("application/run/last_saved_pointer", _startup_pointer)
 	await run()
 	finish()
 
@@ -73,6 +75,7 @@ func press_action(action: StringName) -> void:
 
 
 func finish() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_startup_pointer))
 	var name: String = get_script().resource_path.get_file()
 	if _failures == 0:
 		print("%s PASSED (%d checks)" % [name, _checks])

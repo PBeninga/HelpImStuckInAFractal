@@ -174,8 +174,10 @@ static func save_file(path: String, shapes: ShapeList, look: AttributeTable, key
 	if file == null:
 		return FileAccess.get_open_error()
 	file.store_string(JSON.stringify(capture(shapes, look, keymap, params, camera, noise), "\t", false, true))
+	file.flush()
+	var err := file.get_error()
 	file.close()
-	return OK
+	return err
 
 
 ## Read `path` and restore it as a level. Never throws. A version-1 file is
