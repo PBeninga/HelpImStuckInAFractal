@@ -50,6 +50,9 @@ call_center/run.sh                # the game as usual, with the call centre
 call_center/run.sh --demo         # straight to the cockpit, with live geometry navigation
 ```
 
+The root `./run.sh` always delegates to this launcher with the same arguments.
+Both support `--editor` to open the game in the Godot editor.
+
 From a Claude session, use `tools/launch.sh -- --play --call-center-demo`, or
 the MCP `launch_game {call_center: "demo"}`.
 

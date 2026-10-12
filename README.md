@@ -23,11 +23,13 @@ GDScript only — no C#, even though the Godot build on disk is the Mono build.
 ## Run
 
 ```bash
-./run.sh            # run the project
+./run.sh            # run the project with the call centre
+./run.sh --demo     # straight to the cockpit, with live geometry navigation
 ./run.sh --editor   # open it in the Godot editor instead
 ```
 
-`run.sh` finds `godot4` on your `PATH` (or falls back to `Godot_mono.app` /
+`run.sh` always delegates to `call_center/run.sh`, forwarding all arguments.
+That launcher finds `godot4` on your `PATH` (or falls back to `Godot_mono.app` /
 `Godot.app`), refreshes Godot's script-class cache when a script has changed,
 and then launches the main scene: the **Icebox Nav** title menu (Play Game,
 Settings, Quit; Quit is hidden in a web build). Set `GODOT=/path/to/godot` to use a different
@@ -853,7 +855,7 @@ caller's words with `chat_post` and speaks the agent's replies). See
 the game: the crash report and self-resolving diagnostics log, the support
 panel, brackets on whatever the agent names, and high-level ship tools
 (`ship_tools`, `ship_tool`, `ship_events`) that McpBridge serves. Run the game
-with it via `call_center/run.sh` (`--demo` to enter the cockpit directly); see
+with it via `./run.sh` or `call_center/run.sh` (`--demo` to enter the cockpit directly); see
 `call_center/README.md`.
 
 **Launching from a Claude session.** `launch_game` runs `tools/launch.sh -- --play

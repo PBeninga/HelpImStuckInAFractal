@@ -1,5 +1,5 @@
 # shellcheck shell=sh
-# Sourced by run.sh and tools/launch.sh, from the repo root, with $GODOT set.
+# Sourced by call_center/run.sh and tools/launch.sh, from the repo root, with $GODOT set.
 #
 # Refresh the script class cache when a script is newer than it, or declares a
 # class_name the cache has not heard of (the editor does this on open; this
