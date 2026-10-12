@@ -13,7 +13,7 @@ func run() -> void:
 		for back in [1e-1, 1e-3, 1e-6]:
 			var e := SurfaceFixture.backed(s, back)
 			var o := ReferenceOrbit.build(params, e[0], e[1], e[2])
-			check_eq(o.distance, DistanceEstimator.estimate_at(e[0], e[1], e[2], params),
+			check_eq(o.distance, DistanceEstimator.scene_estimate_at(e[0], e[1], e[2], params),
 				"%s, %s back: distance is the estimator's, exactly" % [name, back])
 		var o0 := ReferenceOrbit.build(params, s[0], s[1], s[2])
 		check_eq(o0.perturbable, v[3], "%s: perturbable is %s" % [name, v[3]])
@@ -39,7 +39,7 @@ func run() -> void:
 	var e := CameraState.DEFAULT_EYE
 	check_eq(ReferenceOrbit.build(box, e.x, e.y, e.z).n, 32, "the Mandelbox always runs 32 iterations")
 	var kifs := FractalParams.new()
-	kifs.shape = FractalParams.Shape.KIFS
+	kifs.shape().shape = FractalParams.Shape.KIFS
 	var ko := ReferenceOrbit.build(kifs, 3.2, 2.4, 1.9)
 	check(ko.n < 32, "a KIFS eye outside the sponge escapes early (n %d)" % ko.n)
 	check_eq(ko.mag[32], pow(3.0, 32), "and its mag is |scale|^i regardless of the escape")
@@ -54,13 +54,13 @@ func run() -> void:
 	var folded := x0.duplicate()
 	DistanceEstimator._fold(folded, 1.0, 0, false, 0.0)
 	check_eq(o.c[0], Vector4(folded[0], folded[1], folded[2], folded[3]), "c[0] is the sphere fold's input (post box fold)")
-	check_eq(o.rec64[3 * 4 + 2] * absf(box.box_scale), o.mag[1], "mag[1] is the sphere factor d[0].z times |scale|")
+	check_eq(o.rec64[3 * 4 + 2] * absf(box.shape().box_scale), o.mag[1], "mag[1] is the sphere factor d[0].z times |scale|")
 
 	# KIFS: d[i] is X_{i+1}; Kleinian: d[i].y is the inversion factor and mag multiplies by it
 	for i in mini(ko.n, ReferenceOrbit.PERT_MAX):
 		check_eq(ko.d[i], ko.points[i + 1], "KIFS d[%d] is X_%d" % [i, i + 1])
 	var kl := FractalParams.new()
-	kl.shape = FractalParams.Shape.KLEINIAN
+	kl.shape().shape = FractalParams.Shape.KLEINIAN
 	var ls := SurfaceFixture.surface_from(kl, Vector3(2.5, 1.6, 1.2))
 	var lo := ReferenceOrbit.build(kl, ls[0], ls[1], ls[2])
 	var factors_ok := true

@@ -9,14 +9,21 @@ extends RefCounted
 ## relative precision as a large one, so the GPU can tell which side of a crease
 ## a pixel lands on without forming the pixel's point.
 ##
-##   var orbit := ReferenceOrbit.build(params, ex, ey, ez)
-##   orbit.distance   # == DistanceEstimator.estimate_at(ex, ey, ez, params), exactly
+##   var orbit := ReferenceOrbit.build(params, ex, ey, ez)   # the world eye, 64-bit
+##   orbit.index      # the shape it was built for: the one the eye is nearest
+##   orbit.eye        # the eye in that shape's frame (ShapeParams.to_local), where
+##                    # the orbit, the points and the record live
+##   orbit.distance   # == DistanceEstimator.scene_estimate_at(ex, ey, ez, params), exactly (world units)
 ##   orbit.n          # iterations run before a KIFS bailout or a Kleinian fixed point (32 otherwise)
 ##   orbit.mag        # λ_0 .. λ_32 (λ_0 = 1): how much the orbit has magnified after i iterations
 ##   orbit.points     # X_0 .. X_32 as 32-bit Vector4s (the first PERT_MAX + 1 are pushed as
 ##                    # pert_x: the point a ray hands off to after i perturbed iterations)
 ##   orbit.a, .b, .c, .d   # the record, PERT_MAX Vector4s each (layout: see the shader's header)
 ##   orbit.perturbable     # false for the octahedral fold, the polyfold and the Mandelbulb
+##
+## Only the nearest shape is perturbed: the camera is deep inside one shape's
+## detail at a time, and the other shapes march directly. build_shape() builds
+## the orbit for one shape from a local eye.
 ##
 ## Built by FractalView._push_near() (the record it pushes), FlyCamera.move_allowed() and FractalParams.zoom_floor() (the floors).
 ##
@@ -29,8 +36,12 @@ const ITERATIONS := 32
 const PERT_MAX := 20
 const PLANES := DistanceEstimator.PLANES
 
+var index := 0
+var world_eye := PackedFloat64Array([0.0, 0.0, 0.0])
 var eye := PackedFloat64Array([0.0, 0.0, 0.0])
 var distance := 0.0
+## distance in the shape's own units (distance / its size).
+var local_distance := 0.0
 var n := ITERATIONS
 var perturbable := false
 var mag := PackedFloat64Array()
@@ -43,9 +54,24 @@ var d := PackedVector4Array()
 var rec64 := PackedFloat64Array()
 
 
+## The orbit at the world eye (ex, ey, ez), for the shape the eye is nearest.
 static func build(params: FractalParams, ex: float, ey: float, ez: float) -> ReferenceOrbit:
+	var i: int = DistanceEstimator.nearest_at(ex, ey, ez, params)["index"]
+	var shape := params.shapes[i]
+	var q := shape.to_local(ex, ey, ez)
+	var o := build_shape(shape, q[0], q[1], q[2])
+	o.index = i
+	o.world_eye = PackedFloat64Array([ex, ey, ez])
+	o.distance = o.local_distance * shape.size
+	return o
+
+
+## The orbit of one shape at a point in its own frame. world_eye and distance
+## are the local ones until build() maps them out.
+static func build_shape(params: ShapeParams, ex: float, ey: float, ez: float) -> ReferenceOrbit:
 	var o := ReferenceOrbit.new()
 	o.eye = PackedFloat64Array([ex, ey, ez])
+	o.world_eye = o.eye
 	o.mag.resize(ITERATIONS + 1)
 	o.mag.fill(1.0)
 	o.points64.resize((ITERATIONS + 1) * 4)
@@ -62,12 +88,13 @@ static func build(params: FractalParams, ex: float, ey: float, ez: float) -> Ref
 		_:
 			o._mandelbox(params, ex, ey, ez)
 	o._pack()
+	o.local_distance = o.distance
 	return o
 
 
 # ------------------------------------------------------------- Mandelbox
 
-func _mandelbox(params: FractalParams, px: float, py: float, pz: float) -> void:
+func _mandelbox(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	var scale := params.box_scale
 	var drift := params.scale_drift
 	var fold_shape := params.fold_shape
@@ -177,7 +204,7 @@ func _sphere_record(i: int, z: Array, mr2: float, fr2: float, keep: bool) -> flo
 
 # ------------------------------------------------------------- KIFS
 
-func _kifs(params: FractalParams, px: float, py: float, pz: float) -> void:
+func _kifs(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	var s := params.kifs_scale
 	var fold_set := params.kifs_fold
 	var sector := TAU / float(maxi(int(floor(params.kifs_poly_k + 0.5)), 2))
@@ -268,7 +295,7 @@ func _kifs(params: FractalParams, px: float, py: float, pz: float) -> void:
 
 # ------------------------------------------------------------- Kleinian
 
-func _kleinian(params: FractalParams, px: float, py: float, pz: float) -> void:
+func _kleinian(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	var bx := [params.kleinian_box_0, params.kleinian_box_1, params.kleinian_box_2, params.kleinian_box_3]
 	var shift := [params.kleinian_shift_0, params.kleinian_shift_1, params.kleinian_shift_2, params.kleinian_shift_3]
 	var k := params.kleinian_radius * params.kleinian_radius
@@ -308,7 +335,7 @@ func _kleinian(params: FractalParams, px: float, py: float, pz: float) -> void:
 
 # ------------------------------------------------------------- Mandelbulb (not perturbed)
 
-func _mandelbulb(params: FractalParams, px: float, py: float, pz: float) -> void:
+func _mandelbulb(params: ShapeParams, px: float, py: float, pz: float) -> void:
 	perturbable = false
 	n = ITERATIONS
 	distance = MandelbulbEstimator.estimate_at(px, py, pz, params)

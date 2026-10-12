@@ -30,6 +30,7 @@ const SAMPLES := 48
 
 
 func run() -> void:
+	check_eq(PerturbationPort.PERT_HANDOFF, FractalParams.PERT_HANDOFF, "the port hands off where FractalParams says")
 	_check_emulation()
 	_check_cases()
 	_check_algebra()
@@ -194,10 +195,10 @@ func _check_algebra() -> void:
 		# iterations, which amplify round-off chaotically (measured up to 7e-5), so the
 		# bar here is the march's own agreement, 0.1%
 		check(worst_de <= AGREE_T, "%s: and the estimate after the handoff is the direct one within 0.1%% (worst relative difference %s)" % [name, worst_de])
-		var merged: Dictionary = by_shape.get(params.shape, {})
+		var merged: Dictionary = by_shape.get(params.shape().shape, {})
 		for kind in port.crossings:
 			merged[kind] = int(merged.get(kind, 0)) + int(port.crossings[kind])
-		by_shape[params.shape] = merged
+		by_shape[params.shape().shape] = merged
 	print("crossings by shape: ", by_shape)
 	var want := {
 		FractalParams.Shape.MANDELBOX: ["clamp", "sphere", "cylinder"],
@@ -241,10 +242,10 @@ func _fan(f: Vector3) -> Array:
 ## [class, t]: class 0 a hit (estimate under eps × t), 1 beyond (t past 10 d),
 ## 2 out of steps. The 64-bit reference: DistanceEstimator at o + dir t in doubles.
 func _march_ref(o: PackedFloat64Array, dir: Array, params: FractalParams, d: float) -> Array:
-	var eps := params.precision / params.detail
+	var eps := params.shape().precision / params.detail
 	var t := 0.0
 	for _i in STEPS:
-		var de := DistanceEstimator.estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
+		var de := DistanceEstimator.scene_estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
 		if de < eps * t:
 			return [0, t]
 		t += de
@@ -255,7 +256,7 @@ func _march_ref(o: PackedFloat64Array, dir: Array, params: FractalParams, d: flo
 
 ## Today's shader in float32: the position eye + dir t formed in 32 bits.
 func _march_direct(port: PerturbationPort, dir: Array, params: FractalParams, d: float) -> Array:
-	var eps := port.u(params.precision / params.detail)
+	var eps := port.u(params.shape().precision / params.detail)
 	var t := 0.0
 	for _i in STEPS:
 		var pos := [port.r(port.eye[0] + port.r(dir[0] * t)), port.r(port.eye[1] + port.r(dir[1] * t)),
@@ -271,7 +272,7 @@ func _march_direct(port: PerturbationPort, dir: Array, params: FractalParams, d:
 
 ## The perturbed shader in float32: only the offset dir t is formed.
 func _march_pert(port: PerturbationPort, orbit, k: int, dir: Array, params: FractalParams, d: float) -> Array:
-	var eps := port.u(params.precision / params.detail)
+	var eps := port.u(params.shape().precision / params.detail)
 	var t := 0.0
 	for _i in STEPS:
 		var off := [port.r(dir[0] * t), port.r(dir[1] * t), port.r(dir[2] * t)]
@@ -286,19 +287,6 @@ func _march_pert(port: PerturbationPort, orbit, k: int, dir: Array, params: Frac
 
 func _agree(got: Array, want: Array) -> bool:
 	return got[0] == want[0] and (got[0] != 0 or absf(got[1] - want[1]) <= AGREE_T * want[1])
-
-
-## Task 4 replaces these two with FractalParams.pert_iters / floor_pert.
-func _records(orbit) -> int:
-	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
-
-
-func _floor_pert(orbit, params: FractalParams) -> float:
-	var eps := params.precision / params.detail
-	var kk := mini(ReferenceOrbit.PERT_MAX, orbit.n)
-	var x: Vector4 = orbit.points[kk]
-	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
-	return FractalParams.ulp32(m) / (FractalParams.ZOOM_FLOOR_DIVISOR * eps * orbit.mag[kk])
 
 
 ## The perturbed march must agree on at least 90% at every cell. The direct one's
@@ -317,8 +305,8 @@ func _check_agreement() -> void:
 			var e := SurfaceFixture.backed(s, d)
 			var orbit := ReferenceOrbit.build(params, e[0], e[1], e[2])
 			var near := orbit.distance
-			var k := _records(orbit)
-			var fp := _floor_pert(orbit, params)
+			var k := params.pert_iters(orbit, near)
+			var fp := params.floor_pert(orbit)
 			var port := PerturbationPort.new(params, e, true)
 			var classes := [0, 0, 0]
 			var direct := 0
@@ -345,10 +333,10 @@ func _check_agreement() -> void:
 
 ## A 64-bit march: [class, t] as _march_ref, with a step budget of its own.
 func _march_budget(o: PackedFloat64Array, dir: Array, params: FractalParams, d: float, steps: int) -> Array:
-	var eps := params.precision / params.detail
+	var eps := params.shape().precision / params.detail
 	var t := 0.0
 	for _i in steps:
-		var de := DistanceEstimator.estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
+		var de := DistanceEstimator.scene_estimate_at(o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t, params)
 		if de < eps * t:
 			return [0, t]
 		t += de
@@ -380,7 +368,7 @@ func _print_reference_floor() -> void:
 		var s := SurfaceFixture.along(params, SurfaceFixture.backed(s0, 1e-3), Vector3(s0[3], s0[4], s0[5]), 1e-13)
 		var e0 := PackedFloat64Array([s[0], s[1], s[2]])
 		var line := "REFERENCE FLOOR | FAN %s (surface estimate %s, eps %s) |" % [fx[0],
-			DistanceEstimator.estimate_at(s[0], s[1], s[2], params), params.precision / params.detail]
+			DistanceEstimator.scene_estimate_at(s[0], s[1], s[2], params), params.shape().precision / params.detail]
 		var fan := _fan(Vector3(s[3], s[4], s[5]))
 		for dd in depths:
 			var d: float = dd

@@ -348,18 +348,80 @@ static func ulp32(x: float) -> float:
 	return pow(2.0, e - 23)
 
 
-## How close the fly camera may come to the surface with its eye at `eye`
-## (world units): the zoom floor (ShapeParams.zoom_floor) of the shape the eye
-## is nearest to, at this view's detail. With one shape at the identity
-## placement this is the old formula: about 1e-4 near the box at the default
-## precision. The 64-bit overload takes the eye's exact components.
-func zoom_floor(eye: Vector3) -> float:
-	return zoom_floor_at(eye.x, eye.y, eye.z)
+## The 32-bit floor at a world eye (64-bit components, as [x, y, z] or a
+## PackedFloat64Array): how close the fly camera may come to the surface while
+## the shader forms ray positions in 32-bit floats, in world units. It is the
+## floor (ShapeParams.zoom_floor) of the shape the eye is nearest to, in that
+## shape's own frame, at this view's detail: about 1e-4 near the box at the
+## default precision for one shape at the identity placement, and a thousandth
+## of that for a shape a thousandth the size. The guard for shapes that are not
+## perturbed, and the scale pert_iters() switches on at.
+func floor32(eye) -> float:
+	var i: int = DistanceEstimator.nearest_at(eye[0], eye[1], eye[2], self)["index"]
+	return shapes[i].zoom_floor(eye[0], eye[1], eye[2], detail)
+
+
+## Perturbation (see ReferenceOrbit and perturbation.gdshaderinc) switches on
+## once the camera is within PERT_ON × the 32-bit floor: an order of magnitude
+## before the 32-bit march breaks, where both agree, so there is no pop.
+const PERT_ON := 10.0
+## The shader's handoff radius (perturbation.gdshaderinc's PERT_HANDOFF, which
+## shader_test checks against this): a ray stops perturbing once its offset from
+## the reference reaches it, where a 32-bit point is fine enough for the hit
+## threshold. Measured (tests/perturbation_test.gd's grid): at 1e-2 four rays in
+## 27 on the default box at 1e-6 landed 0.15-0.5% off; at 0.1 every cell agrees.
+const PERT_HANDOFF := 0.1
+
+
+## The shape a reference orbit was built for (ReferenceOrbit.index).
+func orbit_shape(orbit: ReferenceOrbit) -> ShapeParams:
+	return shapes[clampi(orbit.index, 0, shapes.size() - 1)]
+
+
+## How many of the reference orbit's records the shader may use for a camera
+## whose raw (world) distance to the surface is `near`: 0 (off: the direct
+## march, exactly as before) when the orbit's shape is not perturbable or the
+## camera is at least PERT_ON × floor32 away; else all of them,
+## min(PERT_MAX, orbit.n). Each ray decides its own handoff from the size of
+## its offset (PERT_HANDOFF). Only the orbit's shape, the one the camera is
+## nearest, is perturbed.
+func pert_iters(orbit: ReferenceOrbit, near: float) -> int:
+	if not orbit.perturbable or near >= PERT_ON * floor32(orbit.world_eye):
+		return 0
+	return mini(ReferenceOrbit.PERT_MAX, orbit.n)
+
+
+## The perturbed march's own floor, in world units: the 32-bit floor applied at
+## the last handoff point X_K (K = min(PERT_MAX, n)), where the view is mag[K]
+## times bigger, in the orbit's shape's frame and scaled back by its size.
+func floor_pert(orbit: ReferenceOrbit) -> float:
+	var s := orbit_shape(orbit)
+	var k := mini(ReferenceOrbit.PERT_MAX, orbit.n)
+	var x: Vector4 = orbit.points[k]
+	var m := maxf(maxf(absf(x.x), absf(x.y)), maxf(absf(x.z), absf(x.w)))
+	return ulp32(m) * s.size / (ShapeParams.ZOOM_FLOOR_DIVISOR * maxf(s.precision / detail, 1e-30) * maxf(orbit.mag[k], 1e-300))
+
+
+## The zoom floor for a reference orbit already built at the eye: floor_pert when
+## the shape is perturbable, else the 32-bit floor. Not guarded: where 32
+## iterations stop resolving (the estimate bottoms out). That depth varies by
+## orders of magnitude from point to point (tests/perturbation_test.gd prints it),
+## and past it rays run out of steps and the picture darkens; a follow-up.
+func zoom_floor_for(orbit: ReferenceOrbit) -> float:
+	if not orbit.perturbable:
+		return floor32(orbit.world_eye)
+	return floor_pert(orbit)
+
+
+## How close the fly camera may come to the surface with its eye at `eye` (world
+## units; a Vector3, or 64-bit components as [x, y, z] or a PackedFloat64Array):
+## the floor of the reference orbit at the eye, built for the nearest shape.
+func zoom_floor(eye) -> float:
+	return zoom_floor_at(eye[0], eye[1], eye[2])
 
 
 func zoom_floor_at(ex: float, ey: float, ez: float) -> float:
-	var i: int = DistanceEstimator.nearest_at(ex, ey, ez, self)["index"]
-	return shapes[i].zoom_floor(ex, ey, ez, detail)
+	return zoom_floor_for(ReferenceOrbit.build(self, ex, ey, ez))
 
 
 ## The coarse share of a step budget: `budget`, or max_steps when it is 0 (the

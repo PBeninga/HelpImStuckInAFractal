@@ -161,16 +161,23 @@ func run() -> void:
 
 
 
-## A camera on the default view's line of sight, `back` short of the surface.
+## A camera on the default view's line of sight, `back` short of the surface (64-bit).
 func _place(cam: CameraState, s: Array, back: float) -> void:
-	var t := CameraState.make_default().transform
-	t.origin = Vector3(s[0] - s[3] * back, s[1] - s[4] * back, s[2] - s[5] * back)
-	cam.transform = t
+	cam.transform = CameraState.make_default().transform
+	var e := SurfaceFixture.backed(s, back)
+	cam.set_eye64(e[0], e[1], e[2])
 
 
-## [distance to the surface, the zoom floor] at the camera.
+## [distance to the surface, the zoom floor] at the camera's 64-bit eye.
 func _depth(cam: CameraState, params: FractalParams) -> Array:
-	return [DistanceEstimator.estimate(cam.eye(), params), params.zoom_floor(cam.eye())]
+	var e := cam.eye64()
+	return [DistanceEstimator.scene_estimate_at(e[0], e[1], e[2], params), params.zoom_floor(e)]
+
+
+## Place the camera where its distance is `ratio` x the zoom floor.
+func _place_ratio(cam: CameraState, s: Array, params: FractalParams, ratio: float) -> void:
+	var f := params.zoom_floor(PackedFloat64Array([s[0], s[1], s[2]]))
+	_place(cam, s, SurfaceFixture.back_for_distance(params, s, ratio * f))
 
 
 ## One physics tick with `action` held ("" for no key).
@@ -182,22 +189,25 @@ func _tick(action: StringName) -> void:
 		Input.action_release(action)
 
 
-## The fly camera refuses a move below FractalParams.zoom_floor (the 32-bit
-## limit), says so through at_zoom_limit, and always lets the camera back off.
+## The fly camera refuses a move below FractalParams.zoom_floor, says so through
+## at_zoom_limit, and always lets the camera back off. Run on the octahedral fold,
+## which is not perturbed and keeps the 32-bit floor (the deep flight on the
+## default box is _deep_flight).
 func _zoom_floor_guard() -> void:
 	var ctx := _fresh()
 	var params: FractalParams = ctx[0]
 	var cam: CameraState = ctx[1]
 	var fly: FlyCamera = ctx[2]
+	params.shape().fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
 	var s := SurfaceFixture.default_surface(params)
 	check_eq(fly.at_zoom_limit, false, "a new fly camera is not at the zoom limit")
 
 	# just above the floor, W held: it closes in, then stops at the floor
-	_place(cam, s, 7e-4)
+	_place_ratio(cam, s, params, 1.7)
 	var dz := _depth(cam, params)
 	check(dz[0] > 1.2 * dz[1] and dz[0] < 2.5 * dz[1],
 		"the camera starts just above the floor (%s over %s)" % [dz[0], dz[1]])
-	var start := cam.eye()
+	var start := cam.eye64()
 	fly.enabled = true
 	Input.action_press("move_forward")
 	for _i in 300:
@@ -205,37 +215,37 @@ func _zoom_floor_guard() -> void:
 		if fly.at_zoom_limit:
 			break
 	check(fly.at_zoom_limit, "holding W reaches the zoom limit")
-	check(cam.eye() != start, "after closing in")
+	check(cam.eye64() != start, "after closing in")
 	dz = _depth(cam, params)
 	check(dz[0] >= dz[1], "and stops at the floor, not past it (%s over %s)" % [dz[0], dz[1]])
-	var held := cam.eye()
+	var held := cam.eye64()
 	await physics_frame
 	Input.action_release("move_forward")
-	check(cam.eye() == held and fly.at_zoom_limit, "W still held: the camera stays put and the limit stays up")
+	check(cam.eye64() == held and fly.at_zoom_limit, "W still held: the camera stays put and the limit stays up")
 	await _tick(&"")
 	check(not fly.at_zoom_limit, "no key held clears it")
 	await _tick(&"move_forward")
-	check(fly.at_zoom_limit and cam.eye() == held, "W again: refused again")
+	check(fly.at_zoom_limit and cam.eye64() == held, "W again: refused again")
 	await _tick(&"move_back")
-	check(cam.eye() != held and DistanceEstimator.estimate(cam.eye(), params) > dz[0],
+	check(cam.eye64() != held and _depth(cam, params)[0] > dz[0],
 		"moving away is accepted")
 	check(not fly.at_zoom_limit, "and clears the limit")
 
 	# below the floor (e.g. from a loaded save): it may back off, not close in
-	_place(cam, s, 2.5e-4)
+	_place_ratio(cam, s, params, 0.5)
 	dz = _depth(cam, params)
 	check(dz[0] < 0.8 * dz[1] and dz[0] > 0.2 * dz[1],
 		"the camera starts below the floor (%s under %s)" % [dz[0], dz[1]])
-	var below := cam.eye()
+	var below := cam.eye64()
 	await _tick(&"move_forward")
-	check(cam.eye() == below and fly.at_zoom_limit, "below the floor, W is refused")
+	check(cam.eye64() == below and fly.at_zoom_limit, "below the floor, W is refused")
 	await _tick(&"move_back")
-	check(cam.eye() != below and DistanceEstimator.estimate(cam.eye(), params) > dz[0],
+	check(cam.eye64() != below and _depth(cam, params)[0] > dz[0],
 		"but S backs away")
 	check(not fly.at_zoom_limit, "clearing the limit")
 
 	# disabling the camera (Orbit mode) clears a raised limit
-	_place(cam, s, 2.5e-4)
+	_place_ratio(cam, s, params, 0.5)
 	await _tick(&"move_forward")
 	check(fly.at_zoom_limit, "refused again")
 	fly.enabled = false
