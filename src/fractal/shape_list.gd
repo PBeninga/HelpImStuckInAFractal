@@ -197,7 +197,7 @@ func apply_dict(saved: Variant) -> Array[String]:
 		if error == "":
 			e.commands.assign(commands)
 		else:
-			warnings.append("Invalid commands for %s: %s (stage blocked until corrected)" % [name, error])
+			warnings.append("Invalid commands for %s: %s" % [name, error])
 			e.commands.assign(commands if commands is Array and commands.all(func(c): return c is String) else ["invalid_command"])
 		fresh.append(e)
 	if fresh.is_empty():

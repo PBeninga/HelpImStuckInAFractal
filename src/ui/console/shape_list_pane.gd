@@ -280,7 +280,7 @@ func _make_entry(i: int) -> Dictionary:
 	distance.allow_greater = true
 	distance.step = 0.0
 	distance.value = _shapes.entry(i).next_level_distance
-	distance.tooltip_text = "Absolute distance in world units from the run origin (spawn) for this shape. 0 uses 20. After required commands, crossing this distance advances and returns you to origin under a screen fade; does not affect rendering."
+	distance.tooltip_text = "Absolute distance in world units from the run origin (spawn) for this shape. 0 uses 20. Crossing this distance advances regardless of scripted commands and returns you to origin under a screen fade; does not affect rendering."
 	distance_row.add_child(distance)
 	var threshold := Label.new()
 	threshold.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

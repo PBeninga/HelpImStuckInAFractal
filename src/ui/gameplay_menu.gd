@@ -1,9 +1,7 @@
 extends "res://src/ui/debug_overlay.gd"
-## Read only gameplay telemetry, sampled once per second while visible.
+## Read only gameplay telemetry, refreshed on camera and run changes while visible.
 
-const REFRESH_SECONDS := 1.0
 var _game: Node
-var _elapsed := 0.0
 
 func _init() -> void:
 	shortcut_key = KEY_F4
@@ -19,26 +17,33 @@ func watch_game(game: Node) -> void:
 	_release_game()
 	_game = game
 	game.tree_exiting.connect(_release_game, CONNECT_ONE_SHOT)
-	if visible:
-		_refresh()
+	game.camera.changed.connect(_refresh_if_visible)
+	game.shape_run.changed.connect(_refresh_if_visible)
+	game.shapes().next_level_distance_changed.connect(_boundary_changed)
+	_refresh_if_visible()
 
 func _release_game() -> void:
-	if is_instance_valid(_game) and _game.tree_exiting.is_connected(_release_game):
-		_game.tree_exiting.disconnect(_release_game)
+	if is_instance_valid(_game):
+		if _game.tree_exiting.is_connected(_release_game):
+			_game.tree_exiting.disconnect(_release_game)
+		_game.camera.changed.disconnect(_refresh_if_visible)
+		_game.shape_run.changed.disconnect(_refresh_if_visible)
+		_game.shapes().next_level_distance_changed.disconnect(_boundary_changed)
 	_game = null
-	if visible:
-		_refresh()
+	_refresh_if_visible()
 
 func _visibility_changed() -> void:
-	set_process(visible)
-	_elapsed = 0.0
-	if visible:
-		_refresh()
+	set_process(false)
+	_refresh_if_visible()
 
-func _process(delta: float) -> void:
-	_elapsed += delta
-	if _elapsed >= REFRESH_SECONDS:
-		_elapsed = 0.0
+func _boundary_changed(_index: int) -> void:
+	_refresh_if_visible()
+
+func _refresh_if_visible() -> void:
+	# Loading replaces the shape list before resetting the old active stage.
+	if is_instance_valid(_game) and _game._loading:
+		return
+	if visible:
 		_refresh()
 
 func _refresh() -> void:
@@ -52,10 +57,22 @@ func _refresh() -> void:
 		var x: float = camera.eye_x() - origin[0]
 		var y: float = camera.eye_y() - origin[1]
 		var z: float = camera.eye_z() - origin[2]
+		var distance := sqrt(x * x + y * y + z * z)
+		# Deep-zoom flight can move by 1e-14 world units per frame. Keep those
+		# changes visible instead of rounding a moving camera to "0.000".
+		var distance_text := DecimalSpinBox.format(distance) if distance > 0.0 and distance < 0.001 else "%.3f" % distance
 		lines.append("Shape / level: %d / %d" % [params.gameplay_active + 1, _game.shapes().count()])
-		lines.append("Distance from run origin: %.3f world units" % sqrt(x * x + y * y + z * z))
+		lines.append("Distance from origin (spawn): %s world units" % distance_text)
+		lines.append("Level boundary: > %.3f world units from origin" % params.next_level_threshold)
+		var run: ShapeRun = _game.shape_run
+		if run.escaped:
+			lines.append("Status: Escaped")
+		elif run.transitioning():
+			lines.append("Status: Transitioning")
+		else:
+			lines.append("Status: Fly beyond the level boundary")
 	lines.append("")
-	lines.append("F4 to close · updates once per second")
+	lines.append("F4 to close · updates on every move")
 	readout.text = "\n".join(lines)
 	panel.reset_size()
 	_place_panel()

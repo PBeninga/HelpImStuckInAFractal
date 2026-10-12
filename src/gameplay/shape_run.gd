@@ -97,8 +97,6 @@ func check_position() -> void:
 	if escaped or transitioning() or _params.gameplay_active < 0:
 		return
 	var i := _params.gameplay_active
-	if command_index < _shapes.entry(i).commands.size():
-		return
 	var origin := _params.run_origin
 	var radius := _params.next_level_threshold
 	var x: float = (_camera.eye_x() - origin[0]) / radius
@@ -152,7 +150,7 @@ func briefing() -> Dictionary:
 	return {"run_id": run_id(), "active_shape": index, "stages": stages,
 		"command_index": command_index, "human_turn": human_turn, "next_command": commands[command_index] if command_index < commands.size() else "",
 		"origin": _params.run_origin.duplicate(), "transitioning": transitioning(), "escaped": escaped,
-		"instructions": "These commands are required in order to escape each shape. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never change shapes on startup, timers, stage changes or movement completion. Commands affect only the active shape. After its commands, fly beyond its absolute next_level_threshold from origin. Advancing returns the player to origin under a screen fade before revealing the next shape. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
+		"instructions": "Scripted commands are optional shape changes and never block level advancement. Use apply_shape_command only in response to a new human utterance, one command per utterance. Never apply shape commands on startup, timers, stage changes or movement completion. Commands affect only the active shape. Flying beyond the active shape's absolute next_level_threshold from the run origin (spawn) advances automatically, regardless of commands. Advancing returns the player to origin under a screen fade before revealing the next shape. Inversion is a delta to the existing inversion radius. Other commands set a numeric attribute."}
 
 
 func apply_request(args: Dictionary) -> Dictionary:

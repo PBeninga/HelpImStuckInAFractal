@@ -27,7 +27,9 @@ func run() -> void:
 	check_eq(params.visible_shape_indices(), [0], "editor selection does not reveal inactive shapes")
 	camera.set_eye(12.1, 0.0, 0.0)
 	run.check_position()
-	check(not run.transitioning() and not run.escaped, "radius alone cannot bypass required command")
+	check(run.transitioning() and not run.escaped, "crossing the boundary advances without executing scripted commands")
+	camera.set_eye(10.0, 0.0, 0.0)
+	run.reset()
 	var id: String = run.run_id()
 	check(not run.apply_command("inversion -0.5", id, 0, run.command_index, run.human_turn).ok, "startup cannot execute a command")
 	run.note_human_message("help me get out")
@@ -37,6 +39,7 @@ func run() -> void:
 	check_eq(shapes.table(0).get_default(&"kleinian_radius"), 1.0, "authored shape stays unchanged")
 	check_eq(run.overrides(1), {}, "inactive shape not changed")
 	check(not run.apply_command("inversion -0.5", id, 0, run.command_index, run.human_turn).ok, "duplicate command rejected")
+	camera.set_eye(12.1, 0.0, 0.0)
 	run.check_position()
 	check(run.transitioning() and not run.escaped, "intermediate boundary starts fog, not escape")
 	run.step(1.0)
@@ -70,7 +73,7 @@ func run() -> void:
 	var invalid := legacy.to_dict()
 	invalid[0]["commands"] = ["inversion -100"]
 	check(not legacy.apply_dict(invalid).is_empty(), "invalid saved script warns")
-	check_eq(legacy.entry(0).commands, ["inversion -100"], "invalid objectives remain blocked instead of silently disappearing")
+	check_eq(legacy.entry(0).commands, ["inversion -100"], "invalid scripted commands remain authored instead of silently disappearing")
 	for kind in [FractalParams.Shape.KIFS, FractalParams.Shape.KLEINIAN, FractalParams.Shape.MANDELBULB]:
 		var list := ShapeList.new()
 		var index := list.add({&"shape": kind})
