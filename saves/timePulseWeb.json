@@ -1,0 +1,12 @@
+{
+	"version": 1,
+	"axes": [
+		{
+			"id": "a",
+			"label": "Axis A",
+			"speed": 1.0,
+			"positive": "E",
+			"negative": "Q"
+		}
+	]
+}

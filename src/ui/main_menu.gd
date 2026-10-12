@@ -16,9 +16,11 @@ var _list: VBoxContainer
 
 
 func _ready() -> void:
-	# The game starts here, so this is where a HiDPI screen first gets its scale.
+	# The game starts here, so this is where a HiDPI screen first gets its scale
+	# and the window its place (where the player last left it).
 	UiScale.apply(get_window())
-	UiScale.fit_main_window(get_window(), WINDOW_SIZE)
+	WindowGeometry.place_main_window(get_window(), Settings.window_rect(&"main"))
+	UiScale.follow_size(get_window(), WINDOW_SIZE)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -73,6 +75,6 @@ func show_settings(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed(&"pause") and settings_menu.visible:
+	if event.is_action_pressed(&"cancel") and settings_menu.visible:
 		show_settings(false)
 		get_viewport().set_input_as_handled()

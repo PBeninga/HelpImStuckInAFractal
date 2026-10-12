@@ -7,6 +7,9 @@ extends RefCounted
 ##   raw   = axis value (any axis id)   or   t   (&"time")   or   0 (unknown)
 ##   wave  = raw | sin(2π raw/period) | triangle(raw/period) in [-1, 1]
 ##   value = default + gain * wave, then wrap or clamp via the spec; INT rounds.
+##
+## COLOR defaults are non-bindable, so they pass through untouched: the
+## `not spec.bindable` branch below returns the default Color as-is.
 
 
 ## Resolve every attribute for one frame.

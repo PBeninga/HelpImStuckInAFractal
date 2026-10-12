@@ -16,8 +16,9 @@ extends Control
 ##   - validate a connection itself. Every request goes through
 ##     NoiseGraph.can_connect, the authority on types, cycles and one-link-per-input.
 ##
-## The toolbar's New / Load… / Save… emit signals too; the Extent and Slice Z spin
-## boxes are the editor's own, shared by every preview.
+## The toolbar's New emits a signal too (the graph is saved inside the level, so
+## there is no graph-only Save/Load here); the Extent and Slice Z spin boxes are
+## the editor's own, shared by every preview.
 
 const EMPTY_TEXT := "No noise field.\n\nThis should not happen: the window always holds a graph."
 const CONTROLS_TOOLTIP := "Show or hide this node's parameter rows. The node shrinks when they are hidden, and its ports stay connectable either way. Remembered when the graph is saved."
@@ -37,8 +38,6 @@ const BROKEN_SHADER_COLOR := Color(1.0, 0.45, 0.45)
 
 signal add_node_requested(type_id: StringName, position: Vector2)
 signal new_requested
-signal save_requested
-signal load_requested
 
 var _graph: NoiseGraph
 var _graph_edit: GraphEdit
@@ -50,8 +49,6 @@ var _status: Label
 var _extent_spin: SpinBox
 var _slice_spin: SpinBox
 var new_button: Button
-var save_button: Button
-var load_button: Button
 
 var _cursor := Vector2.ZERO
 var _cursor_inside := false
@@ -112,19 +109,9 @@ func _build_toolbar() -> Control:
 	bar.add_theme_constant_override("separation", 6)
 	new_button = Button.new()
 	new_button.text = "New"
-	new_button.tooltip_text = "Discard this field and start from the default empty graph (Position and Output)."
+	new_button.tooltip_text = "Discard this field and start from the default empty graph (Position and Output). The field is saved inside the level (the View tab's Save level…)."
 	new_button.pressed.connect(func() -> void: new_requested.emit())
 	bar.add_child(new_button)
-	load_button = Button.new()
-	load_button.text = "Load…"
-	load_button.tooltip_text = "Load a noise graph from saves/noise/."
-	load_button.pressed.connect(func() -> void: load_requested.emit())
-	bar.add_child(load_button)
-	save_button = Button.new()
-	save_button.text = "Save…"
-	save_button.tooltip_text = "Save this noise graph on its own to saves/noise/."
-	save_button.pressed.connect(func() -> void: save_requested.emit())
-	bar.add_child(save_button)
 
 	bar.add_child(VSeparator.new())
 	var extent_label := Label.new()

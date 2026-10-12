@@ -1,5 +1,7 @@
 extends "res://tests/test_case.gd"
 
+const DEEP_TICKS := 4000   # physics ticks the deep flight may take
+
 
 func _fresh() -> Array:
 	var params := FractalParams.new()
@@ -49,19 +51,59 @@ func run() -> void:
 	await frames(1)
 	check(under_cmd == Vector3.ZERO, "no movement while Cmd is held (got %s)" % under_cmd)
 
-	# --- speed equals D(eye) * factor within [1e-6, 20] * factor ---
+	# --- speed is min(centre ray, NEAR_CAP x D(eye)) within [SPEED_FLOOR, 20], times the factor ---
 	var params: FractalParams = ctx[0]
-	var expected := clampf(DistanceEstimator.estimate(cam.eye(), params), 1e-6, 20.0) * cam.speed_factor
-	check_approx(fly.current_speed(), expected, "speed is clamped D(eye) * factor", 1e-6)
+	var near := DistanceEstimator.estimate(cam.eye(), params)
+	var ahead: float = CenterRay.march(cam.eye(), cam.forward(), params)[0]
+	var expected := clampf(minf(ahead, near * FlyCamera.NEAR_CAP), FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor
+	check_approx(fly.current_speed(), expected, "speed follows the centre ray, capped by the nearest surface", 1e-6)
+	check(fly.current_speed() > clampf(near, FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor,
+		"the default view looks further than its nearest surface, so it flies faster than D(eye)")
+	check_eq(FlyCamera.SPEED_FLOOR, 1e-14, "the speed floor is 1e-14, below any zoom floor")
 
-	# --- holding Shift ("sprint") multiplies the travel speed by SPRINT_MULTIPLIER ---
+	# --- sprint: Shift doubles the speed, and that is all ---
 	var base_speed := fly.current_speed()
-	Input.action_press("sprint")
-	var sprint_speed := fly.current_speed()
-	Input.action_release("sprint")
-	check_approx(sprint_speed, base_speed * FlyCamera.SPRINT_MULTIPLIER,
-		"sprint multiplies the speed", 1e-6)
-	check_approx(fly.current_speed(), base_speed, "releasing sprint restores the speed", 1e-6)
+	fly.sprinting = true
+	check_approx(fly.current_speed(), base_speed * FlyCamera.SPRINT_MULTIPLIER, "Shift doubles the speed", 1e-9)
+	check_approx(FlyCamera.SPRINT_MULTIPLIER, 2.0, "SPRINT_MULTIPLIER is 2")
+	fly.sprinting = false
+	check_approx(fly.current_speed(), base_speed, "letting go of Shift is back to the base speed", 1e-9)
+
+	# --- the physics step really moves by speed x dt, and not at all with no keys ---
+	var before := cam.eye()
+	fly.enabled = true
+	await physics_frame
+	check(cam.eye() == before, "no move keys: the camera does not move")
+	Input.action_press("move_forward")
+	await physics_frame
+	Input.action_release("move_forward")
+	check(cam.eye() != before and (cam.eye() - before).normalized().is_equal_approx(cam.forward()),
+		"move_forward flies along forward")
+	await physics_frame
+	var stopped := cam.eye()
+	await physics_frame
+	check(cam.eye() == stopped, "and stops on the frame the key is released")
+	fly.enabled = false
+	cam.transform = CameraState.make_default().transform
+
+	# --- the step is added in 64-bit: a step far below the 32-bit grid still moves the eye ---
+	cam.speed_factor = 1e-9   # about 1e-10 per tick at the default view (the grid there is ~1e-6)
+	var e32 := cam.eye()
+	var e64 := cam.eye64()
+	var step := fly.current_speed() / Engine.physics_ticks_per_second
+	fly.enabled = true
+	await _tick(&"move_forward")
+	fly.enabled = false
+	var moved := cam.eye64()
+	var dv := Vector3(moved[0] - e64[0], moved[1] - e64[1], moved[2] - e64[2])
+	var dist := sqrt((moved[0] - e64[0]) ** 2 + (moved[1] - e64[1]) ** 2 + (moved[2] - e64[2]) ** 2)
+	check(cam.eye() == e32, "a 1e-10 step cannot move the 32-bit shadow")
+	# (the move is measured as a difference of doubles near 8, whose last bits are
+	# about 1.5e-5 of a 1e-10 step: hence 1e-4)
+	check(absf(dist / step - 1.0) < 1e-4, "but the 64-bit eye moves by the whole step (%s of %s)" % [dist, step])
+	check(dv.normalized().is_equal_approx(cam.forward()), "along forward")
+	cam.speed_factor = 1.0
+	cam.transform = CameraState.make_default().transform
 
 	# --- the wheel scales the factor by 1.25, clamped to [0.01, 100] ---
 	var f0 := cam.speed_factor
@@ -103,5 +145,226 @@ func run() -> void:
 	check_approx(fly.current_speed(), full * 0.4, "speed_limit scales current_speed()", 1e-9)
 	fly.speed_limit = 1.0
 
+	fly.queue_free()
+	await frames(1)
+
+	# --- every fractal flies the same way: hold W straight at it, sprinting ---
+	for shot in [
+			["Mandelbox", {}, CameraState.DEFAULT_EYE],
+			["octahedral fold", {&"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL}, CameraState.DEFAULT_EYE],
+			["hybrid fold", {&"hybrid_mix": 0.5}, CameraState.DEFAULT_EYE],
+			["Menger", {&"shape": FractalParams.Shape.KIFS}, Vector3(3.2, 2.4, 1.9)],
+			["Sierpinski", {&"shape": FractalParams.Shape.KIFS, &"kifs_fold": KifsEstimator.FoldSet.DIAGONAL, &"kifs_scale": 2.0}, Vector3(3.5, -2.0, 2.2)],
+			["Kleinian", {&"shape": FractalParams.Shape.KLEINIAN}, Vector3(2.5, 1.6, 1.2)],
+			["Mandelbulb", {&"shape": FractalParams.Shape.MANDELBULB}, Vector3(2.2, 1.6, 1.2)],
+			["Julia Mandelbulb", {&"shape": FractalParams.Shape.MANDELBULB, &"mandelbulb_julia": true}, Vector3(2.2, -1.6, 1.2)]]:
+		await _fly_at(shot[0], shot[1], shot[2])
+
+	await _zoom_floor_guard()
+	await _deep_flight()
+
+
+
+## A camera on the default view's line of sight, `back` short of the surface (64-bit).
+func _place(cam: CameraState, s: Array, back: float) -> void:
+	cam.transform = CameraState.make_default().transform
+	var e := SurfaceFixture.backed(s, back)
+	cam.set_eye64(e[0], e[1], e[2])
+
+
+## [distance to the surface, the zoom floor] at the camera's 64-bit eye.
+func _depth(cam: CameraState, params: FractalParams) -> Array:
+	var e := cam.eye64()
+	return [DistanceEstimator.estimate_at(e[0], e[1], e[2], params), params.zoom_floor(e)]
+
+
+## Place the camera where its distance is `ratio` x the zoom floor.
+func _place_ratio(cam: CameraState, s: Array, params: FractalParams, ratio: float) -> void:
+	var f := params.zoom_floor(PackedFloat64Array([s[0], s[1], s[2]]))
+	_place(cam, s, SurfaceFixture.back_for_distance(params, s, ratio * f))
+
+
+## One physics tick with `action` held ("" for no key).
+func _tick(action: StringName) -> void:
+	if action != &"":
+		Input.action_press(action)
+	await physics_frame
+	if action != &"":
+		Input.action_release(action)
+
+
+## The fly camera refuses a move below FractalParams.zoom_floor, says so through
+## at_zoom_limit, and always lets the camera back off. Run on the octahedral fold,
+## which is not perturbed and keeps the 32-bit floor (the deep flight on the
+## default box is _deep_flight).
+func _zoom_floor_guard() -> void:
+	var ctx := _fresh()
+	var params: FractalParams = ctx[0]
+	var cam: CameraState = ctx[1]
+	var fly: FlyCamera = ctx[2]
+	params.fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
+	var s := SurfaceFixture.default_surface(params)
+	check_eq(fly.at_zoom_limit, false, "a new fly camera is not at the zoom limit")
+
+	# just above the floor, W held: it closes in, then stops at the floor
+	_place_ratio(cam, s, params, 1.7)
+	var dz := _depth(cam, params)
+	check(dz[0] > 1.2 * dz[1] and dz[0] < 2.5 * dz[1],
+		"the camera starts just above the floor (%s over %s)" % [dz[0], dz[1]])
+	var start := cam.eye64()
+	fly.enabled = true
+	Input.action_press("move_forward")
+	for _i in 300:
+		await physics_frame
+		if fly.at_zoom_limit:
+			break
+	check(fly.at_zoom_limit, "holding W reaches the zoom limit")
+	check(cam.eye64() != start, "after closing in")
+	dz = _depth(cam, params)
+	check(dz[0] >= dz[1], "and stops at the floor, not past it (%s over %s)" % [dz[0], dz[1]])
+	var held := cam.eye64()
+	await physics_frame
+	Input.action_release("move_forward")
+	check(cam.eye64() == held and fly.at_zoom_limit, "W still held: the camera stays put and the limit stays up")
+	await _tick(&"")
+	check(not fly.at_zoom_limit, "no key held clears it")
+	await _tick(&"move_forward")
+	check(fly.at_zoom_limit and cam.eye64() == held, "W again: refused again")
+	await _tick(&"move_back")
+	check(cam.eye64() != held and _depth(cam, params)[0] > dz[0],
+		"moving away is accepted")
+	check(not fly.at_zoom_limit, "and clears the limit")
+
+	# below the floor (e.g. from a loaded save): it may back off, not close in
+	_place_ratio(cam, s, params, 0.5)
+	dz = _depth(cam, params)
+	check(dz[0] < 0.8 * dz[1] and dz[0] > 0.2 * dz[1],
+		"the camera starts below the floor (%s under %s)" % [dz[0], dz[1]])
+	var below := cam.eye64()
+	await _tick(&"move_forward")
+	check(cam.eye64() == below and fly.at_zoom_limit, "below the floor, W is refused")
+	await _tick(&"move_back")
+	check(cam.eye64() != below and _depth(cam, params)[0] > dz[0],
+		"but S backs away")
+	check(not fly.at_zoom_limit, "clearing the limit")
+
+	# disabling the camera (Orbit mode) clears a raised limit
+	_place_ratio(cam, s, params, 0.5)
+	await _tick(&"move_forward")
+	check(fly.at_zoom_limit, "refused again")
+	fly.enabled = false
+	await _tick(&"")
+	check(not fly.at_zoom_limit, "a disabled camera never reports the limit")
+	fly.queue_free()
+	await frames(1)
+
+
+## Hold W (and Shift) for ten seconds at 60 fps toward the surface the centre
+## ray first meets, stepping as _physics_process does (a move below the zoom
+## floor is refused, and that ends the flight). No frame's step may
+## tunnel: a careful quarter-step march along it must find no surface (up close
+## the camera does fly on into finer gaps, as zooming in should, but never
+## through a wall). The eye never ends up inside, the camera closes in on the
+## first surface and slows as it goes, and it never stalls far out.
+func _fly_at(label: String, knobs: Dictionary, eye: Vector3) -> void:
+	var params := FractalParams.new()
+	params.apply_resolved(knobs)
+	var cam := CameraState.new()
+	cam.transform = Transform3D(Basis.IDENTITY, eye).looking_at(Vector3.ZERO, Vector3(0, 0, 1))
+	var fly := FlyCamera.new()
+	root.add_child(fly)
+	fly.setup(params, cam)
+	fly.sprinting = true
+	var start: Array = CenterRay.march(cam.eye(), cam.forward(), params)
+	check(start[1], "%s: the centre ray meets the surface" % label)
+	var hit_t: float = start[0]
+	var first_speed := fly.current_speed()
+	var travelled := 0.0
+	var tunnels := 0
+	var inside := false
+	var slowest_far := INF
+	for frame in 600:
+		var step := fly.current_speed() / 60.0
+		if _surface_within(cam.eye64(), cam.forward(), step, params):
+			tunnels += 1
+		if travelled < 0.5 * hit_t:
+			slowest_far = minf(slowest_far, step)
+		var e := cam.eye64()
+		var f := cam.forward()
+		var to := PackedFloat64Array([e[0] + f.x * step, e[1] + f.y * step, e[2] + f.z * step])
+		if not fly.move_allowed(e, to):
+			break   # at the zoom floor
+		travelled += step
+		cam.set_eye64(to[0], to[1], to[2])
+		if DistanceEstimator.estimate_at(to[0], to[1], to[2], params) < 0.0:
+			inside = true
+	check_eq(tunnels, 0, "%s: no frame's step jumps a surface" % label)
+	check(not inside, "%s: the eye never ends up inside" % label)
+	check(travelled > 0.9 * hit_t, "%s: closes 90%% of the way in ten seconds (%s of %s)" % [label, travelled, hit_t])
+	check(fly.current_speed() < first_speed * 0.5, "%s: slowing down on the way in" % label)
+	check(slowest_far > 1e-3 * hit_t, "%s: no stall on the far half of the way" % label)
+	fly.queue_free()
+	await frames(1)
+
+
+## Whether a quarter-step march from `origin` along `dir` meets the surface
+## (the hit threshold at that distance) before going `length`.
+func _surface_within(origin: PackedFloat64Array, dir: Vector3, length: float, params: FractalParams) -> bool:
+	var near := maxf(DistanceEstimator.estimate_at(origin[0], origin[1], origin[2], params), FractalParams.NEAR_FLOOR)
+	var t := 0.0
+	for i in 400:
+		var d := DistanceEstimator.estimate_at(origin[0] + dir.x * t, origin[1] + dir.y * t, origin[2] + dir.z * t, params)
+		if d < params.hit_epsilon(maxf(t, near), near):
+			return t < length
+		t += 0.25 * d
+		if t >= length:
+			return false
+	return false
+
+
+## On the default box, from 1e-6 short of the surface (below today's 32-bit
+## floor, where the old guard refused W), holding W closes in, stops at the new
+## floor with at_zoom_limit, and the speed follows the distance down: under 1e-9
+## per tick at the end. base_speed measures both its distances from the 64-bit eye.
+func _deep_flight() -> void:
+	var ctx := _fresh()
+	var params: FractalParams = ctx[0]
+	var cam: CameraState = ctx[1]
+	var fly: FlyCamera = ctx[2]
+	var s := SurfaceFixture.default_surface(params)
+	_place(cam, s, 1e-6)
+	var e0 := cam.eye64()
+	var d0 := DistanceEstimator.estimate_at(e0[0], e0[1], e0[2], params)
+	check(d0 < params.floor32(e0), "1e-6 short of the surface is below the 32-bit floor (%s < %s): the old guard refused W" % [d0, params.floor32(e0)])
+	check(d0 > params.zoom_floor(e0), "and above the new one (%s)" % params.zoom_floor(e0))
+	var ray := CenterRay.new(params, cam)
+	fly.setup(params, cam, ray)
+	fly.enabled = true
+	var first_step := -1.0
+	var last_step := 0.0
+	var ticks := 0
+	Input.action_press("move_forward")
+	for _i in DEEP_TICKS:
+		var before := cam.eye64()
+		await physics_frame
+		ticks += 1
+		if fly.at_zoom_limit:
+			break
+		var now := cam.eye64()
+		last_step = sqrt((now[0] - before[0]) ** 2 + (now[1] - before[1]) ** 2 + (now[2] - before[2]) ** 2)
+		if first_step <= 0.0:
+			first_step = last_step   # the first tick after the press may not have moved yet
+	Input.action_release("move_forward")
+	var e1 := cam.eye64()
+	var d1 := DistanceEstimator.estimate_at(e1[0], e1[1], e1[2], params)
+	check(fly.at_zoom_limit, "holding W reaches the new zoom limit (after %d ticks, at %s)" % [ticks, d1])
+	check(d1 < 0.1 * d0, "after closing in more than ten times (%s from %s)" % [d1, d0])
+	check(d1 >= params.zoom_floor(e1), "and stopping at the floor, not past it (%s over %s)" % [d1, params.zoom_floor(e1)])
+	check(last_step < 1e-9 and last_step < 0.1 * first_step,
+		"the speed follows the distance: under 1e-9 per tick at the end (%s, the first %s)" % [last_step, first_step])
+	var want := clampf(minf(ray.distance(), FlyCamera.NEAR_CAP * d1), FlyCamera.SPEED_FLOOR, 20.0) * cam.speed_factor
+	check_approx(fly.base_speed(), want, "base_speed there measures both distances from the 64-bit eye", want * 1e-9)
+	check(fly.base_speed() < 1e-6, "and is far below the old 1e-6 clamp (%s)" % fly.base_speed())
+	fly.enabled = false
 	fly.queue_free()
 	await frames(1)

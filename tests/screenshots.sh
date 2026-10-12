@@ -4,6 +4,8 @@
 # Produces, in screenshots/ :
 #   default_view.png            the default Ice Fractal view
 #   mode_<id>.png               one per colour mode
+#   lighting_raked.png          the default view under a swung, broad light
+#   shape_<name>.png            each new fractal and Mandelbox fold option
 # and one PASS/FAIL line per check in tests/out/screenshots.txt.
 #
 # The window must never take desktop focus, so the app is launched through

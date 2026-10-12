@@ -9,14 +9,16 @@ extends RefCounted
 ## (until a restore sticks for 10 s).
 
 ## Per level: fog distance (in multiples of the camera's distance to the nearest
-## surface, 0 = no fog), and multipliers on detail, the step budget and the Fly
-## speed. Fog and detail go long before the speed cap, which is a last resort.
+## surface, 0 = no fog), multipliers on detail, the step budget and the Fly
+## speed, and the shadow-march factor (× FractalParams.SHADOW_STEPS: shadows cost
+## one extra ray, so they halve at level 1 and drop out from level 2). Fog and
+## detail go long before the speed cap, which is a last resort.
 const LEVELS: Array[Dictionary] = [
-	{"fog": 0.0, "detail": 1.0, "steps": 1.0, "speed": 1.0},
-	{"fog": 400.0, "detail": 0.75, "steps": 1.0, "speed": 1.0},
-	{"fog": 150.0, "detail": 0.55, "steps": 0.75, "speed": 1.0},
-	{"fog": 60.0, "detail": 0.4, "steps": 0.5, "speed": 1.0},
-	{"fog": 40.0, "detail": 0.35, "steps": 0.5, "speed": 0.4},
+	{"fog": 0.0, "detail": 1.0, "steps": 1.0, "speed": 1.0, "shadow": 1.0},
+	{"fog": 400.0, "detail": 0.75, "steps": 1.0, "speed": 1.0, "shadow": 0.5},
+	{"fog": 150.0, "detail": 0.55, "steps": 0.75, "speed": 1.0, "shadow": 0.0},
+	{"fog": 60.0, "detail": 0.4, "steps": 0.5, "speed": 1.0, "shadow": 0.0},
+	{"fog": 40.0, "detail": 0.35, "steps": 0.5, "speed": 0.4, "shadow": 0.0},
 ]
 
 const SHED_FPS := 24.0

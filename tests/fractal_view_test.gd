@@ -16,6 +16,11 @@ func run() -> void:
 	view.setup(params, cam)
 	await frames(1)
 
+	# perturbation is off at the default view, and nothing of it is pushed
+	check_eq(view.pert_iters(), 0, "the default view does not perturb")
+	check_eq(int(view._material.get_shader_parameter("pert_iters")), 0, "and pushes pert_iters 0")
+	check_eq(view._pert_pushes, 0, "and never pushes the record arrays")
+
 	# the shader material is wired and compiled
 	var names: Array = []
 	for u in view.shader_uniform_names():
@@ -64,6 +69,17 @@ func run() -> void:
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "no fog at level 0")
 	var base_prec: float = mat.get_shader_parameter("precision")
 	var base_coarse: int = mat.get_shader_parameter("coarse_steps")
+
+	# the shadow march's budget sheds with the ladder: 48, 24, 0
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), FractalParams.SHADOW_STEPS,
+		"level 0 pushes the full 48-step shadow march")
+	view.set_load_level(1)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), 24, "level 1 halves the shadow march to 24")
+	view.set_load_level(2)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), 0, "level 2 skips the shadow march")
+	view.set_load_level(0)
+	check_eq(int(mat.get_shader_parameter("shadow_steps")), FractalParams.SHADOW_STEPS, "and back to 48 at level 0")
+
 	view.set_load_level(3)
 	var l3 := LoadShedder.settings(3)
 	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "level 3 pushes its fog distance")
@@ -79,10 +95,145 @@ func run() -> void:
 	check_eq(int(mat.get_shader_parameter("coarse_steps")) + int(mat.get_shader_parameter("fine_steps")),
 		FractalParams.MAX_STEPS_MIN, "the shed budget never drops below MAX_STEPS_MIN")
 	params.max_steps = 128
+	# a level drop eases in over RESTORE_FRAMES frames: the fog recedes (and when
+	# it is leaving entirely it thins as it goes) while the detail and step
+	# budget climb back
+	var l3_prec: float = mat.get_shader_parameter("precision")
+	var l3_coarse: int = mat.get_shader_parameter("coarse_steps")
+	view.set_load_level(2)
+	var l2 := LoadShedder.settings(2)
+	var mid := float(mat.get_shader_parameter("fog_dist"))
+	check(mid > l3["fog"] and mid < l2["fog"], "a drop to level 2 starts the fog receding (%s)" % mid)
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "a fog that stays does not thin")
+	var mid_prec := float(mat.get_shader_parameter("precision"))
+	var l2_prec: float = base_prec / l2["detail"]
+	check(mid_prec < l3_prec and mid_prec > l2_prec, "and the detail starts climbing (%s)" % mid_prec)
+	check(view.restoring(), "and the view is still easing it")
+	await frames(FractalView.RESTORE_FRAMES / 2 + 1)
+	check(int(mat.get_shader_parameter("coarse_steps")) > l3_coarse, "half way the step budget has grown")
+	check(float(mat.get_shader_parameter("precision")) < mid_prec, "and the detail climbed further")
+	await frames(FractalView.RESTORE_FRAMES)
+	check_approx(mat.get_shader_parameter("fog_dist"), l2["fog"], "it lands on level 2's fog")
+	check_approx(mat.get_shader_parameter("precision"), l2_prec, "and level 2's detail", 1e-12)
+	var l2_budget: int = maxi(FractalParams.MAX_STEPS_MIN, int(round(params.max_steps * l2["steps"])))
+	check_eq(int(mat.get_shader_parameter("coarse_steps")), params.coarse_steps(l2_budget),
+		"and level 2's step budget")
+	check(not view.restoring(), "and stops easing")
 	view.set_load_level(0)
+	var first := float(mat.get_shader_parameter("fog_dist"))
+	var clear := float(mat.get_shader_parameter("fog_clear"))
+	check(first > l2["fog"], "back to level 0 the fog first recedes (%s)" % first)
+	check(clear > 0.0 and clear < 1.0, "and thins (%s)" % clear)
+	await frames(2)   # process_frame fires before the view's _process steps the fog
+	check(float(mat.get_shader_parameter("fog_dist")) > first, "a frame later it is further out")
+	check(float(mat.get_shader_parameter("fog_clear")) > clear, "and thinner")
+	view.set_load_level(3)
+	check_approx(mat.get_shader_parameter("fog_dist"), l3["fog"], "a shed mid-ease snaps the fog straight in")
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "at full strength")
+	check_approx(mat.get_shader_parameter("precision"), l3_prec, "and the detail straight down", 1e-12)
+	check(not view.restoring(), "with no easing")
+	view.set_load_level(0)
+	await frames(FractalView.RESTORE_FRAMES)
 	check_eq(float(mat.get_shader_parameter("fog_dist")), 0.0, "back to level 0: no fog")
+	check_eq(float(mat.get_shader_parameter("fog_clear")), 0.0, "and nothing left to thin")
 	check_approx(mat.get_shader_parameter("precision"), base_prec, "and the original precision", 1e-12)
 	check_eq(int(mat.get_shader_parameter("coarse_steps")), base_coarse, "and the original budget")
+
+	# the colour, lighting and palette values reach their uniforms
+	for key in FractalParams.LOOK_KEYS:
+		check_approx(float(mat.get_shader_parameter(key)), float(params.get(key)),
+			"the view pushes '%s'" % key, 1e-9)
+	# the two COLOR keys are pushed as Vector3 (the shader's vec3 uniforms)
+	params.light_color = Color(0.2, 0.4, 0.6)
+	params.surface_color = Color(0.7, 0.5, 0.3)
+	check(Vector3(mat.get_shader_parameter("light_color")).is_equal_approx(Vector3(0.2, 0.4, 0.6)),
+		"light_color pushes as a Vector3")
+	check(Vector3(mat.get_shader_parameter("surface_color")).is_equal_approx(Vector3(0.7, 0.5, 0.3)),
+		"surface_color pushes as a Vector3")
+	params.light_color = Color(1, 1, 1)
+	params.surface_color = Color(1, 1, 1)
+	params.apply_resolved({&"light_specular": 2.5, &"palette_d_b": 0.1, &"palette_source": 2})
+	check_approx(float(mat.get_shader_parameter("light_specular")), 2.5, "a resolved Specular reaches the shader")
+	check_approx(float(mat.get_shader_parameter("palette_d_b")), 0.1, "so does a palette component")
+	check_eq(int(mat.get_shader_parameter("palette_source")), 2, "and the palette input")
+
+	# the camera's distance to the surface sets the coarse pass's iteration
+	# count (the site's 16 at the default view, more up close, and a Detail
+	# change re-pushes it) and the shading crossfade (1 far, 0 up close)
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "the default view's coarse pass keeps 16 iterations")
+	check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and lights with the Ice Fractal probe alone")
+	var home := cam.transform
+	var close := home
+	close.origin = cam.eye() + cam.forward() * (view.center_ray().distance() - 1e-3)
+	cam.transform = close
+	var close_near := maxf(DistanceEstimator.estimate(cam.eye(), params), FractalParams.NEAR_FLOOR)
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), params.coarse_iters(close_near),
+		"a camera 1e-3 short of the surface pushes its own count")
+	check(int(mat.get_shader_parameter("coarse_iters")) > 16, "which is above 16 (%s)" % mat.get_shader_parameter("coarse_iters"))
+	check_eq(float(mat.get_shader_parameter("nf_weight")), 0.0, "and the true normal alone lights it")
+	params.detail = 10.0
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), params.coarse_iters(close_near), "a Detail change re-pushes it")
+	params.detail = 1.0
+	cam.transform = home
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), 16, "and moving back restores 16")
+	check_eq(float(mat.get_shader_parameter("nf_weight")), 1.0, "and the probe's lighting")
+
+	# near_dist follows the camera below 1e-6: measured from the 64-bit eye, clamped only at 1e-14
+	var snear := SurfaceFixture.default_surface(params)
+	var enear := SurfaceFixture.backed(snear, 1e-8)
+	cam.set_eye64(enear[0], enear[1], enear[2])
+	var dnear := DistanceEstimator.estimate_at(enear[0], enear[1], enear[2], params)
+	check_eq(float(mat.get_shader_parameter("near_dist")), maxf(dnear, FractalParams.NEAR_FLOOR),
+		"a camera 1e-8 short of the surface pushes its own distance (%s)" % dnear)
+	check(float(mat.get_shader_parameter("near_dist")) < 1e-7, "not the old 1e-6 clamp")
+	cam.transform = home   # back from the 1e-8 camera
+
+	# a camera 1e-5 short of the surface perturbs: the record and the handoff points are pushed, once
+	# (the close camera above, 1e-3 short, already perturbed, so count from here)
+	var sdeep := SurfaceFixture.default_surface(params)
+	var edeep := SurfaceFixture.backed(sdeep, 1e-5)
+	var pushes_before := view._pert_pushes
+	cam.set_eye64(edeep[0], edeep[1], edeep[2])
+	var orbit := ReferenceOrbit.build(params, edeep[0], edeep[1], edeep[2])
+	var kdeep := params.pert_iters(orbit, orbit.distance)
+	check_eq(kdeep, mini(ReferenceOrbit.PERT_MAX, orbit.n), "precondition: 1e-5 from the surface uses every record (k %d)" % kdeep)
+	check_eq(view.pert_iters(), kdeep, "the view reports k")
+	check_eq(int(mat.get_shader_parameter("pert_iters")), kdeep, "and pushes it")
+	for arr in ["pert_a", "pert_b", "pert_c", "pert_d"]:
+		check_eq((mat.get_shader_parameter(arr) as PackedVector4Array).size(), ReferenceOrbit.PERT_MAX,
+			"%s has PERT_MAX entries" % arr)
+	check_eq(mat.get_shader_parameter("pert_a"), orbit.a, "the record is the orbit's")
+	var handoff_points: PackedVector4Array = mat.get_shader_parameter("pert_x")
+	check_eq(handoff_points.size(), ReferenceOrbit.PERT_MAX + 1, "pert_x has PERT_MAX + 1 entries")
+	check_eq(handoff_points, orbit.points.slice(0, ReferenceOrbit.PERT_MAX + 1), "they are X_0 .. X_PERT_MAX")
+	var pushes := view._pert_pushes
+	check_eq(pushes, pushes_before + 1, "one camera move pushes the arrays once")
+	await frames(3)
+	check_eq(view._pert_pushes, pushes, "a still frame pushes nothing more")
+	cam.transform = home
+	check_eq(view.pert_iters(), 0, "back home: off again")
+	check_eq(int(mat.get_shader_parameter("pert_iters")), 0, "and pert_iters 0 is pushed")
+
+	# the shape switch reaches the shader, and the bounding cube follows the shape
+	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbox marches in its cube of half-side 2")
+	params.apply_resolved({&"shape": FractalParams.Shape.KIFS, &"kifs_scale": 2.5, &"kifs_rot2_yz": 12.0})
+	check_eq(int(mat.get_shader_parameter("shape")), FractalParams.Shape.KIFS, "the shape reaches the shader")
+	check_approx(float(mat.get_shader_parameter("kifs_scale")), 2.5, "a KIFS knob reaches its uniform")
+	check_approx(float(mat.get_shader_parameter("kifs_rot2_yz")), 12.0, "so does a KIFS rotation")
+	check_approx(float(mat.get_shader_parameter("box_half")), params.bound_half(), "the KIFS's bound is pushed")
+	params.apply_resolved({&"shape": FractalParams.Shape.KLEINIAN, &"kleinian_view_distance": 7.0})
+	check_approx(float(mat.get_shader_parameter("kleinian_view_distance")), 7.0, "the view distance reaches the shader")
+	check_approx(float(mat.get_shader_parameter("box_half")), FractalParams.KLEINIAN_BOUND, "the Kleinian has no real cube")
+	check_eq(int(mat.get_shader_parameter("coarse_iters")), DistanceEstimator.ITERATIONS,
+		"and no steady magnification, so its coarse pass runs all 32 iterations")
+	params.apply_resolved({&"shape": FractalParams.Shape.MANDELBULB, &"mandelbulb_power": 5.0, &"mandelbulb_julia": true})
+	check_eq(int(mat.get_shader_parameter("shape")), FractalParams.Shape.MANDELBULB, "the Mandelbulb reaches the shader")
+	check_approx(float(mat.get_shader_parameter("mandelbulb_power")), 5.0, "and its power")
+	check(bool(mat.get_shader_parameter("mandelbulb_julia")), "and its Julia switch")
+	check_approx(float(mat.get_shader_parameter("box_half")), 2.0, "the Mandelbulb marches in the cube of half-side 2")
+	params.apply_resolved({&"shape": FractalParams.Shape.MANDELBOX, &"fold_shape": MandelboxShape.FoldShape.OCTAHEDRAL})
+	check_eq(int(mat.get_shader_parameter("fold_shape")), MandelboxShape.FoldShape.OCTAHEDRAL, "a fold option reaches the shader")
+	params.apply_resolved({&"fold_shape": MandelboxShape.FoldShape.BOX})
 
 	view.queue_free()
 	await frames(1)

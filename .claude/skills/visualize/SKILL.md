@@ -1,6 +1,6 @@
 ---
 name: visualize
-description: Visualize a Help I'm Stuck In A Fractal system or concept as a pane in the project's in-browser systems viz (docs/viz/, opened with ./viz.sh) — a control row of panes (one per system), a row of that pane's tabs, one pannable, zoomable canvas per tab (one diagram each), hover tooltips linking file:line on GitHub, architecture graphs, sequence diagrams, tables, cards and live interactive figures. Use when the user runs /visualize <concept>, or asks to visualize, diagram or map how a system works (the ray march, the distance estimator, the colour modes, the cameras, the resolution governor, saves...), or to update an existing visualization after the code changed.
+description: Visualize one of this project's systems or concepts as a pane in the repo's in-browser systems viz (docs/viz/, opened with ./viz.sh) — a control row of panes (one per system), a row of that pane's tabs, one pannable, zoomable canvas per tab (one diagram each), hover tooltips linking file:line on GitHub, architecture graphs, sequence diagrams, tables, cards and live interactive figures. Use when the user runs /visualize <concept>, or asks to visualize, diagram or map how a system works (in this repo: the ray march, the distance estimators, the shapes, the colour modes, the cameras, the resolution governor, saves...), or to update an existing visualization after the code changed.
 ---
 
 # /visualize
@@ -14,16 +14,20 @@ free text: `/visualize the orbit camera's gestures`, `/visualize how a save is w
 |---|---|
 | `docs/viz/index.html` | the page: two control rows (panes, then the open pane's tabs), one SVG canvas, one `<script src="panes/<id>.js">` line per pane |
 | `docs/viz/viz.js`, `viz.css` | the engine. Panes never edit it (see "Engine changes" below) |
+| `docs/viz/glossary.js` | maths terms the prose leans on, coloured wherever they appear and explained on hover (reference.md, "Glossary") |
 | `docs/viz/panes/<id>.js` | one pane per system: pure data passed to `VIZ.pane({...})` |
 | `tools/viz/check.mjs` | node checker: every pane loads, every `file:line` exists at the pinned commit |
 | `viz.sh` | `./viz.sh [pane-id[/tab]]` opens the MAIN checkout's page in the default browser |
 | `.claude/launch.json` → `viz` | a static server for the in-app browser (file:// cannot load the pane scripts there). `autoPort`: use the URL `preview_start` returns, never assume :8765 |
 
-`reference.md` (next to this file) is the full data contract for every block type. Read it before
-writing a pane. `docs/viz/panes/mandelbox.js` is the worked example: copy its shape (its fold-by-fold
-and ray-march steppers are the stepper pattern below). The engine came from the sibling project
-`/Users/adam/Godot/spellfactory`, whose `docs/viz/panes/fog-sim.js` is a second, larger example
-(read only: never edit that repo).
+This skill is copied between repos, so it never carries a repo's content: **read the viz docs of the
+repo you are in.** `reference.md` (next to this file) is the data contract for every block type;
+`docs/viz/index.html`'s header comment says how the page is wired; the panes already under
+`docs/viz/panes/` are the worked examples (open the largest and copy its shape: its `F` table, its
+ports, its stepper figures). In this repo that is `mandelbox.js` (its fold-by-fold and ray-march
+steppers are the stepper pattern below) and `shapes.js` (the KIFS and Kleinian fold-by-fold
+steppers). The engine is shared with the sibling project `/Users/adam/Godot/spellfactory`, whose
+`docs/viz/panes/fog-sim.js` is a second, larger example (read only: never edit that repo).
 
 ## Workflow
 
@@ -32,9 +36,10 @@ and ray-march steppers are the stepper pattern below). The engine came from the 
    genuinely different system gets a new pane. A small sub-concept of an existing system becomes a
    new block in that system's pane, not a new pane.
 
-2. **Research from the code, not from memory.** Read `README.md` (controls, saves, coordinates),
-   the system's spec and plan under `docs/superpowers/specs/` and `docs/superpowers/plans/`, the
-   test that pins its values (`tests/*_test.gd`), then the code itself (`src/`).
+2. **Research from the code, not from memory.** Read the repo's `README.md` (controls, saves,
+   coordinates), the system's spec and plan under `docs/superpowers/specs/` and
+   `docs/superpowers/plans/`, the tests that pin its values (`tests/`), then the code itself
+   (`src/`).
    Delegate the sweep to Explore agents when it spans many files, but read every line you will cite
    yourself. The pane is only as good as its blurbs: each says what the thing does and WHY, never
    restates its name.
@@ -44,6 +49,10 @@ and ray-march steppers are the stepper pattern below). The engine came from the 
    and if a file you cite is dirty, read the committed version. If HEAD is not on any remote the
    links 404 until it is pushed; say so in `pinNote` (e.g. `"<branch>, unpushed: links 404 until it
    is pushed"`), and never "fix" it by pinning an older commit whose lines differ.
+   HEAD can move while you work (another session committing to the same branch, as happened on
+   2026-10-09): run `git rev-parse HEAD` again before writing `commit` and again before you
+   commit. If a file you cite changed in between, re-read it at the new HEAD, remap the lines,
+   update any blurb the change made stale, and re-run the checker.
 
 4. **Choose blocks, then tabs.** A pane is a list of `tabs`, and each tab is drawn ALONE on its
    own canvas: only the open tab is in the render tree and only its live figures tick. That is
@@ -63,8 +72,10 @@ and ray-march steppers are the stepper pattern below). The engine came from the 
      follow-ups. Tag + hue: invariant 3, gotcha 2, history 6, open 4 (keep this across panes).
    - **figure**: the core mechanism drawn (a stencil, a falloff curve, a ring layout). Make it
      **live** when the system is a simulation or an algorithm whose behaviour is best felt: port
-     the real math line for line into the pane (as `mandelbox.js` ports `mandelbox.gdshader`), expose the
-     real dials as sliders with their shipped defaults, and say in the block note that it is a port.
+     the real math line for line into the pane (the repo's live panes show how; here `mandelbox.js`
+     ports `mandelbox.gdshader` and `shapes.js` ports the two shape includes), expose the real
+     dials as sliders with their shipped defaults, say in the block note that it is a port, and run
+     the tests' captured fixtures through the port at load (a failure goes into `VIZ.errors`).
    - **Prefer the frame-by-frame stepper.** Adam (2026-09-28, in spellfactory): the fog-sim "Air
      step, with and without pressure" tab is the view that best teaches him a simulation, better
      than a free-running demo. When a new tab explains a sim or an algorithm, lean toward that shape: a
@@ -72,15 +83,16 @@ and ray-march steppers are the stepper pattern below). The engine came from the 
      Step / Back / Reset through frames, the step's stages listed in order with their shader and
      GDScript lines, every cell hoverable for its numbers stage by stage, a switch between the fields
      it carries (dye counts or velocities), and a hypothetical variant drawn beside the shipped
-     one on shared controls. Copy the fold-by-fold and ray-march figures in `mandelbox.js` (or
-     `airLab` / `airFigure` in spellfactory's `fog-sim.js`).
+     one on shared controls. Copy the stepper figures of the repo's existing panes (here the
+     fold-by-fold and ray-march figures in `mandelbox.js` and the two fold-by-fold figures in
+     `shapes.js`; in spellfactory `airLab` / `airFigure` in `fog-sim.js`).
    Keep a pane readable: 4 to 10 tabs. A graph over ~45 nodes wants splitting into two graphs
    (two tabs). Never write a figure that assumes another tab is on screen ("the figure above"
    only holds inside one tab).
 
 5. **Write `docs/viz/panes/<id>.js`** (kebab-case id) and add its `<script>` line to `index.html`
-   under the `PANES:` comment. Define file paths once in an `F` table at the top, as mandelbox does.
-   Colours are the six hues only, given meaning per pane by `ctx`; never add CSS.
+   under the `PANES:` comment. Define file paths once in an `F` table at the top, as the existing
+   panes do. Colours are the six hues only, given meaning per pane by `ctx`; never add CSS.
 
 6. **Verify, all three, before calling it done:**
    - `node tools/viz/check.mjs --print --pane <id>` exits 0. READ the printed lines: each must be
@@ -114,6 +126,12 @@ dependency-free static file that works from `file://`.
 ## Audience
 
 Adam reads this as the engineer who wrote the code. Lead with the code names, uniforms and
-formulas (`min_r2 = inner_radius²`, `de(p, 32)`), give the numbers the real code would compute,
-and link every claim to its `file:line`. Plain sentences still come first in a blurb: what the
+formulas (in this repo `min_r2 = inner_radius²`, `de(p, 32)`), give the numbers the real code
+would compute, and link every claim to its `file:line`. Plain sentences still come first in a blurb: what the
 thing does and WHY, then the names.
+
+Adam is an engineer, not a mathematician (2026-10-08). Anything above basic calculus (topology,
+4D geometry, linear algebra, gradients, numerical methods, rendering maths) gets an entry in
+`docs/viz/glossary.js` so it is coloured and explained on hover. When a new pane brings in a term
+the glossary lacks, add the entry in the same commit. Open a few tabs and check the new marks land
+on the right words.

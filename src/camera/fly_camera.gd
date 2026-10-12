@@ -2,27 +2,50 @@ class_name FlyCamera
 extends Node
 ## Free-fly camera: mouse-look (yaw about world +Z, pitch about the camera's own
 ## right, no roll) and WASD + Space/Backspace (up/down) movement whose speed
-## scales with the distance to the nearest surface; holding Shift sprints.
-## Reads and writes a shared CameraState.
+## follows how far away the surface straight ahead is (the CenterRay), capped
+## by the distance to the nearest surface in any direction. Holding Shift
+## doubles the speed. A move that would take the camera below the zoom floor
+## (FractalParams.zoom_floor: where the perturbed march or 32 iterations run out,
+## or the 32-bit floor for shapes that are not perturbed) is refused. The eye
+## moves in 64-bit. Reads and writes a shared CameraState.
 
 const WORLD_UP := Vector3(0, 0, 1)
 const MAX_FORWARD_Z := 0.9998476951563913   # sin(89 deg): keep forward 1 deg off +/-Z
-const SPRINT_MULTIPLIER := 4.0               # Shift (the "sprint" action) scales travel speed
+## The centre-ray distance may raise the speed to at most this many times the
+## nearest-surface distance, so flying alongside a wall while looking down a
+## long corridor cannot carry you sideways through the wall.
+const NEAR_CAP := 10.0
+## Sprint ("sprint", Shift) multiplies the speed by this while held.
+const SPRINT_MULTIPLIER := 2.0
+## base_speed()'s lowest value. The speed is about the distance to the surface,
+## so it must be able to fall below any zoom floor or the camera would outrun its
+## own stop.
+const SPEED_FLOOR := 1e-14
 
 var enabled := false
 ## The load shedder's cap on travel speed: 1.0 normally, lower at its top level.
 var speed_limit := 1.0
+## Whether Shift was held on the last physics tick.
+var sprinting := false
+## True on a tick that refused a move because it would take the camera below
+## FractalParams.zoom_floor. Cleared by the next accepted move, a tick with no
+## move key held, or disabling the camera. Main shows it in the Movement pane.
+var at_zoom_limit := false
 
 var _params: FractalParams
 var _camera: CameraState
+var _ray: CenterRay
 ## Viewports whose text focus silences WASD, so typing in the console or a
 ## panel never flies the camera. Set by Main; empty for a standalone camera.
 var _text_viewports: Array = []
 
 
-func setup(params: FractalParams, camera: CameraState) -> void:
+## `ray` is the view's centre ray, so the speed and the probe dot share one
+## march; a standalone camera makes its own.
+func setup(params: FractalParams, camera: CameraState, ray: CenterRay = null) -> void:
 	_params = params
 	_camera = camera
+	_ray = ray if ray != null else CenterRay.new(params, camera)
 
 
 ## The viewports (main window + console) whose text focus silences movement.
@@ -53,13 +76,35 @@ func handle_event(event: InputEvent) -> bool:
 
 func _physics_process(delta: float) -> void:
 	if not enabled:
+		at_zoom_limit = false
 		return
 	var dir := move_direction()
+	sprinting = Input.is_action_pressed("sprint")
 	if dir.length() == 0.0:
+		at_zoom_limit = false
 		return
-	var t := _camera.transform
-	t.origin += dir * current_speed() * delta
-	_camera.transform = t
+	# The step is added in 64-bit: below about 1e-6 a 32-bit origin could not move.
+	var step := current_speed() * delta
+	var e := _camera.eye64()
+	var to := PackedFloat64Array([e[0] + dir.x * step, e[1] + dir.y * step, e[2] + dir.z * step])
+	if not move_allowed(e, to):
+		at_zoom_limit = true
+		return
+	at_zoom_limit = false
+	_camera.set_eye64(to[0], to[1], to[2])
+
+
+## Whether the camera may move from `from` to `to` (64-bit eyes): yes when `to` is
+## at least the zoom floor from the surface, or no closer than `from` is (backing
+## away is always allowed, so a camera already past the floor, say from a loaded
+## save, can leave). One ReferenceOrbit at `to` gives both its distance and its
+## floor. The speed already shrinks with the distance, so the last accepted step
+## before the floor is tiny and the stop does not pop.
+func move_allowed(from: PackedFloat64Array, to: PackedFloat64Array) -> bool:
+	var orbit := ReferenceOrbit.build(_params, to[0], to[1], to[2])
+	if orbit.distance >= _params.zoom_floor_for(orbit):
+		return true
+	return orbit.distance >= DistanceEstimator.estimate_at(from[0], from[1], from[2], _params)
 
 
 ## Rotate the view by a mouse delta (pixels). Yaw turns the heading about world
@@ -98,15 +143,20 @@ func move_direction() -> Vector3:
 	return dir
 
 
-## Travel speed: ~one second covers the distance to the nearest surface, times
-## the load shedder's speed_limit. Holding Shift (the "sprint" action)
-## multiplies it by SPRINT_MULTIPLIER.
+## Travel speed: base_speed(), times SPRINT_MULTIPLIER while sprinting.
 func current_speed() -> float:
-	var d := DistanceEstimator.estimate(_camera.eye(), _params)
-	var speed := clampf(d, 1e-6, 20.0) * _camera.speed_factor * speed_limit
-	if Input.is_action_pressed("sprint"):
-		speed *= SPRINT_MULTIPLIER
-	return speed
+	return base_speed() * (SPRINT_MULTIPLIER if sprinting else 1.0)
+
+
+## Speed before sprinting: ~one second covers the distance to the surface
+## straight ahead, but never more than NEAR_CAP times the distance to the
+## nearest surface (a miss, at infinity, takes the cap), times the speed factor
+## and the load shedder's speed_limit.
+func base_speed() -> float:
+	var e := _camera.eye64()
+	var near := DistanceEstimator.estimate_at(e[0], e[1], e[2], _params)
+	var d := minf(_ray.distance(), near * NEAR_CAP)
+	return clampf(d, SPEED_FLOOR, 20.0) * _camera.speed_factor * speed_limit
 
 
 func scroll(up: bool) -> void:

@@ -36,11 +36,12 @@ var _slider: HSlider
 var _spin: SpinBox
 var _check: CheckBox
 var _option: OptionButton
+var _picker: ColorPickerButton
 var _readout: Label
 var _source: OptionButton
-var _gain: SpinBox
+var _gain: DecimalSpinBox
 var _wave: OptionButton
-var _period: SpinBox
+var _period: DecimalSpinBox
 var _updating := false
 var _flash: Tween
 ## Array of {id: StringName, label: String} for the source dropdown's axes.
@@ -84,6 +85,8 @@ func refresh() -> void:
 		_check.button_pressed = bool(value)
 	if _option != null:
 		_select_id(_option, int(value))
+	if _picker != null:
+		_picker.color = value as Color
 	if _source != null:
 		var b := _table.binding(spec.id)
 		if b != null:
@@ -114,6 +117,8 @@ func value_control() -> Control:
 		return _slider
 	if _check != null:
 		return _check
+	if _picker != null:
+		return _picker
 	return _option
 
 
@@ -189,15 +194,22 @@ func _build_value() -> void:
 			_slider.value_changed.connect(_on_slider_changed)
 			row.add_child(_slider)
 
-			_spin = SpinBox.new()
+			if spec.type == AttributeSpec.Type.FLOAT:
+				var decimal := DecimalSpinBox.new()
+				# Steps no coarser than the slider range: 0 in a ±0.1 range steps 0.1, not 1.
+				decimal.max_unit = DecimalSpinBox.power_of_ten_below(spec.max_value - spec.min_value)
+				decimal.number_changed.connect(_on_spin_changed)
+				_spin = decimal
+			else:
+				_spin = SpinBox.new()
+				_spin.step = spec.step
+				_spin.value_changed.connect(_on_spin_changed)
 			_spin.min_value = spec.hard_min
 			_spin.max_value = spec.hard_max
-			_spin.step = spec.step
 			_spin.custom_minimum_size = Vector2(SPIN_MIN_WIDTH, 0)
 			_spin.tooltip_text = "Type an exact value. The slider covers %s ... %s; typing is allowed out to %s ... %s, and anything beyond that is clamped (the box flashes red)." % [
 				_format_number(spec.min_value), _format_number(spec.max_value),
 				_format_number(spec.hard_min), _format_number(spec.hard_max)]
-			_spin.value_changed.connect(_on_spin_changed)
 			_spin.get_line_edit().text_submitted.connect(_on_spin_text_submitted)
 			row.add_child(_spin)
 
@@ -217,6 +229,14 @@ func _build_value() -> void:
 			_option.tooltip_text = "%s\n\n%s" % [spec.tooltip, spec.effects]
 			_option.item_selected.connect(_on_option_selected)
 			column.add_child(_option)
+		AttributeSpec.Type.COLOR:
+			_picker = ColorPickerButton.new()
+			_picker.edit_alpha = false
+			_picker.custom_minimum_size = Vector2(SPIN_MIN_WIDTH, 0)
+			_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_picker.tooltip_text = "%s\n\n%s" % [spec.tooltip, spec.effects]
+			_picker.color_changed.connect(_on_color_changed)
+			column.add_child(_picker)
 
 	_readout = Label.new()
 	_readout.visible = false
@@ -260,13 +280,12 @@ func _build_binding() -> void:
 	box.add_child(_source)
 	_rebuild_source_items()
 
-	_gain = SpinBox.new()
+	_gain = DecimalSpinBox.new()
 	_gain.min_value = -1000000.0
 	_gain.max_value = 1000000.0
-	_gain.step = 0.01
 	_gain.custom_minimum_size = Vector2(SMALL_SPIN_WIDTH, 0)
 	_gain.tooltip_text = GAIN_TOOLTIP
-	_gain.value_changed.connect(_on_gain_changed)
+	_gain.number_changed.connect(_on_gain_changed)
 	box.add_child(_gain)
 
 	_wave = OptionButton.new()
@@ -277,13 +296,12 @@ func _build_binding() -> void:
 	_wave.item_selected.connect(_on_wave_selected)
 	box.add_child(_wave)
 
-	_period = SpinBox.new()
+	_period = DecimalSpinBox.new()
 	_period.min_value = 0.001
 	_period.max_value = 1000000.0
-	_period.step = 0.01
 	_period.custom_minimum_size = Vector2(SMALL_SPIN_WIDTH, 0)
 	_period.tooltip_text = PERIOD_TOOLTIP
-	_period.value_changed.connect(_on_period_changed)
+	_period.number_changed.connect(_on_period_changed)
 	box.add_child(_period)
 
 
@@ -356,6 +374,12 @@ func _on_option_selected(index: int) -> void:
 	if _updating:
 		return
 	_table.set_default(spec.id, _option.get_item_id(index))
+
+
+func _on_color_changed(c: Color) -> void:
+	if _updating:
+		return
+	_table.set_default(spec.id, c)
 
 
 func _on_source_selected(index: int) -> void:
@@ -436,7 +460,7 @@ func _from_slider(t: float) -> float:
 
 
 func _format_number(value: float) -> String:
-	return _significant(value, 3)
+	return DecimalSpinBox.format(value)
 
 
 func _format(value: Variant) -> String:
@@ -450,25 +474,4 @@ func _format(value: Variant) -> String:
 				if spec.enum_values[i] == int(value):
 					return spec.enum_labels[i]
 			return str(value)
-	return _significant(float(value), 4)
-
-
-func _significant(value: float, digits: int) -> String:
-	if not is_finite(value):
-		return str(value)
-	if value == 0.0:
-		return "0"
-	var exponent := int(floor(log(absf(value)) / log(10.0)))
-	if absf(value) / pow(10.0, float(exponent)) >= 10.0:
-		exponent += 1
-	if exponent < -4 or exponent >= digits:
-		var mantissa := value / pow(10.0, float(exponent))
-		var sign_text := "-" if exponent < 0 else "+"
-		return "%se%s%02d" % [_trim_zeros(String.num(mantissa, maxi(digits - 1, 0))), sign_text, absi(exponent)]
-	return _trim_zeros(String.num(value, maxi(digits - 1 - exponent, 0)))
-
-
-func _trim_zeros(text: String) -> String:
-	if not text.contains("."):
-		return text
-	return text.rstrip("0").rstrip(".")
+	return DecimalSpinBox.format(float(value))

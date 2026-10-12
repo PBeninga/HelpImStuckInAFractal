@@ -8,7 +8,7 @@ func run() -> void:
 	root.add_child(view)
 	view.size = Vector2(1280, 800)
 	view.setup(params, cam)
-	var table := AttributeTable.new(MandelboxShape.specs())
+	var table := AttributeTable.new(ShapeCatalogue.specs())
 	var marker := JuliaMarker.new()
 	root.add_child(marker)
 	marker.size = Vector2(1280, 800)

@@ -8,5 +8,5 @@ func run() -> void:
 	var feats: PackedStringArray = ProjectSettings.get_setting("application/config/features")
 	check(feats.has("GL Compatibility"), "GL Compatibility is declared")
 	for action in ["move_forward", "move_back", "move_left", "move_right",
-			"move_up", "move_down", "sprint", "toggle_panel", "pause"]:
+			"move_up", "move_down", "sprint", "toggle_panel", "cancel"]:
 		check(InputMap.has_action(action), "action '%s' exists" % action)

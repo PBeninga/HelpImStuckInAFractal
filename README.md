@@ -3,11 +3,17 @@
 A from-scratch Godot 4.6 Mandelbox viewer that emulates the renderer at
 [icefractal.com/mandelbox/](https://icefractal.com/mandelbox/): the same default
 view, the four shape sliders, the thirteen colour modes, the precision control,
-Julia mode and an orbit camera. On top of the site it adds a distance-scaled
+Julia mode and an orbit camera. On top of the site it adds three more fractals
+— a kaleidoscopic IFS (the Menger sponge, the Sierpinski tetrahedron and their
+kin) and a pseudo-Kleinian limit set, ported from Fractacular, and the
+Mandelbulb — and
+cylinder, octahedral and abs-fold hybrid folds for the Mandelbox, a distance-scaled
 free-fly camera, an adaptive-resolution governor that keeps the frame rate up
 while you move, and a **console** window — a Shape inspector of every
-Mandelbox knob with Fractacular's binding model, and a Movement pane of virtual
-axes driven by key pairs. It is built on the **GL Compatibility** renderer
+fractal knob with Fractacular's binding model, Light and Material tabs with
+Fractacular's cosine-palette window, a tunable light with scattering and
+shadows, and noise-driven texture and bump, and a Movement pane of
+virtual axes driven by key pairs. It is built on the **GL Compatibility** renderer
 (WebGL 2) so it is web-exportable.
 
 GDScript only — no C#, even though the Godot build on disk is the Mono build.
@@ -27,29 +33,53 @@ binary.
 
 ## Controls
 
-Tap **Ctrl** to open the **console**: the **Shape** inspector, with a row for
-every Mandelbox knob, stacked above the **Movement** pane of virtual axes.
+Tap **Ctrl** to open the **console**, a separate OS window: the **Shape**,
+**Light** and **Material** tabs, with a row for every Mandelbox, light and
+material knob, and the **View** tab (Save / Load level, the Camera mode, the
+mouse sensitivity, the
+Noise editor button, the Window buttons, the Renderer options and Back to Menu), stacked above the
+**Movement** pane of virtual axes.
 Everything the console does not own is driven directly by the mouse and
-keyboard. Press **Escape** to pause: the pause menu offers Save view / Load
-view, the Camera mode, Fast Controls, Console and Noise editor buttons, and
-Resume / Settings / Back to Menu; Escape again steps back out.
+keyboard. **Escape** only frees the mouse: nothing pauses, and it never opens
+or closes the console. Click the view to take the mouse back.
 
-The console and the noise editor are windows **inside the main window**, always
-drawn above the view: drag one by its title bar, close it with its ✕, and
-enlarge or maximise the main window when you want more room for them. (They
-cannot be dragged to another monitor: separate OS windows corrupted the main
-window's picture on macOS.) An open window takes the keyboard, but the keys it
-does not use — Escape, N, a Ctrl tap, ⌘S, ⌘P — still reach the game; pausing
-tucks the windows away and resuming brings them back.
+The console opens **beside** the main window — or on another monitor when
+there is no room beside it — and can be dragged anywhere. Keep it off the main
+window: on macOS (Godot 4.6.1, GL Compatibility) a separate window overlapping
+the main one corrupts its picture (the fractal squeezed into the uncovered
+strip, or black) until it is moved away. On a single laptop screen with the
+main window at its default size there is no room beside it, so shrink the main
+window, drag the console aside, or use **Fullscreen** (below). (On the web it is
+a window inside the page.)
 
-**Settings** (from the title menu or the pause menu) has two tabs.
+The main window first opens over **half of its screen's pixels** (each side
+about 71 % of the screen's), centred. After that the game remembers where you
+left the main window and the console, and reopens them there (kept in
+`user://settings.cfg`; a monitor that has since been unplugged falls back to
+the default). The View tab's **Window** row has:
 
-- **Controls** holds the mouse sensitivity. It is the player's preference, not
-  part of a view: it is kept in `user://settings.cfg`, survives restarts, and
-  loading a saved view does not change it.
-- **Renderer** tunes how the open view is rendered, and is saved with the view
-  (so it is only enabled from the pause menu). While it is showing, the pause
-  dim lightens so each change can be seen behind the menu.
+- **Fullscreen** — one fullscreen window (on a Mac, a desktop of its own) with
+  the view on the left and the console docked on the right, at 40 % of the
+  width (never under the console's 700-point minimum, never over 60 %). A Ctrl
+  tap still hides and shows the docked console, and the view takes the whole
+  width while it is hidden. The window's own green button does the same.
+  **Exit fullscreen** (or leaving fullscreen any other way) makes the console a
+  separate window again.
+- **Reset window** — back to the default size in the middle of its screen, with
+  the console beside it, forgetting the remembered places.
+The noise editor is a window **inside the main window**, always drawn above the
+view: drag it by its title bar, close it with its ✕. An open window takes the
+keyboard, but the keys it does not use — Escape, N, a Ctrl tap, ⌘S, ⌘P — still
+reach the game.
+
+The **mouse sensitivity** (the title menu's **Settings**, or the console's View
+tab) is the player's preference, not part of a level: it is kept in
+`user://settings.cfg`, survives restarts, and loading a saved level does not
+change it.
+
+The **Renderer** options on the console's View tab tune how the open view is
+rendered, and are saved with the view. Their **Reset camera** button puts the
+camera back where the current save file has it (below).
 
 | Renderer option | what it does |
 |---|---|
@@ -58,11 +88,97 @@ tucks the windows away and resuming brings them back.
 | **Detail falloff** | how quickly detail coarsens past that range; 0 (the default) keeps detail matched to the pixel at every distance |
 | **Max march steps** | the step budget per ray (default 128: 96 coarse + 32 fine) |
 | **Min resolution** | the lowest render scale Fast Controls may drop to while moving (default 25%) |
-| **Fast Controls** | the same toggle as in the Q panel |
+| **Fast Controls** | drop the render scale while anything moves, then snap back to full resolution when it stops |
 
 A ray stops once the distance estimate falls below
 `precision / detail × t × max(1, t / (range × d₀))^falloff`, where `t` is the
 distance along the ray and `d₀` the camera's distance to the nearest surface.
+
+### Deep zoom
+
+Several things adjust themselves as you fly close to the fractal. None has a
+setting, and none changes a saved level; at the default view the new ones are
+off, so the picture there is exactly the site's.
+
+- **Coarse pass iterations.** Each ray marches in two phases: a cheap coarse
+  pass, then 32 fine steps at full precision. The coarse pass normally runs 16
+  Mandelbox iterations, which describe a slightly smoother surface than the
+  real one (each iteration adds detail about 2× finer, so 16 of them leave the
+  surface rough by about 2 / 2.09¹⁶ ≈ 1e-5). Once you are within about 0.3 of
+  the surface the hit threshold gets finer than that gap, and the coarse pass
+  would spend its whole budget creeping toward a surface it can never reach:
+  the picture darkens and dark pits open. So the coarse count rises with your
+  distance `d₀` to the nearest surface, to
+  `ceil(log(2 / (2 × eps × d₀)) / log|scale|)` kept between 16 and 32
+  (`eps = precision / detail`): 24 at `d₀ = 0.001`, 32 by about `3e-6`. The
+  KIFS runs the same rule on its own Scale and the Mandelbulb on its Power (an
+  iteration near its surface stretches by about the power); the Kleinian,
+  which has no steady magnification per iteration, always marches its coarse
+  pass at 32.
+- **Lighting.** The Ice Fractal colour modes (1 to 9, on the Mandelbox outside Julia mode) light
+  the surface with their own normal, which samples the formula 0.01 units from
+  the hit point. Up close 0.01 spans far more than a pixel and that shading
+  turns to noise, so between `d₀ = 2` and `d₀ = 0.1` it fades smoothly
+  (a `smoothstep`, an S-shaped blend with no kink at either end) into the true
+  surface normal, the one the Julia and metal modes already use.
+- **A 64-bit eye.** The camera's position is three 64-bit numbers; the 32-bit
+  transform the renderer reads is their rounding. The fly step, the centre ray,
+  the fly speed and saves use the 64-bit ones (a saved view keeps the eye to
+  within one 64-bit rounding step), and the camera's distance to the surface is
+  measured from them, down to `1e-14`.
+- **Perturbation.** Near the surface the shader's 32-bit numbers cannot tell
+  one pixel's point from its neighbour's, so instead of iterating the pixel's
+  own point the work is split. On each camera or shape change (which is when a
+  frame is redrawn) the CPU runs the camera's own
+  orbit in 64-bit (`X_0` the eye, `X_1` its first iterate, `X_2` the next, and
+  so on). Each pixel starts a small offset `δ_0 = dir × t` away from the eye,
+  and the GPU follows only the offset, `δ_(i+1) = f(X_i + δ_i) − f(X_i)`, never
+  the pixel's own point. Each fold's difference is worked out from the gap
+  between the crease and `X` (crease minus `X`, computed in 64-bit, so it is
+  small exactly when precision matters). That way nothing subtracts two nearly
+  equal large numbers, which is where 32-bit loses its digits ("catastrophic
+  cancellation": the leading digits cancel and what is left is rounding noise).
+  Each ray hands off on its own: once its offset has grown (by the
+  magnification) to `0.1`, or the 20 recorded iterations run out, it adds the
+  offset back to `X_i` in 32 bits and finishes with the ordinary loop. A ray
+  that starts `0.1` or more from the eye hands off at once, so distant parts of
+  the picture are drawn exactly as before. It switches on within `10 ×` the
+  32-bit floor, where both marches agree, so there is no pop. The Movement pane
+  shows `deep 20` (the iterations recorded) while it is on. The design is in
+  [the spec](docs/superpowers/specs/2026-10-09-perturbation-deep-zoom-design.md);
+  the technique is the one Mandelbrot zoomers use, see Wikipedia's
+  [perturbation theory](https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Perturbation_theory_and_series_approximation)
+  section.
+- **Zoom limit.** The shader's 32-bit floats near a coordinate `x` can only land
+  on a grid `ulp32(x) = 2^(floor(log2 x) − 23)` apart (about `1.2e-7` near the
+  box). Once the hit threshold is much finer than that grid, rays reach the
+  surface only by luck. With perturbation the grid that matters is the one at
+  the last handoff point: `floor_pert = ulp32(max |X_K|) / (50 × eps × λ_K)`,
+  the old 32-bit rule applied at `K = min(20, n)` iterations in (`n` is how many
+  the orbit has before it escapes; for the Kleinian, before it settles at a
+  fixed point), where the view is `λ_K` times bigger. That
+  is about `3e-11` to `3e-10` on the default box (the old floor was about
+  `1e-4`). The fly camera will not go closer than that. Shapes it does not
+  perturb (the octahedral fold, the KIFS polyfold, the Mandelbulb) keep the
+  32-bit floor `ulp32(largest |eye coordinate|) / (50 × eps)`; a higher Detail
+  (a finer threshold) or Julia mode's larger coordinates stop it further out. A
+  noise field's displacement is still evaluated at the 32-bit position (a
+  displaced surface is smooth below its displacement anyway). While a move is
+  being refused the console's Movement pane shows `zoom limit` beside the speed
+  readout. Moving away is always allowed, so a saved level already past the
+  limit can still leave.
+- **Where 32 iterations run out.** The orbit has 32 iterations, so the surface
+  has only so much detail, and past a point (which varies enormously from place
+  to place) the hit test can no longer be met: rays run out of steps and the
+  picture darkens, the same look as the old coarse-pass problem. The camera is
+  not stopped there. Measured by `perturbation_test.gd` (a 64-bit march with the
+  shader's hit threshold and 128 steps): at the default view's centre point the
+  surface stops resolving between `1e-7` and `1e-8`, so the default box gains
+  about three to four decades past the old `1e-4` floor there, not the seven the
+  floor allows;
+  neighbouring points of the same view resolve to `1e-9` .. `1e-12`; the Menger
+  sponge and the Kleinian resolve to `1e-12`; the terraces save stops near
+  `1e-6`. More iterations are a follow-up.
 
 ### Load shedding
 
@@ -70,20 +186,27 @@ With Fast Controls on, the render scale is the first thing to give while you
 move. Once it is at **Min resolution** and the frame rate is still under 24 fps,
 the governor sheds quality a level at a time:
 
-| level | distance fog (× d₀) | detail | step budget | Fly speed |
-|---|---|---|---|---|
-| 0 | none | 100% | 100% | — |
-| 1 | 400 | 75% | 100% | — |
-| 2 | 150 | 55% | 75% | — |
-| 3 | 60 | 40% | 50% | — |
-| 4 | 40 | 35% | 50% | capped at 40% |
+| level | distance fog (× d₀) | detail | step budget | shadow march | Fly speed |
+|---|---|---|---|---|---|
+| 0 | none | 100% | 100% | 48 steps | — |
+| 1 | 400 | 75% | 100% | 24 steps | — |
+| 2 | 150 | 55% | 75% | off | — |
+| 3 | 60 | 40% | 50% | off | — |
+| 4 | 40 | 35% | 50% | off | capped at 40% |
+
+The shadow march (when Shadows is on) halves at level 1 and drops out from
+level 2; scattering and bump cost no extra marches and stay at every level.
 
 Rays stop at the fog distance, and the view fades into a tint of the current
 colour mode on the way there. The thresholds are sticky: a shed needs 0.5 s
 under 24 fps (and 1 s since the last change), a restore needs 2 s over 40 fps,
 nothing changes in between, and a shed soon after a restore doubles the next
-restore's wait (up to 16 s). The level is kept while you are still, but the
-still frame always renders at full quality. The console's Movement pane shows
+restore's wait (up to 16 s). A level coming off eases in over 18 frames
+instead of snapping to full quality: the fog recedes, and when it is going
+entirely it also thins, with the march no longer stopping at it, so the far
+geometry fades in; the detail and step budget climb back alongside it. A level
+going on snaps straight in. The level is kept while you are still, but the
+still frame always renders at full quality (eased in over its first frames). The console's Movement pane shows
 `load shed N/4` while a level is active.
 
 ### Fly camera (default)
@@ -93,21 +216,36 @@ still frame always renders at full quality. The console's Movement pane shows
 | **Ctrl** (tap) | open the console and free the mouse; tap again to close it and recapture. Fires on release, so Ctrl+S and Ctrl+P still work |
 | **Q / E** | the default virtual **Axis A** (negative / positive). Bind a Shape row to Axis A to give Q and E that knob |
 | **N** | toggle the noise-field editor (also releases/recaptures the mouse) |
-| **Escape** | pause menu (releases the mouse; resuming recaptures it). While the noise editor has the keyboard, Escape closes it first |
+| **Escape** | free the mouse (click the view to recapture). Nothing else: no pause, and the console stays as it is. While the noise editor has the keyboard, Escape closes it |
 | **W / A / S / D** | move forward / left / back / right |
 | **Space / Backspace** | move up / down (world-relative to the camera's own up) |
-| **Shift** (hold) | sprint — multiply the travel speed by 4 while held |
+| **Shift** (hold) | sprint — doubles the speed while held |
+| **R** | show / hide the centre-ray probe: a white dot painted on the surface straight ahead, where the speed is measured to (remembered between runs) |
 | mouse move | mouse-look while captured (yaw about world +Z, pitch about the camera's right; no roll) |
 | mouse wheel | adjust the speed factor (×1.25 per tick up, ÷1.25 down; clamped 0.01–100) |
-| click | with the mouse free, click the view to recapture the mouse (and close the noise editor); the console stays open over the view so its readouts stay in sight. A click on the console itself stays in the console |
+| click | with the mouse free, click the view to recapture the mouse (and close the noise editor); the console stays open so its readouts stay in sight. A click on the console itself stays in the console |
 
-Movement speed scales with the distance to the nearest surface — roughly one
-second covers the gap to whatever you are looking at — so flight stays usable
-from far away and slows down automatically as you approach the fractal.
+Movement speed follows the distance along the ray through the middle of the
+screen to the surface it hits — roughly one second covers the gap to whatever
+you are looking at — so flight stays usable from far away and slows down
+automatically as you approach the fractal. It is capped at 10× the distance to
+the nearest surface in any direction, so looking down a long corridor with a
+wall at your elbow cannot carry you sideways through the wall, and a ray that
+hits nothing takes that cap. The load shedder's speed cap still applies on top.
+It will not fly closer to the surface than the zoom limit (see **Zoom limit**
+under [Deep zoom](#deep-zoom): about `1e-10` on the default box, where the old
+32-bit limit was about `1e-4`); the Movement pane shows `zoom limit` while it
+is holding you there. The speed follows the distance measured from the 64-bit
+eye and can fall as low as `1e-14`, so a slow approach stays steady all the
+way down. The centre ray marches whichever fractal is drawn, in that
+fractal's own bounds, and on the Kleinian it stops at the View distance just as
+the picture does (anything further is a miss, so the cap applies).
+`fly_camera_test` holds W at every fractal and fold option and checks no
+frame's step jumps a surface.
 
 ### Orbit camera
 
-Switch to **Orbit** from the pause menu's Camera option. The mouse is never
+Switch to **Orbit** from the Camera option on the console's View tab. The mouse is never
 captured in this mode.
 
 | action | what it does |
@@ -120,24 +258,106 @@ captured in this mode.
 
 ### Console (Ctrl)
 
-A Ctrl tap (or the pause menu's **Console…** button) opens the console, a
-window inside the main window: the **Shape** pane on top, taking the full width
-and most of the height, and the **Movement** pane below it at its natural
-height (drag the bar between them to share the height differently).
+A Ctrl tap opens the console, a
+separate OS window: the **Shape**, **Light**, **Material** and **View** tabs on top, taking the full
+width and most of the height, and the **Movement** pane below them at its
+natural height (drag the bar between them to share the height differently).
+**⌘=** / **⌘−** (Ctrl elsewhere) zoom everything in the console, text and
+controls, a step at a time from 50% to 200%, and **⌘0** resets; the window keeps
+its size and the panes reflow. The zoom is remembered between runs.
 
-**Shape pane.** One row per Mandelbox knob, grouped **Box** / **Julia** /
-**Iteration rotation** / **Render**:
+**Shape tab.** A read-only **Self-similar: yes / no (reason)** line heads the
+tab: whether the current shape is exactly self-similar, following the shape and
+the noise graph live. On the Mandelbox that is Julia mode with the constant
+fixed in x, y and z, an iteration that magnifies, no scale drift and no noise
+displacement; the KIFS qualifies without a twist, the Kleinian always (both
+without noise), the Mandelbulb never (its power map stretches some directions
+more than others, so its deep copies are distorted). It is information only;
+[docs/reference/self-similar-substitution.md](docs/reference/self-similar-substitution.md)
+explains what it means for deep zoom. Below it, one row per knob of the fractal
+being drawn, grouped **Fractal**, that fractal's own groups, then **Render**.
+Rows and headings of the fractals not chosen are hidden.
 
-- **Box** — Scale, Fold limit, Min radius, Fixed radius, Fold order (Box→Sphere
-  or Sphere→Box) and **W**, the fourth coordinate of the 4D sample point (0 is
-  today's 3D box).
+- **Fractal** — which fractal: **Mandelbox**, **KIFS**, **Kleinian** or
+  **Mandelbulb**, and **W**, the fourth coordinate of the 4D sample point (0 is
+  the 3D shape; hidden on the Mandelbulb, which is 3D). The camera stays where
+  it is when the fractal changes.
+- **Box** (Mandelbox) — Scale, Fold limit, Min radius, Fixed radius, Fold order
+  (Box→Sphere or Sphere→Box), **Fold shape** (Box, Cylinder — the xy radius
+  folded — or Octahedral — reflected through |x|+|y|+|z| ≤ Fold limit),
+  **Hybrid mix** and **Hybrid every** (on every 1st, 2nd or 3rd iteration, morph
+  the fold from the box fold toward the abs fold, KIFS's fold into the positive
+  corner: 0 is off, 1 swaps it outright, and the shape grows through the middle
+  of the range; bind the mix to sweep) and **Scale drift** (iteration i scales by
+  Scale + drift × i).
 - **Julia** — a master **Julia (all)** toggle and four per-component toggles,
   each revealing its **Constant** (the rows collapse until Julia is on). While
   Julia is on, a white ring marks the point in the view; drag it (with the mouse
   free) to move Constants x/y/z, which survives the next resolve.
-- **Iteration rotation** — the six 4D plane angles applied inside every
-  iteration (they change the fractal itself, not just the view).
-- **Render** — the thirteen Colour modes and the ray-march Precision (log slider).
+- **Iteration rotation** (Mandelbox) — the six 4D plane angles applied inside
+  every iteration (they change the fractal itself, not just the view).
+- **KIFS** — Scale (3 with the Coordinate fold is the Menger sponge), **Fold set**
+  (Coordinate: cube symmetry; Diagonal: the Sierpinski tetrahedron at scale 2;
+  Polyfold: k-fold mirror symmetry in xy, with its **Polyfold k**), **Twist**
+  (an xy turn growing with the iteration) and the 4D **Offset** the copies
+  scale away from. Ported from Fractacular, with its diagonal fold fixed to
+  actually fire and a mirror polyfold that a ray march can trust.
+- **KIFS rotation** — R1 (before the fold) and R2 (after it), six 4D plane
+  angles each.
+- **Kleinian** — Knighty's pseudo-Kleinian: the fold **Box** (one half-width
+  per axis), **Inversion radius**, 4D **Shift**, **Thickness** of the sheets, and
+  **View distance**: the set fills space, so rays stop at this distance (10 by
+  default) and the last third fades into the background.
+- **Mandelbulb** — White and Nylander's triplex power: every iteration writes
+  the point in spherical coordinates, raises the radius to the **Power** (8, the
+  classic bulb) and multiplies both angles by it, then adds c. **Theta phase**
+  and **Phi phase** add a turn to the polar angle and the azimuth each
+  iteration (the lobes lean and swirl), and **Julia** swaps c for a fixed
+  **Constant** x/y/z. The distance is the escape-time estimate
+  0.5 · r · ln r / dr. The bulb lies within radius 2^(1/(Power − 1)) (about 1.1
+  at power 8), so it marches in the usual cube of half-side 2; fly in to about
+  2 from the origin to frame it.
+- **Render** — the ray-march Precision (log slider).
+
+**Light tab.** The one lamp every lit mode shares — **Light colour**, **Light
+yaw** / **Light pitch** (swing the headlight about the view's up and right
+axes), **Light size** (a point light at 0, a broad soft source above it),
+**Ambient** / **Diffuse**, and **Shadows** (0 is off and casts no shadow ray;
+only visible with the light swung off the headlight). Then **Scattering** —
+**Density**, **Glow** and **Brightness** of a light-tinted distance haze
+(analytic, no extra rays). Then **Picture** — **Exposure** and **Saturation**
+on the final colour of every mode but Grayscale. The defaults are the site's,
+so the picture is unchanged until one is moved.
+
+**Material tab.** Fractacular's Colour window at the top of one scrolling list
+(the twelve cosine-palette sliders, curves and strip), then rows grouped
+**Colour** / **Surface** / **Texture** / **Palette**:
+
+- **Colour window** — the cosine palette `color(t) = A + B · cos(2π (C·t + D))`:
+  twelve sliders (A, B, C and D over red, green and blue), the three channel
+  curves they make and the gradient strip they come out as, and **Reset** (back
+  to the rainbow). The strip is the shader's own formula, and follows a bound
+  component live. A hint shows while the Colour mode is not Palette.
+- **Colour** — the site's thirteen colour modes plus **Palette**, which paints
+  with the window's palette. In Palette mode four more rows appear: **Palette
+  input** (Steps, the march's step count; Radius, the hit point's distance from
+  the centre; or Normal, the surface's facing), **Palette frequency** and
+  **Palette offset** (position = fract(input × frequency + offset); bind the
+  offset to Time for a colour cycle) and **Palette occlusion** (how much the
+  step count darkens crevices).
+- **Surface** — **Surface colour**, **Roughness** (glassy with tight glints at
+  low, matte at high; it replaces the old Shininess — the specular exponent is
+  `2/roughness² − 2`, so the default 1/9 is the site's 160) and **Specular**
+  (the glint strength). The defaults are the site's, so every mode looks exactly
+  as before until one is moved; they apply to every mode but Grayscale.
+- **Texture** — **Texture** and **Bump**, driven by the noise editor's Texture
+  and Bump outputs: Texture recolours the surface, Bump tilts the normal for a
+  fake relief. Nothing wired, nothing changes.
+- **Palette** (Palette mode only) — the same twelve numbers as rows, so each
+  channel's A, B, C or D can have its own Source, gain and waveform: a Sine on
+  B.r pulses the red, a Linear Time drive on D.b cycles the blue.
+
+All of it is saved with the view (the shape section), like any other row.
 
 Each bindable row carries Fractacular's binding widgets: a **Source** (None,
 Time, or a virtual axis), a **Gain**, a **Waveform** (Linear / Sine / Triangle)
@@ -146,78 +366,81 @@ waveform(source)`, shown as a live readout while a binding is active.
 
 **Movement pane.** One line per virtual axis — an editable label, its id, the
 live value, a **0** button, the push **speed**, two key-capture buttons (click,
-then press a key) and a remove button — plus **Add axis**, the clock readout,
-the fly camera's speed factor, and **Save** / **Save as…** / **Load…** for the
-keymap file. Key pairs push an axis at its speed; a Shape row bound to that axis
-reads the value, so the row's gain is the key's sensitivity.
+then press a key) and a remove button — plus **Add axis**, the clock readout and
+the fly camera's speed factor beside a **Reset camera** button. The keys and
+axes have no file of their own: they are saved inside the level (the View tab's
+**Save level…**) and restored when a level is loaded. Key pairs push an axis at
+its speed; a Shape row bound to that axis reads the value, so the row's gain is
+the key's sensitivity.
 
-**⌘S** (Ctrl+S elsewhere) saves the view over the current file without a panel;
+**⌘S** (Ctrl+S elsewhere) saves the level over the current file without a panel;
 with no current file it opens the Save panel.
 
 **⌘P** (Ctrl+P elsewhere) copies a screenshot of the fractal, without any UI, to
 the clipboard as a PNG. On Linux this needs `xclip`.
 
-### Pause menu (Escape)
+### View tab (console)
 
-Escape pauses and opens the menu, which holds what the old Q panel kept that is
-not a shape knob: a **Save view…** / **Load view…** row with the current file's
-name and a status line, the **Camera** mode (Fly / Orbit), the **Fast Controls**
-toggle (let the resolution governor drop render scale while you interact), a
-**Console…** button (opens the console and resumes with the mouse free — the
-way in when a browser swallows the Ctrl tap), a **Noise editor…** button, and
-Resume / **Settings** / Back to Menu. Settings holds the mouse sensitivity.
+The console's View tab holds what is not a shape knob: a **Save level…** /
+**Load level…** row with the current file's name and a status line, the
+**Camera** mode (Fly / Orbit), the **mouse sensitivity**, a **Noise editor…**
+button, the **Renderer** options (above, with Fast Controls and Reset camera)
+and **Back to Menu**.
 
-## Keymap
+## Keys and axes
 
-The virtual axes and their key pairs live in **`saves/keymap.json`**, separate
-from any view (a level loads a view and a keymap independently, and the same
-view can play under different keys):
+The virtual axes and their key pairs have no file of their own: they are saved
+inside the level (the `axes` list below) and restored when a level is loaded.
+Until a level is loaded the keymap is the shipped default — one **Axis A** on
+**E** (positive) / **Q** (negative) at one unit per second. Keys are stored by
+name (layout-independent), `""` meaning unbound, and each axis registers two
+input actions, `axis_<id>_pos` and `axis_<id>_neg`.
 
-```json
-{
-  "version": 1,
-  "axes": [
-    {"id": "a", "label": "Axis A", "speed": 1.0, "positive": "E", "negative": "Q"}
-  ]
-}
-```
+## The level save
 
-Keys are stored by name (layout-independent), `""` meaning unbound. The shipped
-default is one Axis A on Q/E at one unit per second. Each axis registers two
-input actions, `axis_<id>_pos` and `axis_<id>_neg`. The Movement pane's Save /
-Load edit this file; a missing or malformed file falls back to the default.
-
-## Saved views
-
-A save is a small JSON file, **version 2**:
+There is one save file — the **level** — a small JSON file tagged
+`"kind": "level"`, **version 3**. (`"kind": "sequence"` is reserved for the
+level-sequence editor to come; a sequence file handed to the level loader is
+refused by name, and so is an old stand-alone keymap file.)
 
 - **`shape`** — `AttributeTable.to_dict()`: a `defaults` map (every catalogue id
-  to its value) and a `bindings` map (only active bindings, each a source /
-  gain / waveform / period).
-- **`axes`** — every virtual axis value by id.
+  to its value, the fractal among them) and a `bindings` map (only active
+  bindings, each a source / gain / waveform / period). A file from before the
+  fractal could be chosen has no `shape` id and loads as a Mandelbox.
+- **`axes`** — the keymap: a list of `{id, label, speed, positive, negative,
+  value}` entries. Loading a level replaces the keymap in hand with these,
+  rebinding the input actions.
 - **`fractal`** — the non-shape preferences: `fast_controls`, `camera_mode`
-  (`"fly"`/`"orbit"`) and `mouse_sensitivity`.
-- **`camera`** — the eye, forward and up vectors and the speed factor.
+  (`"fly"`/`"orbit"`), `mouse_sensitivity` and the renderer options.
+- **`camera`** — the eye, forward and up vectors and the speed factor. The
+  eye is written at full precision (all the digits of the 64-bit numbers; the
+  other numbers in a save are tidied), so a deep view comes back where it was,
+  to within one 64-bit rounding step (the parser can land one step off). **Reset
+  camera** (in the console's Movement pane and the View tab's Renderer options)
+  puts the camera and speed factor back to these, as the current file was last
+  loaded or saved; with no file current it goes to the starting view.
 - **`noise`** — the noise graph, when one is wired (additive; see below).
 
 Loading skips anything it does not recognise or cannot read, with a warning, and
-leaves values a file does not mention as they are. A **version-1** file (the old
-flat `fractal` section) still loads: its keys are mapped (`scale`→`box_scale`,
+leaves values a file does not mention as they are. Older levels still load: a
+**version-2** file (whose `axes` is a dict of values by id) applies those values
+onto the axes in hand and leaves the keys alone; a **version-1** file (the old
+flat `fractal` section) has its keys mapped (`scale`→`box_scale`,
 `inner_radius`→`min_radius`, `outer_radius`→`fixed_radius`,
 `julia_enabled`→`julia_all`, `julia_point`→the three Constants) without a
-warning. Saving always writes version 2. An exported build cannot write into the
+warning. Saving always writes version 3. An exported build cannot write into the
 project, so it saves to `user://saves/` instead.
 
 | file | what it is |
 |---|---|
-| `saves/default.json` | the opening view |
+| `saves/default.json` | the opening level |
 | `saves/juliaIceField.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −2.29, Min 0, Fold 0.72, Fixed 0.29, Ice Fractal, precision 0.00002 |
 | `saves/juliaIceTerraces.json` | Julia mode at `(-0.23, 1.512, 1.892)`, Scale −1.88, Min 0.49, Fold 0.81, Fixed 0.53, Ice Fractal, precision 0.0001 |
-| `saves/noiseRidges.json` | the default Ice Fractal view with a noise field wired: value-noise ridges displacing the surface and tinting it blue (see **Noise fields**) |
+| `saves/noiseRidges.json` | the default Ice Fractal level with a noise field wired: value-noise ridges displacing the surface and tinting it blue (see **Noise fields**) |
 
 ## Noise fields
 
-Press **N** (or the **Noise editor…** button in the pause menu) to open the
+Press **N** (or the **Noise editor…** button on the console's View tab) to open the
 noise-field editor: an in-app node graph, ported from Fractacular's Isolation
 window, that builds a 3D scalar field and overlays it on the Mandelbox. Wiring it
 to the **Output** node does two things to the picture, live as you edit:
@@ -228,8 +451,13 @@ to the **Output** node does two things to the picture, live as you edit:
   Output's **Step scale** so the march does not step over the displaced surface.
 - **Tint** — the surface colour is blended toward the Output's **Tint colour** by
   the field, scaled by **Tint strength**.
+- **Texture** — a Vec3 (each channel clamped to 0…1) the surface colour is
+  multiplied by, scaled by the Material tab's **Texture** row.
+- **Bump** — a Float height whose across-surface slope tilts the normal for a
+  fake relief (the surface does not move), scaled by the Material tab's **Bump**
+  row.
 
-The editor is a window inside the main window, like the console: drag it by its
+The editor is a window inside the main window (unlike the console): drag it by its
 title bar; its ✕, or N or Escape while it has the keyboard, closes it. Opening
 the editor frees the mouse; a click in the view in Fly mode closes it and
 recaptures. **Orbit** mode (Camera dropdown) is the
@@ -246,14 +474,14 @@ wire to remove it.
 | **Noise** | **Value noise**, **Gradient noise** (both with Octaves/Lacunarity/Gain FBM), **Cellular** (Worley F1) |
 | **Vector** | **Transform** (offset, scale, rotate), **Warp** (domain warp), **Combine XYZ**, **Split XYZ** |
 | **Math** | **Constant**, **Math** (Add…Fract), **Remap**, **Clamp**, **Mix**, **Length** |
-| **Output** | **Output** — Displace and Tint inputs, Amplitude, Step scale, Tint colour and strength (one per graph) |
+| **Output** | **Output** — Displace, Tint, **Texture** and **Bump** inputs, Amplitude, Step scale, Tint colour and strength (one per graph). Texture multiplies the surface colour; Bump tilts the normal for a fake relief (the Material tab's Texture and Bump rows scale them). |
 
-**Saving.** The graph is saved with the view, as an additive `"noise"` key in the
-same JSON file — a view without the key leaves the current field alone. The editor
-can also save and load graphs on their own, as `saves/noise/*.json`
-(`{"version": 1, "noise": {…}}`), with its own **Save…** / **Load…** buttons.
-Load **`saves/noiseRidges.json`** for a one-click demo: value-noise ridges
-displacing and blue-tinting the default Ice Fractal view.
+**Saving.** The graph is saved inside the level, as an additive `"noise"` key in
+the same JSON file — a level without the key leaves the current field alone. The
+graph has no file of its own; the editor's **New** button clears it back to the
+default (Position and Output). Load **`saves/noiseRidges.json`** for a one-click
+demo: value-noise ridges displacing and blue-tinting the default Ice Fractal
+level.
 
 A FLOAT parameter edit only re-pushes a shader uniform; an Octaves/op/toggle edit
 (baked into the generated GLSL) recompiles the shader. An unwired graph compiles
@@ -282,25 +510,44 @@ tests/screenshots.sh  # windowed render check (writes PNGs to screenshots/)
 ```
 
 `tests/run_all.sh` imports the project (refreshing the class cache) and then runs
-each `tests/*_test.gd` headlessly; it exits non-zero if any test fails. Because
+each `tests/*_test.gd` headlessly; it exits non-zero if any test fails. The CPU
+distance estimators (`DistanceEstimator`, `KifsEstimator`, `KleinianEstimator`,
+`MandelbulbEstimator`) are pinned by captured fixtures, and `march_safety_test.gd` checks every
+fractal and fold option is safe to sphere-trace: a full-step march never jumps
+a surface that a quarter-step march finds. Because
 the headless renderer produces no pixels, the actual render is verified by
 `tests/screenshots.sh`, which launches Godot windowed **without stealing focus**
-(via `open -g`), renders the default view, each colour mode, and a
+(via `open -g`), renders the default view, each colour mode, a
 `console_bound_axis` frame (Axis A bound to the scale, required to differ from
-the default), and writes the results plus a `PASS`/`FAIL` log to
+the default) and a `lighting_raked` frame (the light swung and broadened, also
+required to differ), and writes the results plus a `PASS`/`FAIL` log to
 `tests/out/screenshots.txt`.
 
 The UI suites drive the real widgets the way a player does, still headless.
 `tests/ui_driver.gd` (`UiDriver`) turns the 64x64 headless root into a
 1280x800 logical surface and pushes synthetic mouse, wheel, trackpad-pan and
 key events through the root at window-aware global coordinates, so clicks
-land in the embedded console and noise windows, their dropdown popups and
+land in the console and noise windows (embedded, headless), their dropdown popups and
 file panels through Godot's own hit-testing. `ui_driver_test.gd` checks each
 primitive; `ui_console_test.gd` scrolls the Shape list, picks dropdown items,
 clicks and drags sliders, types values and edits axes; `ui_noise_test.gd` adds
 a node from the right-click menu, wires it, edits it live and saves and loads
 the graph; `ui_journey_test.gd` plays one session from the title menu to Back
 to Menu.
+
+`deep_zoom_test.gd` replays the shader's two-phase march on the CPU from a
+camera 1e-3 and 1e-5 short of the default view's surface: with the old fixed
+16-iteration coarse pass the ray spends its whole budget or misses, with the
+distance-following count it hits in under half.
+
+`perturbation_test.gd` runs a GDScript port of the shader's perturbed step in
+emulated float32. It checks each fold's difference formula case by case, whole
+orbits in 64-bit against the direct orbit, and the march at 1e-5, 1e-6 and 1e-7
+from five fixtures, where today's float32 march gets under 30% of the rays
+right (where the reference resolves the surface) and the perturbed one at
+least 90%. It also prints where the 64-bit march itself stops hitting, the
+numbers quoted under Deep zoom. `reference_orbit_test.gd` checks that the
+reference orbit's distance is the estimator's exactly.
 
 The reference capture from the site lives at
 **`docs/reference/icefractal-default.jpg`**. Put `screenshots/default_view.png`

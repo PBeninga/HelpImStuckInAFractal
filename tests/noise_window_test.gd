@@ -1,8 +1,7 @@
 extends "res://tests/test_case.gd"
 ## NoiseWindow: owns the graph, wires the editor to it and to the view, toggles
-## open/closed, and saves/loads graph-only JSON in saves/noise/.
-
-const TMP := "user://noise_window_test.json"
+## open/closed. The graph has no file of its own — it is saved inside the level
+## (to_dict / apply_dict), exercised here as a round trip.
 
 
 func run() -> void:
@@ -59,34 +58,27 @@ func run() -> void:
 		names.append(String(u))
 	check(names.has("n_%s_scale" % vn), "wiring in the window reaches the view's shader")
 
-	# --- save to a graph-only file and read it back ---
-	window.workspace_files().save_dialog().file_selected.emit(ProjectSettings.globalize_path(TMP))
-	await frames(1)
-	check(FileAccess.file_exists(TMP), "Save… writes a graph-only JSON file")
-	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TMP))
-	check_eq(int(data["version"]), Workspace.VERSION, "the file carries the workspace version")
-	check(data.has("noise") and data["noise"].has("nodes"), "…and a noise section with the graph")
-
-	# --- New resets to the default, then Load restores the saved graph ---
+	# --- New resets to the default graph ---
 	window.editor().new_requested.emit()
 	await frames(1)
 	check_eq(window.graph().nodes.size(), 2, "New resets to the default graph")
-	window.workspace_files().load_dialog().file_selected.emit(ProjectSettings.globalize_path(TMP))
-	await frames(1)
-	check_eq(window.graph().nodes.size(), 3, "Load restores the saved graph")
-	check(view.noise_graph() == window.graph(), "…and the view follows the new graph object")
 
-	# --- apply_dict / to_dict round trip (used by a view save) ---
+	# --- apply_dict / to_dict round trip (used by a level save) ---
+	# Rebuild the three-node graph to capture.
+	window.editor().add_node_requested.emit(&"value_noise", Vector2(200, 200))
+	await frames(1)
+	check_eq(window.graph().nodes.size(), 3, "a node is added back for the round trip")
 	var dict := window.to_dict()
-	check(dict.has("nodes") and dict.has("links"), "to_dict gives the graph dict for a view save")
+	check(dict.has("nodes") and dict.has("links"), "to_dict gives the graph dict for a level save")
 	window.editor().new_requested.emit()
 	await frames(1)
+	check_eq(window.graph().nodes.size(), 2, "New clears it again")
 	var warnings := window.apply_dict(dict)
 	await frames(1)
 	check_eq(warnings.size(), 0, "apply_dict restores with no warnings")
 	check_eq(window.graph().nodes.size(), 3, "…and the graph is back")
+	check(view.noise_graph() == window.graph(), "…and the view follows the restored graph object")
 
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(TMP))
 	window.queue_free()
 	view.queue_free()
 	await frames(1)

@@ -5,15 +5,16 @@ extends "res://tests/test_case.gd"
 ## losing the working shader.
 
 
+## The renderer's own uniforms, kept in one place: shader_test.gd's list.
+const ShaderTest := preload("res://tests/shader_test.gd")
+
 ## The renderer's own uniforms plus every shape catalogue id (filled in run()).
 var BASE_UNIFORMS: Array = []
 
 
 func _base_uniforms() -> Array:
-	var out: Array = ["eye", "cam_right", "cam_up", "cam_forward", "tan_half_fov",
-		"aspect", "box_half", "detail_range", "detail_falloff", "near_dist",
-		"coarse_steps", "fine_steps", "fog_dist", "fog_color"]
-	for id in MandelboxShape.catalogue_ids():
+	var out: Array = ShaderTest.RENDERER_UNIFORMS.duplicate()
+	for id in ShapeCatalogue.catalogue_ids():
 		out.append(String(id))
 	return out
 

@@ -1,7 +1,8 @@
 extends "res://tests/test_case.gd"
 ## NoiseCompiler: every node compiles, the default graph is the inert stub, a
 ## wired graph grows the right uniforms, the three functions do what the spec
-## says, and live-vs-baked is classified correctly.
+## says, live-vs-baked is classified correctly, and displaces() tells a graph
+## that moves the surface from one that only tints it.
 
 
 func _resolver() -> Callable:
@@ -18,6 +19,20 @@ func _region_compiles(code: String) -> Shader:
 		+ "\tfloat s = noise_step_scale();\n" \
 		+ "\tvec3 t = noise_tint(vec3(0.5), pp);\n" \
 		+ "\tCOLOR = vec4(t + vec3(d + s), 1.0);\n}\n"
+	var sh := Shader.new()
+	sh.code = src
+	return sh
+
+
+## Like _region_compiles but also references noise_texture and noise_bump, so a
+## spliced Texture/Bump region is proven to compile.
+func _region_compiles_lit(code: String) -> Shader:
+	var src := "shader_type canvas_item;\n" + code \
+		+ "\nvoid fragment() {\n" \
+		+ "\tvec3 pp = vec3(UV, 0.0);\n" \
+		+ "\tvec3 tex = noise_texture_on ? noise_texture(pp) : vec3(1.0);\n" \
+		+ "\tfloat b = noise_bump_on ? noise_bump(pp) : 0.0;\n" \
+		+ "\tCOLOR = vec4(tex + vec3(b), 1.0);\n}\n"
 	var sh := Shader.new()
 	sh.code = src
 	return sh
@@ -60,6 +75,14 @@ func run() -> void:
 	check(String(def_result["code"]).contains("return col;"), "noise_tint is the stub")
 	check(String(def_result["code"]).contains("return 1.0;"), "noise_step_scale is the stub")
 	check_eq(String(def_result["code"]), NoiseCompiler.STUB, "the stub region is byte-identical to the base")
+	check(NoiseCompiler.STUB.contains("const bool noise_texture_on = false;"),
+		"the stub declares noise_texture_on = false")
+	check(NoiseCompiler.STUB.contains("const bool noise_bump_on = false;"),
+		"the stub declares noise_bump_on = false")
+	check(NoiseCompiler.STUB.contains("vec3 noise_texture(vec3 p) { return vec3(1.0); }"),
+		"the stub's noise_texture is white")
+	check(NoiseCompiler.STUB.contains("float noise_bump(vec3 p) { return 0.0; }"),
+		"the stub's noise_bump is flat")
 
 	# ---------------------------------------------- a wired graph: Value noise
 	var g := NoiseGraph.new(resolver)
@@ -73,6 +96,19 @@ func run() -> void:
 	check(u.has("n_%s_seed" % vn), "…one per FLOAT param")
 	check(not u.has("n_%s_octaves" % vn), "an INT param is baked, not a uniform")
 	check(u.has("n_output_0_amplitude"), "the Output's amplitude is a live uniform")
+
+	# ---------------------------------------------- displaces(): is the surface moved?
+	check(not NoiseCompiler.displaces(null), "no graph displaces nothing")
+	check(not NoiseCompiler.displaces(def), "the default (unwired) graph does not displace")
+	check(NoiseCompiler.displaces(g), "a graph wired to Displace displaces")
+	g.node(g.output_id()).table.set_value(&"amplitude", 0.0)
+	check(not NoiseCompiler.displaces(g), "…unless its Amplitude is 0, which leaves the shape untouched")
+	g.node(g.output_id()).table.set_value(&"amplitude", 0.05)
+	var tint_only := NoiseGraph.new(resolver)
+	var tvn := tint_only.add_node(&"value_noise", Vector2(200, 40))
+	tint_only.connect_ports(tint_only.position_id(), 0, tvn, 0)
+	tint_only.connect_ports(tvn, 0, tint_only.output_id(), 1)   # Tint
+	check(not NoiseCompiler.displaces(tint_only), "a Tint-only graph colours but does not displace")
 	check(u.has("n_output_0_step_scale"), "…and its step scale")
 	check(u.has("n_output_0_tint_color"), "…and its tint colour (a vec3)")
 	check(String(result["code"]).contains("n_output_0_amplitude"),
@@ -109,6 +145,39 @@ func run() -> void:
 	check(tint_code.contains("clamp("), "…clamped to 0..1 as the spec says")
 	check(tint_code.contains("noise_displace(vec3 p) { return 0.0; }"),
 		"…and with Displace unwired, noise_displace is the stub")
+
+	# ---------------------------------------------- Texture (port 2) and Bump (port 3)
+	# Texture: a VEC3 from a VEC3-output node.
+	var gt := NoiseGraph.new(resolver)
+	var warp := gt.add_node(&"transform", Vector2.ZERO)   # VEC3 -> VEC3
+	gt.connect_ports(gt.position_id(), 0, warp, 0)
+	gt.connect_ports(warp, 0, gt.output_id(), 2)          # Texture
+	var tex_result := NoiseCompiler.compile(gt)
+	check_eq(tex_result["errors"], [], "a Texture-wired graph compiles with no errors")
+	var tcode: String = tex_result["code"]
+	check(tcode.contains("vec3 noise_texture(vec3 p) {") and tcode.contains("clamp("),
+		"wiring Texture emits noise_texture, clamped to 0..1")
+	check(tcode.contains("const bool noise_texture_on = true;"), "and noise_texture_on = true")
+	check(tcode.contains("const bool noise_bump_on = false;"), "with Bump unwired, noise_bump_on = false")
+	check(not NoiseCompiler.displaces(gt), "a Texture-only graph does not displace")
+	check(not _region_compiles_lit(tcode).get_shader_uniform_list().is_empty(),
+		"the Texture region compiles when spliced (non-empty uniform list)")
+
+	# Bump: a FLOAT from a FLOAT-output node.
+	var gb := NoiseGraph.new(resolver)
+	var vnb := gb.add_node(&"value_noise", Vector2.ZERO)   # VEC3 -> FLOAT
+	gb.connect_ports(gb.position_id(), 0, vnb, 0)
+	gb.connect_ports(vnb, 0, gb.output_id(), 3)            # Bump
+	var bump_result := NoiseCompiler.compile(gb)
+	check_eq(bump_result["errors"], [], "a Bump-wired graph compiles with no errors")
+	var bcode: String = bump_result["code"]
+	check(bcode.contains("float noise_bump(vec3 p) {"), "wiring Bump emits noise_bump")
+	check(bcode.contains("const bool noise_bump_on = true;"), "and noise_bump_on = true")
+	check(bcode.contains("const bool noise_texture_on = false;"), "with Texture unwired, noise_texture_on = false")
+	check(bcode.contains("n_%s_scale" % vnb), "Bump's ancestors are in the uniform block")
+	check(not NoiseCompiler.displaces(gb), "a Bump-only graph does not displace")
+	check(not _region_compiles_lit(bcode).get_shader_uniform_list().is_empty(),
+		"the Bump region compiles when spliced (non-empty uniform list)")
 
 	# ---------------------------------------------- live vs baked classification
 	check(NoiseCompiler.is_live_param(g, vn, &"scale"), "a FLOAT edit is live (push, no rebuild)")

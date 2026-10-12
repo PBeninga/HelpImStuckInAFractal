@@ -1,11 +1,13 @@
 extends "res://tests/test_case.gd"
 ## The console driven like a player, in a scaled headless root: the wheel over a
 ## row label, a slider and an unfocused spin box scrolls the Shape list without
-## changing any value; a trackpad pan scrolls; the Colour dropdown opens on a
-## click and a click on "Blue" recolours; a Source dropdown binds Axis A; a
+## changing any value; a trackpad pan scrolls; a click on the Colour tab shows
+## it, its Colour dropdown opens on a click and a click on "Blue" recolours; a Source dropdown binds Axis A; a
 ## click on a slider track and a drag of its grabber set the value; typing into
 ## a spin box and pressing Enter writes the table; and the Movement pane's Add
-## axis, key capture, rename, zero and remove all work by clicks and keys.
+## axis, key capture, rename, zero and remove all work by clicks and keys; and
+## W, A, S or D leaves the console for the game unless a free-text field is
+## being typed into.
 ##
 ## At the console's default size the Shape inspector spans the full width above
 ## the Movement pane, so the sliders are wide enough to drag and every axis
@@ -22,13 +24,13 @@ var scroll: ScrollContainer
 func run() -> void:
 	ui = UiDriver.new(self)
 	await ui.setup()
-	table = AttributeTable.new(MandelboxShape.specs())
+	table = AttributeTable.new(ShapeCatalogue.specs())
 	km = Keymap.new()
 	km.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	console = ConsoleWindow.new()
-	console.setup(table, km, clock, MandelboxShape.group_tooltips(), func() -> float: return 1.0)
+	console.setup(table, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	# Shorter than the list, so there is real scroll range.
 	console.size = Vector2i(1000, 400)
@@ -45,6 +47,8 @@ func run() -> void:
 	await _layout_at_default_size()
 	await _slider_click_and_drag()
 	await _movement_pane()
+	await _zoom_keys()
+	await _wasd_leaves_for_game()
 
 	for action in InputMap.get_actions():
 		if String(action).begins_with("axis_"):
@@ -55,7 +59,7 @@ func run() -> void:
 
 
 func _opens_on_screen() -> void:
-	check(console.visible and console.is_embedded(), "the console opens as a window embedded in the root")
+	check(console.visible and console.is_embedded(), "the console opens as a window embedded in the root (headless has no native sub-windows)")
 	var surface := root.get_visible_rect()
 	var rect := Rect2(Vector2(console.position), Vector2(console.size))
 	check(surface.encloses(rect), "it opens wholly inside the main window (%s in %s)" % [rect, surface])
@@ -63,6 +67,10 @@ func _opens_on_screen() -> void:
 	var bar := scroll.get_v_scroll_bar()
 	check(bar.max_value > bar.page + 100.0,
 		"the Shape list is taller than the window, so it can scroll (range %.0f, page %.0f)" % [bar.max_value, bar.page])
+	var ss := console.self_similarity_label()
+	check(ss != null and ss.is_visible_in_tree() and ui.global_rect(scroll).encloses(ui.global_rect(ss)),
+		"the self-similarity line is on screen at the top of the Shape tab")
+	check(ss != null and ss.text.begins_with("Self-similar: "), "and reads as one (%s)" % (ss.text if ss else "none"))
 
 
 ## The first row (in list order) of the given widget kind that is wholly inside
@@ -128,8 +136,13 @@ func _pan_scrolls() -> void:
 
 
 func _colour_dropdown() -> void:
-	var option := console.inspector().row(&"color_mode").value_control() as OptionButton
-	check(await ui.scroll_to(scroll, option), "the wheel brings the Colour row into view")
+	var tab_bar := console.tabs().get_tab_bar()
+	await ui.click_at(ui.control_point(tab_bar, tab_bar.get_tab_rect(2).get_center()))
+	await ui.frames(1)
+	check_eq(console.tabs().current_tab, 2, "a click on the Material tab shows it")
+	var colour_scroll := console.material_inspector().get_child(0) as ScrollContainer
+	var option := console.material_inspector().row(&"color_mode").value_control() as OptionButton
+	check(await ui.scroll_to(colour_scroll, option), "the wheel brings the Colour row into view")
 	await ui.click(option)
 	var popup := option.get_popup()
 	check(popup.visible, "a click on the Colour dropdown opens its list")
@@ -144,6 +157,8 @@ func _colour_dropdown() -> void:
 	check_eq(int(table.get_default(&"color_mode")), 5, "clicking Blue sets color_mode to Blue (5)")
 	check_eq(option.get_item_text(option.selected), "Blue", "the dropdown now shows Blue")
 	check(not popup.visible, "and the list closed")
+	console.show_tab(0)
+	await ui.frames(1)
 
 
 func _source_dropdown() -> void:
@@ -176,12 +191,30 @@ func _layout_at_default_size() -> void:
 		"the Movement pane sits below it")
 	check(ui.global_rect(inspector).size.y > ui.global_rect(pane).size.y,
 		"and the inspector gets most of the height (%.0f over %.0f)" % [ui.global_rect(inspector).size.y, ui.global_rect(pane).size.y])
-	for id in [&"box_scale", &"fold_limit", &"color_mode"]:
+	for id in [&"box_scale", &"fold_limit"]:
 		var c := inspector.row(id).value_control()
 		if c is HSlider:
 			check(c.size.x >= 200.0, "the %s slider is wide enough to drag (%.0f px)" % [id, c.size.x])
 	check(win.encloses(ui.global_rect(pane)),
 		"the Movement pane lies wholly inside the window (%s in %s)" % [ui.global_rect(pane), win])
+	pane.show_zoom_limit(true)
+	await ui.frames(1)
+	check(pane.zoom_label.is_visible_in_tree() and win.encloses(ui.global_rect(pane.zoom_label)),
+		"the zoom limit readout, when shown, is inside the window (%s)" % ui.global_rect(pane.zoom_label))
+	check(win.encloses(ui.global_rect(pane.reset_camera_button)),
+		"and so is Reset camera beside it (%s)" % ui.global_rect(pane.reset_camera_button))
+	pane.show_zoom_limit(false)
+	await ui.frames(1)
+	pane.show_zoom_limit(true)
+	pane.show_deep(20)
+	await ui.frames(1)
+	check(pane.deep_label.is_visible_in_tree() and win.encloses(ui.global_rect(pane.deep_label)),
+		"the deep readout, shown beside the zoom limit, is inside the window (%s)" % ui.global_rect(pane.deep_label))
+	check(win.encloses(ui.global_rect(pane.reset_camera_button)),
+		"and Reset camera still is (%s)" % ui.global_rect(pane.reset_camera_button))
+	pane.show_deep(0)
+	pane.show_zoom_limit(false)
+	await ui.frames(1)
 	for id in pane.line_ids():
 		var line := pane.axis_line(id)
 		for key in ["label", "zero", "pos", "neg", "remove"]:
@@ -210,6 +243,11 @@ func _spin_typing() -> void:
 	await ui.type_text(spin.get_line_edit(), "0.55")
 	check_approx(float(table.get_default(&"min_radius")), 0.55, "typing 0.55 and Enter writes the table")
 	check_approx((row.value_control() as HSlider).value, 0.55, "and the slider follows")
+	check_eq(spin.get_line_edit().text, "0.55", "the field shows what was typed, not 17 digits")
+	await ui.click_at(ui.global_point(spin, Vector2(0.95, 0.25)))
+	await ui.frames(1)
+	check_eq(float(table.get_default(&"min_radius")), 0.56, "the up arrow steps the last digit: 0.55 -> 0.56 exactly")
+	check_eq(spin.get_line_edit().text, "0.56", "and shows 0.56")
 	spin.get_line_edit().release_focus()
 	await ui.frames(1)
 
@@ -267,3 +305,91 @@ func _movement_pane() -> void:
 	for i in src.item_count:
 		texts.append(src.get_item_text(i))
 	check(not texts.has("Warp"), "and the Source dropdowns drop it (%s)" % [texts])
+
+
+## A Cmd (or Ctrl) chord pushed through the root, to whatever has focus.
+func _chord(keycode: Key) -> void:
+	for pressed in [true, false]:
+		var ev := ui.key_event(keycode, pressed)
+		ev.meta_pressed = true
+		ev.ctrl_pressed = true
+		root.push_input(ev, true)
+		await ui.frames(1)
+
+
+## A control's height as drawn in the embedder: its logical height through the
+## window's final transform, which carries the content scale.
+func _drawn_height(control: Control) -> float:
+	return control.size.y * console.get_final_transform().get_scale().y
+
+
+func _zoom_keys() -> void:
+	var base := UiScale.factor_for(console)
+	var label := console.inspector().row(&"box_scale").get_child(0) as Control
+	var before := _drawn_height(label)
+	var width := console.inspector().size.x
+	var spin := console.inspector().row(&"box_scale").spin_box()
+	spin.get_line_edit().grab_focus()
+	var value := spin.value
+	await _chord(KEY_EQUAL)
+	check_approx(console.zoom, 1.1, "Cmd+= zooms the console in a step, a spin box focused or not")
+	check_approx(console.content_scale_factor, base * 1.1, "through its content scale")
+	check(_drawn_height(label) > before * 1.05,
+		"so its text draws bigger (%.1f -> %.1f px)" % [before, _drawn_height(label)])
+	check(console.inspector().size.x < width,
+		"and the panes reflow into the fewer logical units the window now holds")
+	check_approx(spin.value, value, "and the focused spin box is untouched")
+	spin.get_line_edit().release_focus()
+	await _chord(KEY_MINUS)
+	await _chord(KEY_MINUS)
+	check_approx(console.zoom, 0.9, "Cmd+- zooms out a step at a time")
+	await _chord(KEY_0)
+	check_approx(console.zoom, 1.0, "Cmd+0 resets the zoom")
+	check_approx(console.content_scale_factor, base, "and the content scale")
+
+
+func _wasd_leaves_for_game() -> void:
+	var asked := [0]
+	console.game_focus_requested.connect(func(): asked[0] += 1)
+
+	# mid-edit in a spin box: W commits what was typed, drops focus, types nothing
+	var row := console.inspector().row(&"min_radius")
+	var spin := row.spin_box()
+	check(await ui.scroll_to(scroll, spin), "the Min radius spin box is in view")
+	await ui.type_text(spin.get_line_edit(), "0.6", false)
+	check(console.gui_get_focus_owner() == spin.get_line_edit(), "typing into a spin box focuses its field")
+	await ui.gui_key(KEY_W, true)
+	await ui.gui_key(KEY_W, false)
+	check_eq(asked[0], 1, "W in a spin box asks for the game")
+	check(console.gui_get_focus_owner() == null, "and the spin box lets go of focus")
+	check_approx(float(table.get_default(&"min_radius")), 0.6, "committing what was typed")
+	check(not spin.get_line_edit().text.contains("w"), "and the W is not typed (%s)" % spin.get_line_edit().text)
+
+	# a slider holding focus: D leaves too
+	var slider := row.value_control() as HSlider
+	slider.grab_focus()
+	await ui.gui_key(KEY_D, true)
+	await ui.gui_key(KEY_D, false)
+	check_eq(asked[0], 2, "D with a slider focused asks for the game")
+	check(console.gui_get_focus_owner() == null, "and the slider lets go of focus")
+
+	# a free-text field mid-edit keeps the letters; after Enter, S leaves
+	var pane := console.movement_pane()
+	var line := pane.axis_line(&"a")
+	var label := line["label"] as LineEdit
+	await ui.type_text(label, "wasd", false)
+	check_eq(asked[0], 2, "typing WASD into an axis label is typing, not flying")
+	check_eq(label.text, "wasd", "the letters land in the field")
+	await ui.gui_key(KEY_ENTER, true)
+	await ui.gui_key(KEY_ENTER, false)
+	check(not label.is_editing(), "Enter ends the edit")
+	await ui.gui_key(KEY_S, true)
+	await ui.gui_key(KEY_S, false)
+	check_eq(asked[0], 3, "after which S asks for the game")
+	check_eq(label.text, "wasd", "without typing into the label")
+
+	# Cmd+S is a save, not a move
+	var cmd_s := ui.key_event(KEY_S, true)
+	cmd_s.meta_pressed = true
+	cmd_s.ctrl_pressed = OS.get_name() != "macOS"
+	check(not TextFocus.is_game_key(cmd_s, console), "Cmd/Ctrl+S is not a game key")

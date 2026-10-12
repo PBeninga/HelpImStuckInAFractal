@@ -1,8 +1,9 @@
 extends "res://tests/test_case.gd"
 ## The headless UI driver delivers real input: a click reaches a Button under
-## the root and one inside an embedded Window; the wheel scrolls a
-## ScrollContainer; select_option opens an OptionButton's popup inside an
-## embedded Window and picks an item; type_text fills a LineEdit and submits.
+## the root, one inside an embedded Window and one inside a zoomed one; the
+## wheel scrolls a ScrollContainer; select_option opens an OptionButton's popup
+## inside an embedded Window and picks an item; type_text fills a LineEdit and
+## submits.
 
 
 func _window(at: Vector2i, size: Vector2i) -> Window:
@@ -101,6 +102,20 @@ func run() -> void:
 	await ui.type_text(edit, "Ab1.5")
 	check_eq(edit.text, "Ab1.5", "type_text replaces the LineEdit's text key by key")
 	check_eq(hits["submitted"], "Ab1.5", "…and Enter submits it")
+
+	# --- a Button inside a zoomed embedded Window (the console's Cmd+= zoom) ---
+	var zoomed := _window(Vector2i(820, 120), Vector2i(400, 300))
+	zoomed.content_scale_factor = 2.0
+	var zoomed_button := _button("Zoomed", zoomed, Vector2(60, 50))
+	var zoomed_hits := [0]
+	zoomed_button.pressed.connect(func() -> void: zoomed_hits[0] += 1)
+	await ui.frames(2)
+	check(ui.global_center(zoomed_button).is_equal_approx(Vector2(820 + (60 + 60) * 2, 120 + (50 + 16) * 2)),
+		"global coordinates follow the window's content scale (%s)" % ui.global_center(zoomed_button))
+	await ui.click(zoomed_button)
+	check_eq(zoomed_hits[0], 1, "a click reaches a Button inside a zoomed embedded Window")
+	zoomed.queue_free()
+	await ui.frames(1)
 
 	# --- keys through Input reach actions ---
 	InputMap.add_action(&"ui_driver_test_key")

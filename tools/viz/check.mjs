@@ -5,6 +5,8 @@
 //   node tools/viz/check.mjs --print    also prints each cited line, to eyeball that it points
 //                                       where the tooltip says
 //   node tools/viz/check.mjs --pane fog-sim   limit to one pane
+// It also validates the glossary (docs/viz/glossary.js): every entry has a term, a body and http(s)
+// links, every `match` is a string or RegExp, and every hand-written [[id]] in a pane names an entry.
 // Exit 0 clean, 1 on any broken reference or pane that fails to load. Layout and drawing errors
 // only show in the browser (the red box bottom-left, and the console).
 import { readFileSync } from "node:fs";
@@ -30,10 +32,17 @@ let bad = 0;
 try { new vm.Script(readFileSync(join(VIZ_DIR, "viz.js"), "utf8"), { filename: "viz.js" }); }
 catch (e) { console.error(`✗ viz.js does not parse: ${e.message}`); bad++; }
 const panes = [];
-const sandbox = { VIZ: { pane: p => panes.push(p) }, console };
+const gloss = {};
+const sandbox = { VIZ: { pane: p => panes.push(p), glossary: g => Object.assign(gloss, g) }, console };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
-for (const f of paneFiles) {
+const glossFile = /<script src="glossary\.js"><\/script>/.test(html) ? "glossary.js" : null;
+for (const f of glossFile ? [glossFile, ...paneFiles] : paneFiles) {
+  if (f === glossFile) {
+    try { vm.runInContext(readFileSync(join(VIZ_DIR, f), "utf8"), sandbox, { filename: f }); }
+    catch (e) { console.error(`✗ ${f} failed to load: ${e.message}`); bad++; }
+    continue;
+  }
   const before = panes.length;
   try { vm.runInContext(readFileSync(join(VIZ_DIR, f), "utf8"), sandbox, { filename: f }); }
   catch (e) { console.error(`✗ ${f} failed to load: ${e.message}`); bad++; continue; }
@@ -80,5 +89,26 @@ for (const p of panes) {
   bad += paneBad;
   console.log(`${paneBad ? "✗" : "✓"} pane ${p.id}: ${uniq.length} distinct file refs at ${p.commit.slice(0, 9)}, ${paneBad} broken` +
     (remote ? "" : "  (commit is on no remote branch: GitHub links 404 until it is pushed)"));
+}
+if (glossFile) {
+  let glossBad = 0;
+  const isRe = m => Object.prototype.toString.call(m) === "[object RegExp]";
+  for (const [id, g] of Object.entries(gloss)) {
+    const miss = msg => { console.error(`✗ glossary ${id}: ${msg}`); glossBad++; };
+    if (!g.term || !g.body) miss("needs a term and a body");
+    if (g.match && !(Array.isArray(g.match) && g.match.every(m => typeof m === "string" || isRe(m)))) miss("match must be an array of strings and RegExps");
+    for (const lk of g.links || []) if (!/^https?:\/\//.test(lk.url || "") || !lk.label) miss(`link needs an http(s) url and a label: ${JSON.stringify(lk)}`);
+  }
+  // Hand-written marks: every [[id]] anywhere in a pane's strings must name an entry.
+  const strings = (o, out = [], seen = new Set()) => {
+    if (typeof o === "string") out.push(o);
+    else if (o && typeof o === "object" && !seen.has(o)) { seen.add(o); for (const v of Object.values(o)) strings(v, out, seen); }
+    return out;
+  };
+  for (const p of panes) for (const s of strings(p))
+    for (const m of s.matchAll(/\[\[([\w-]+)(?:\|[^\]]+)?\]\]/g))
+      if (!gloss[m[1]]) { console.error(`✗ pane ${p.id}: [[${m[1]}]] names no glossary entry`); glossBad++; }
+  bad += glossBad;
+  console.log(`${glossBad ? "✗" : "✓"} glossary: ${Object.keys(gloss).length} terms, ${glossBad} broken`);
 }
 process.exit(bad ? 1 : 0);

@@ -1,8 +1,11 @@
 class_name MandelboxShape
 extends RefCounted
-## The catalogue of every knob on the 3D Mandelbox, in inspector order: the
-## Box fold/scale, per-component Julia with four constants, the six iteration
-## rotation angles, the fourth coordinate w, the colour mode and the precision.
+## The Mandelbox's own knobs, in inspector order: the Box group (the fold and
+## its shape, the abs-fold hybrid, the sphere fold and the scale), per-component
+## Julia with four constants, and the six iteration rotation angles. The shared
+## rows (the shape switch, w, precision, colour, lighting, palette) are
+## ShapeCatalogue's, which assembles every shape's rows and shows these only
+## while the Mandelbox is drawn.
 ## Ranges are Fractacular's, widened where the site's slider went further;
 ## defaults are the site's, so the opening view is the one we have.
 ##
@@ -13,6 +16,8 @@ const BOOL := AttributeSpec.Type.BOOL
 const ENUM := AttributeSpec.Type.ENUM
 
 enum FoldOrder { BOX_THEN_SPHERE, SPHERE_THEN_BOX }
+## What the fold step reflects through (the shader's fold_shape).
+enum FoldShape { BOX, CYLINDER, OCTAHEDRAL }
 
 const AXES := ["x", "y", "z", "w"]
 ## The six coordinate pairs, in the shader's fixed rotation order.
@@ -66,10 +71,35 @@ static func specs() -> Array[AttributeSpec]:
 		"effects": "Box then Sphere is the standard Mandelbox. Sphere then Box is a different fractal with the same knobs: usually rounder, with the box lattice showing through the shells rather than the other way round.",
 	}))
 	out.append(AttributeSpec.make({
-		"id": "w", "label": "W", "type": F,
-		"default": 0.0, "min": -4.0, "max": 4.0, "step": 0.01, "group": "Box",
-		"tooltip": "The fourth coordinate of the sample point. The Mandelbox is a 4D field; the viewer flies through the w = 0 slice by default.",
-		"effects": "0 is the familiar 3D box. Moving w slides the whole view to a different 3D slice of the 4D shape, which can reveal entirely new structure. Bind it to an axis or Time to glide between slices.",
+		"id": "fold_shape", "label": "Fold shape", "type": ENUM,
+		"default": FoldShape.BOX,
+		"enum_labels": ["Box", "Cylinder", "Octahedral"],
+		"enum_values": [FoldShape.BOX, FoldShape.CYLINDER, FoldShape.OCTAHEDRAL],
+		"group": "Box",
+		"tooltip": "What the fold reflects the point back inside of: the box (every component within +/-Fold limit), a cylinder (the xy radius within Fold limit) or an octahedron (|x| + |y| + |z| within Fold limit).",
+		"effects": "Box is the classic Mandelbox. Cylinder rounds the lattice about the z axis into rings and tubes. Octahedral cuts it along diagonal planes into faceted, crystal-like shells. Fold limit sets the size of each.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "hybrid_mix", "label": "Hybrid mix", "type": F,
+		"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "group": "Box",
+		"tooltip": "On the hybrid iterations (Hybrid every), how far the fold morphs from the box fold toward the abs fold, KIFS's fold into the positive corner. The box fold reflects each component back inside [-L, L]; the morph slides that interval to [0, infinity), where it is |x|.",
+		"effects": "0 is the plain Mandelbox, and Hybrid every does nothing. 1 swaps in the abs fold outright on those iterations, the classic box/abs (KIFS) hybrid. In between the shape morphs continuously; bind it to an axis or Time to sweep from one to the other. The hybrid iterations use this morph whatever the Fold shape.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "hybrid_every", "label": "Hybrid every", "type": ENUM,
+		"default": 2,
+		"enum_labels": ["Every iteration", "Every 2nd", "Every 3rd"],
+		"enum_values": [1, 2, 3],
+		"group": "Box",
+		"tooltip": "Which iterations the hybrid mix applies on.",
+		"effects": "Every 2nd alternates the two folds, the classic hybrid; every 3rd keeps more of the box; every iteration is the most KIFS-like, and at a mix of 1 needs a gentler Scale (try -1.5) or nothing is left. Does nothing while Hybrid mix is 0.",
+	}))
+	out.append(AttributeSpec.make({
+		"id": "scale_drift", "label": "Scale drift", "type": F,
+		"default": 0.0, "min": -0.1, "max": 0.1, "step": 0.001,
+		"hard_min": -1.0, "hard_max": 1.0, "group": "Box",
+		"tooltip": "Added to Scale once per iteration: iteration i uses Scale + drift x i.",
+		"effects": "0 keeps the scale constant. A small drift makes the fine detail a different fractal from the large shapes: away from zero it grows blockier, toward zero wispier. The deepest iterations feel it most, so 0.01 to 0.03 is already a lot.",
 	}))
 
 	# --- Julia ---
@@ -113,43 +143,56 @@ static func specs() -> Array[AttributeSpec]:
 			"effects": "0 leaves the lattice axis-aligned. A few degrees twists the beams into spirals; tens of degrees shred the box into curved filaments. Because the rotation compounds once per iteration, tiny changes here matter more than anywhere else - try 1-5 degrees first, and bind one angle to Time for a slow churn.",
 		}))
 
-	# --- Render ---
-	var mode_values: Array[int] = []
-	var mode_labels: Array[String] = []
-	for i in FractalParams.COLOR_MODE_IDS.size():
-		mode_values.append(FractalParams.COLOR_MODE_IDS[i])
-		mode_labels.append(FractalParams.COLOR_MODE_NAMES[i])
-	out.append(AttributeSpec.make({
-		"id": "color_mode", "label": "Colour", "type": ENUM,
-		"default": 1, "enum_labels": mode_labels, "enum_values": mode_values,
-		"group": "Render",
-		"tooltip": "How the surface is coloured. Each mode is one of the site's thirteen looks, keyed off the step count, the surface normal and the camera.",
-		"effects": "Ice Fractal is the default blue-white look and uses the field normal for modes 1 through 9 outside Julia mode. Grayscale is the cheapest (no normal). Rainbow and Ice Box modes map the orbit or the normal through a hue ramp.",
-	}))
-	out.append(AttributeSpec.make({
-		"id": "precision", "label": "Precision", "type": F,
-		"default": 0.000025, "min": 1e-6, "max": 1e-3, "step": 1e-6, "log": true,
-		"group": "Render",
-		"tooltip": "The surface threshold: the ray stops when the distance estimate drops below precision times the distance travelled.",
-		"effects": "Smaller values resolve finer detail at the cost of more steps (and a slower frame); larger values are faster but rounder and noisier near the surface. The default (2.5e-5) is the site's. The slider is logarithmic.",
-	}))
-
 	return out
 
 
-## Heading tooltips, one per group: Fractacular's three plus Render.
+## Heading tooltips for the Mandelbox's groups.
 static func group_tooltips() -> Dictionary:
 	return {
-		"Box": "Box: the fold-and-scale step repeated at every pixel. The box fold reflects any component that leaves +/-Fold limit back inside; the sphere fold inflates points inside Min radius and inverts the shell out to Fixed radius; then everything is multiplied by Scale. W is the fourth coordinate of the sample point.",
+		"Box": "Box: the fold-and-scale step repeated at every pixel. The fold reflects the point back inside a box, cylinder or octahedron of size Fold limit (or, on hybrid iterations, morphs toward the abs fold); the sphere fold inflates points inside Min radius and inverts the shell out to Fixed radius; then everything is multiplied by Scale (plus any drift).",
 		"Julia": "Julia: which components add a fixed constant instead of the pixel's own coordinate. None checked is the plain Mandelbox; all four checked is a Julia Mandelbox; mixtures are hybrids.",
 		"Iteration rotation": "Iteration rotation: a 4D rotation applied inside every iteration, between the folds and the scale. This changes the fractal itself, not just the view.",
-		"Render": "Render: how the surface is coloured and how finely the ray march resolves it. These are look-and-cost knobs, not shape knobs.",
 	}
 
 
-## Every catalogue id, in order. Equals the shader's shape-uniform set.
-static func catalogue_ids() -> Array[StringName]:
-	var out: Array[StringName] = []
-	for s in specs():
-		out.append(s.id)
-	return out
+## Whether the shape is exactly self-similar, so a deep zoom could in principle
+## be rendered from a magnified copy of a shallower region of the same shape
+## (see docs/reference/self-similar-substitution.md). `values` maps catalogue
+## ids to resolved values (missing ids read as their defaults); `displaced` is
+## whether a noise field moves the surface (NoiseCompiler.displaces). Returns
+## {"qualifies": bool, "reason": String}. Pure: reads nothing else.
+##
+## One iteration is z -> scale * fold(z) + c, and a set fixed by it (Julia mode)
+## maps onto itself: the structure around a point is the next iterate's
+## structure, magnified. That needs c fixed in x, y and z (its w is the slice's
+## own W, the same at every pixel, so it counts as fixed either way), an
+## iteration that magnifies somewhere (|scale| times the sphere fold's largest
+## gain, (fixed / min radius)^2, above 1), and no noise displacement (a
+## position-based field is not carried along by the iteration). Iteration
+## rotation is linear and keeps it, and so does a hybrid fold: every
+## hybrid_every iterations repeat one fixed map. A scale drift does not: the
+## map changes at every iteration. ShapeCatalogue.self_similarity() asks this
+## for the Mandelbox.
+static func self_similarity(values: Dictionary, displaced := false) -> Dictionary:
+	if displaced:
+		return {"qualifies": false, "reason": "noise field displaces the surface"}
+	var all := bool(values.get(&"julia_all", false))
+	var follow: Array[String] = []
+	for i in 3:
+		if not all and not bool(values.get(StringName("julia_%d" % i), false)):
+			follow.append(AXES[i])
+	if follow.size() == 3:
+		return {"qualifies": false, "reason": "c follows the point"}
+	if not follow.is_empty():
+		return {"qualifies": false, "reason": "partial Julia: c follows the point in %s" % ", ".join(follow)}
+	var scale := absf(float(values.get(&"box_scale", -2.09)))
+	var mr := maxf(float(values.get(&"min_radius", 0.7)), 1e-6)   # the shader floors mr^2 at 1e-12
+	var fr := maxf(float(values.get(&"fixed_radius", 1.0)), 1e-6)
+	if scale * maxf(1.0, (fr * fr) / (mr * mr)) <= 1.0:
+		return {"qualifies": false, "reason": "no iteration magnifies (|scale| too small)"}
+	if absf(float(values.get(&"scale_drift", 0.0))) > 1e-12:
+		return {"qualifies": false, "reason": "the scale drifts: every iteration is a different map"}
+	if all or bool(values.get(&"julia_3", false)):
+		return {"qualifies": true, "reason": "Julia: all four c fixed"}
+	return {"qualifies": true, "reason": "Julia: x, y, z fixed (w is the slice's own)"}
+

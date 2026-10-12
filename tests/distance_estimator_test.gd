@@ -2,7 +2,7 @@ extends "res://tests/test_case.gd"
 ## Pins the CPU estimator to the site's own numbers (24 fixtures), plus the
 ## spec's non-default fixtures (positive scale, Sphere -> Box, one iteration
 ## rotation, a non-zero w, a per-component Julia mix) and the symmetry /
-## sensitivity invariants. The fixtures pin the 64-bit scalar core
+## sensitivity invariants, and the optional iteration count. The fixtures pin the 64-bit scalar core
 ## `estimate_at`, so every row holds the spec's tolerance: relative 1e-5, or
 ## absolute 1e-9 below 1e-6.
 
@@ -101,3 +101,67 @@ func run() -> void:
 	# a per-component Julia mix changes the distance
 	check(absf(DistanceEstimator.estimate(Vector3(1.2, -0.3, 0.8), mix) - base) > 1e-6,
 		"a per-component Julia mix changes the distance")
+
+	# --- an optional iteration count (the shader's coarse pass uses fewer) ---
+	var full := DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d)
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d, 32), full, "iters 32 is the default, exactly")
+	var d16 := DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d, 16)
+	check(d16 > 0.0 and is_finite(d16) and absf(d16 - full) > 1e-9,
+		"16 iterations describe a slightly different surface (%s vs %s)" % [d16, full])
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d, 99), full, "a count past 32 is clamped to 32")
+
+	# ======================= the fold options =======================
+	# Captured from estimate_at once; the defaults above pin that each option
+	# at its default changes nothing.
+	var cyl := FractalParams.new(); cyl.fold_shape = MandelboxShape.FoldShape.CYLINDER
+	_de(1.2, -0.3, 0.8, cyl, 5.257641803377495e-3, "cylinder (1.2,-0.3,0.8)")
+	_de(0.1, 0.9, 1.5, cyl, 2.4790616547414094e-3, "cylinder (0.1,0.9,1.5)")
+	var oct := FractalParams.new(); oct.fold_shape = MandelboxShape.FoldShape.OCTAHEDRAL
+	_de(1.2, -0.3, 0.8, oct, 0.1732051220721598, "octahedral (1.2,-0.3,0.8)")
+	_de(0.5, 0.5, 0.5, oct, 4.1206878808877995e-2, "octahedral (0.5,0.5,0.5)")
+	var hyb := FractalParams.new(); hyb.hybrid_mix = 0.5
+	_de(0.1, 0.9, 1.5, hyb, 2.2852681154811514e-5, "hybrid 0.5 every 2nd (0.1,0.9,1.5)")
+	_de(1.2, -0.3, 0.8, hyb, 3.7600167376069028e-3, "hybrid 0.5 every 2nd (1.2,-0.3,0.8)")
+	# The hybrid fold is a fold all the way: far from the centre points still
+	# escape (blending the box and abs folds' results cancelled there instead,
+	# and filled all of space).
+	for m in [0.25, 0.5, 0.75]:
+		var hm := FractalParams.new(); hm.hybrid_mix = m
+		check(DistanceEstimator.estimate_at(30.0, 4.0, -7.0, hm) > 1.0, "hybrid mix %s leaves the far field empty" % m)
+		check(hm.bound_half() > 1.0 + 0.75 * (1.0 + m) / (1.0 - m), "and its bound grows with the mix (%s)" % hm.bound_half())
+	check_eq(FractalParams.new().bound_half(), 2.0, "no hybrid: the site's cube of half-side 2")
+	var hfull := FractalParams.new(); hfull.hybrid_mix = 1.0
+	check_eq(hfull.bound_half(), 20.0, "the bound is capped at 20")
+	var drift := FractalParams.new(); drift.scale_drift = 0.02
+	_de(0.1, 0.9, 1.5, drift, 1.279908397497517e-4, "scale drift 0.02 (0.1,0.9,1.5)")
+	_de(3, 0, 0, drift, 1.0000000119298762, "scale drift 0.02 (3,0,0)")
+	for pair in [[cyl, "cylinder fold"], [oct, "octahedral fold"], [hyb, "hybrid mix"], [drift, "scale drift"]]:
+		check(absf(DistanceEstimator.estimate(Vector3(0.1, 0.9, 1.5), pair[0])
+				- DistanceEstimator.estimate(Vector3(0.1, 0.9, 1.5), d)) > 1e-7,
+			"the %s changes the distance" % pair[1])
+	# the hybrid's period only matters while the mix is on
+	var every3 := FractalParams.new(); every3.hybrid_every = 3
+	check_eq(DistanceEstimator.estimate(Vector3(1.2, -0.3, 0.8), every3), base,
+		"Hybrid every alone (mix 0) changes nothing")
+	# the folds keep the box fold's symmetry D(p) == D(-p)
+	for q in [Vector3(0.7, 0.3, 0.9), Vector3(1.2, -0.3, 0.8)]:
+		for f in [cyl, oct]:
+			check_approx(DistanceEstimator.estimate(q, f), DistanceEstimator.estimate(-q, f),
+				"fold %d: D(p) == D(-p) at %s" % [f.fold_shape, q], 1e-9)
+
+	# --- dispatch: the shape row picks the estimator ---
+	var as_kifs := FractalParams.new(); as_kifs.shape = FractalParams.Shape.KIFS
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, as_kifs),
+		KifsEstimator.estimate_at(1.2, -0.3, 0.8, as_kifs), "shape KIFS dispatches to KifsEstimator")
+	var as_kl := FractalParams.new(); as_kl.shape = FractalParams.Shape.KLEINIAN
+	check_eq(DistanceEstimator.estimate_at(1.2, -0.3, 0.8, as_kl),
+		KleinianEstimator.estimate_at(1.2, -0.3, 0.8, as_kl), "shape Kleinian dispatches to KleinianEstimator")
+	check_eq(DistanceEstimator.mandelbox_at(1.2, -0.3, 0.8, as_kifs), DistanceEstimator.estimate_at(1.2, -0.3, 0.8, d),
+		"mandelbox_at ignores the shape row")
+	# the optional iteration count reaches every fractal (0 against 32: at this
+	# point both settle within two iterations, a Menger hole's distance being
+	# exact from its first level, so only no iterations at all differs)
+	for shaped in [as_kifs, as_kl]:
+		var f32 := DistanceEstimator.estimate_at(0.3, 0.2, 0.4, shaped)
+		check_eq(DistanceEstimator.estimate_at(0.3, 0.2, 0.4, shaped, 32), f32, "shape %d: iters 32 is the default" % shaped.shape)
+		check(absf(DistanceEstimator.estimate_at(0.3, 0.2, 0.4, shaped, 0) - f32) > 1e-3, "shape %d: no iterations is a different surface" % shaped.shape)

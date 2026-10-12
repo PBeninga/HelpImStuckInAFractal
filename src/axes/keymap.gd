@@ -2,18 +2,12 @@ class_name Keymap
 extends RefCounted
 ## Maps each virtual axis to a pair of physical keys, owns the Axes, and keeps
 ## two InputMap actions per axis (`axis_<id>_pos` / `axis_<id>_neg`) equal to
-## the pair. Keys are physical keycodes, stored by name so the JSON file is
-## readable and layout-independent. A level can rewrite this at runtime.
-##
-##   {"version": 1, "axes": [{"id":"a","label":"Axis A","speed":1.0,
-##                            "positive":"E","negative":"Q"}]}
+## the pair. Keys are physical keycodes, so key names are layout-independent. The
+## keymap has no file of its own: the keys and axes travel inside the level save
+## (Workspace), which reads this through `to_list()` / `apply_list()`. At boot it
+## holds the shipped default (`reset_to_default`) until a level is loaded.
 
 signal changed
-
-const VERSION := 1
-const DEFAULT_FILE := "keymap.json"
-
-var current_path := ""
 
 var _axes := Axes.new()
 ## id -> {"positive": int, "negative": int} physical keycodes (KEY_NONE = none).
@@ -106,41 +100,33 @@ func _erase_actions(id: StringName) -> void:
 			InputMap.erase_action(action)
 
 
-# --------------------------------------------------------------- files
+# ----------------------------------------------- level save (to/from a list)
 
-## Load a keymap JSON file. A missing or malformed file yields the shipped
-## default (one axis on Q/E) with a warning. Returns {ok, warnings}.
-func load_file(path: String = "") -> Dictionary:
-	if path == "":
-		path = _default_path()
+## This keymap's axes as a list of entries for a level save:
+## {id, label, speed, positive, negative, value}. Keys are stored by name
+## (`OS.get_keycode_string`), with "" for an unbound key (KEY_NONE).
+func to_list() -> Array:
+	var entries: Array = []
+	for a in _axes.list():
+		entries.append({
+			"id": String(a.id),
+			"label": a.label,
+			"speed": a.speed,
+			"positive": _key_name(positive_key(a.id)),
+			"negative": _key_name(negative_key(a.id)),
+			"value": a.value,
+		})
+	return entries
+
+
+## Replace every axis with the level's entries, rebinding through `add_axis` so
+## the InputMap actions follow (clear all, then add each). Lenient: a malformed
+## entry, or one with a missing or duplicate id, is skipped with a warning.
+## Returns the warnings.
+func apply_list(entries: Array) -> Array:
 	var warnings: Array = []
-	var ok := _load_into(path, warnings)
-	if not ok:
-		_apply_default()
-	current_path = path
-	return {"ok": ok, "warnings": warnings}
-
-
-func _load_into(path: String, warnings: Array) -> bool:
-	if not FileAccess.file_exists(path):
-		warnings.append("No keymap at %s; using the default" % path)
-		return false
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		warnings.append("Could not read %s; using the default" % path)
-		return false
-	var text := file.get_as_text()
-	file.close()
-	var json := JSON.new()
-	if json.parse(text) != OK:
-		warnings.append("%s is not valid JSON; using the default" % path)
-		return false
-	var data: Variant = json.data
-	if not (data is Dictionary) or not (data as Dictionary).get("axes") is Array:
-		warnings.append("%s is not a keymap; using the default" % path)
-		return false
 	_clear_all()
-	for entry in (data as Dictionary)["axes"]:
+	for entry in entries:
 		if not (entry is Dictionary):
 			warnings.append("Skipped a malformed axis entry")
 			continue
@@ -153,28 +139,18 @@ func _load_into(path: String, warnings: Array) -> bool:
 		var pos := _key_from_name(str(entry.get("positive", "")))
 		var neg := _key_from_name(str(entry.get("negative", "")))
 		add_axis(id, label, speed, pos, neg)
-	return true
+		var v: Variant = entry.get("value", 0.0)
+		if v is float or v is int:
+			_axes.set_value(id, float(v))
+		else:
+			warnings.append("Malformed value for axis '%s' ignored" % id)
+	return warnings
 
 
-func save_file(path: String = "") -> Error:
-	if path == "":
-		path = current_path if current_path != "" else _default_path()
-	var entries: Array = []
-	for a in _axes.list():
-		entries.append({
-			"id": String(a.id),
-			"label": a.label,
-			"speed": a.speed,
-			"positive": OS.get_keycode_string(positive_key(a.id)) if positive_key(a.id) != KEY_NONE else "",
-			"negative": OS.get_keycode_string(negative_key(a.id)) if negative_key(a.id) != KEY_NONE else "",
-		})
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify({"version": VERSION, "axes": entries}, "\t", false))
-	file.close()
-	current_path = path
-	return OK
+## Put the keys and axes back to the shipped default: one axis "a" on E / Q.
+func reset_to_default() -> void:
+	_clear_all()
+	add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 
 
 func _clear_all() -> void:
@@ -184,9 +160,8 @@ func _clear_all() -> void:
 	_axes.clear()
 
 
-func _apply_default() -> void:
-	_clear_all()
-	add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
+static func _key_name(keycode: int) -> String:
+	return OS.get_keycode_string(keycode) if keycode != KEY_NONE else ""
 
 
 static func _key_from_name(name: String) -> int:
@@ -194,7 +169,3 @@ static func _key_from_name(name: String) -> int:
 		return KEY_NONE
 	var code := OS.find_keycode_from_string(name)
 	return code if code != KEY_NONE else KEY_NONE
-
-
-func _default_path() -> String:
-	return WorkspaceFiles.directory() + DEFAULT_FILE

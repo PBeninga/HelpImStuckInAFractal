@@ -1,8 +1,11 @@
 extends "res://tests/test_case.gd"
 ## The console window builds both panes; a row edit lands in the table; the
 ## source dropdown lists the axes and updates on Keymap.changed; the readout
-## follows set_resolved; the Movement pane adds, rebinds and removes an axis
-## through the API and the key-capture button; a Ctrl tap emits toggle_requested.
+## follows set_resolved; the Movement pane shows and hides its zoom limit
+## readout, and adds, rebinds and removes an axis through the API and the
+## key-capture button; a Ctrl tap emits toggle_requested;
+## the zoom steps, clamps, signals and follows the Cmd/Ctrl chords; the Shape
+## tab's self-similarity line shows what it is given.
 
 
 func _ctrl(pressed: bool) -> InputEventKey:
@@ -13,14 +16,25 @@ func _ctrl(pressed: bool) -> InputEventKey:
 	return ev
 
 
+## A Cmd (macOS) / Ctrl (elsewhere) chord key-down.
+func _chord(keycode: Key) -> InputEventKey:
+	var ev := InputEventKey.new()
+	ev.keycode = keycode
+	ev.physical_keycode = keycode
+	ev.pressed = true
+	ev.meta_pressed = true
+	ev.ctrl_pressed = true
+	return ev
+
+
 func run() -> void:
-	var table := AttributeTable.new(MandelboxShape.specs())
+	var table := AttributeTable.new(ShapeCatalogue.specs())
 	var km := Keymap.new()
 	km.add_axis(&"a", "Axis A", 1.0, KEY_E, KEY_Q)
 	var clock := Clock.new()
 	root.add_child(clock)
 	var console := ConsoleWindow.new()
-	console.setup(table, km, clock, MandelboxShape.group_tooltips(), func() -> float: return 1.0)
+	console.setup(table, km, clock, ShapeCatalogue.group_tooltips(), func() -> float: return 1.0)
 	root.add_child(console)
 	console.open()
 	await frames(1)
@@ -33,8 +47,48 @@ func run() -> void:
 	check_approx(console.content_scale_factor, UiScale.factor_for(console), "and takes its content scale")
 	check(console.position.y >= 0, "it opens inside the main window, title bar reachable")
 
-	# --- the Shape pane has one row per spec ---
-	check_eq(inspector.row_count(), table.specs.size(), "one row per spec")
+	# --- the Shape, Light and Material tabs share the specs out: one row per spec in all ---
+	var light := console.light_inspector()
+	var material := console.material_inspector()
+	check_eq(inspector.row_count() + light.row_count() + material.row_count(), table.specs.size(),
+		"one row per spec across the three inspectors")
+	check(inspector.row(&"box_scale") != null and light.row(&"box_scale") == null and material.row(&"box_scale") == null,
+		"Scale is on the Shape tab")
+	check(light.row(&"light_color") != null and light.row(&"shadows") != null,
+		"Light colour and Shadows are on the Light tab")
+	check(material.row(&"color_mode") != null and material.row(&"roughness") != null and material.row(&"texture_strength") != null,
+		"Colour mode, Roughness and Texture are on the Material tab")
+	check(material.row(&"light_color") == null and light.row(&"color_mode") == null,
+		"neither tab holds the other's rows")
+	check(material.row(&"palette_a_r") != null, "the palette's twelve numbers are on the Material tab")
+	check_eq(console.tabs().get_tab_count(), 4, "four tabs")
+	check_eq(console.tabs().get_tab_title(0), "Shape", "the first is Shape")
+	check_eq(console.tabs().get_tab_title(1), "Light", "the second Light")
+	check_eq(console.tabs().get_tab_title(2), "Material", "the third Material")
+	check_eq(console.tabs().get_tab_title(3), "View", "the fourth View")
+	check(console.view_pane() != null and console.view_pane().get_parent() == console.tabs(), "which is the View pane")
+	check(console.palette_window() != null and material.is_ancestor_of(console.palette_window()),
+		"the palette window heads the Material tab's list")
+	check(console.palette().table() == table, "and edits the console's own table")
+
+	# --- a COLOR row's value control is a ColorPickerButton; changing it writes the table ---
+	var lc_row := light.row(&"light_color")
+	var picker := lc_row.value_control() as ColorPickerButton
+	check(picker != null, "the Light colour row's value control is a ColorPickerButton")
+	picker.color = Color(0.2, 0.4, 0.6)
+	picker.color_changed.emit(picker.color)
+	check((table.get_default(&"light_color") as Color).is_equal_approx(Color(0.2, 0.4, 0.6, 1.0)),
+		"changing the picker writes the table")
+
+	# --- the self-similarity line: read-only, at the head of the Shape tab ---
+	var ss := console.self_similarity_label()
+	check(ss != null and inspector.is_ancestor_of(ss), "the self-similarity line is on the Shape tab")
+	check(ss != null and ss.get_index() == 0, "at the head of its list, above the Box rows")
+	check(ss != null and ss.tooltip_text.contains("self-similar"), "with a tooltip saying what it means")
+	console.show_self_similarity({"qualifies": true, "reason": "Julia: all four c fixed"})
+	check_eq(ss.text, "Self-similar: yes (Julia: all four c fixed)", "a qualifying shape reads yes, with the reason")
+	console.show_self_similarity({"qualifies": false, "reason": "c follows the point"})
+	check_eq(ss.text, "Self-similar: no (c follows the point)", "a shape that does not reads no, with the reason")
 
 	# --- a row edit lands in the table ---
 	inspector.row(&"box_scale").spin_box().value = 1.0
@@ -61,6 +115,25 @@ func run() -> void:
 	await frames(1)
 	check(inspector.row(&"box_scale").readout().visible, "an active binding shows a readout")
 	check(inspector.row(&"box_scale").readout().text.contains("-1.59"), "the readout shows the resolved value")
+
+	# --- Movement pane: the zoom limit readout shows while set, hidden otherwise ---
+	check(movement.zoom_label != null and not movement.zoom_label.visible, "the zoom limit readout starts hidden")
+	console.show_zoom_limit(true)
+	check(movement.zoom_label.visible and movement.zoom_label.text == "zoom limit",
+		"show_zoom_limit(true) shows 'zoom limit' in the Movement pane")
+	console.show_zoom_limit(false)
+	check(not movement.zoom_label.visible, "and false hides it again")
+
+	# --- Movement pane: the keymap-file strip is gone (keys travel in the level) ---
+	check_eq(movement.get_node_or_null("KeymapFiles"), null, "the Movement pane has no keymap file panel")
+	check(not (&"save_button" in movement), "and no Save keymap button")
+	# --- Movement pane: "deep N" (the records in use) while the march is perturbed, hidden at 0 ---
+	check(movement.deep_label != null and not movement.deep_label.visible, "the deep readout starts hidden")
+	console.show_deep(14)
+	check(movement.deep_label.visible and movement.deep_label.text == "deep 14",
+		"show_deep(14) shows 'deep 14' in the Movement pane")
+	console.show_deep(0)
+	check(not movement.deep_label.visible, "and 0 hides it again")
 
 	# --- Movement pane: Add axis grows the keymap ---
 	var before := km.axes().list().size()
@@ -95,7 +168,72 @@ func run() -> void:
 	console.feed_ctrl(_ctrl(false))
 	check(toggled[0], "a Ctrl tap in the console emits toggle_requested")
 
+	# --- zoom: steps through ZOOM_STEPS, clamps at the ends, signals ---
+	var zooms: Array = []
+	console.zoom_changed.connect(func(z: float): zooms.append(z))
+	var base := UiScale.factor_for(console)
+	console.step_zoom(1)
+	check_approx(console.zoom, 1.1, "step_zoom(1) goes to the next level")
+	check_approx(console.content_scale_factor, base * 1.1, "and scales the window's content")
+	console.step_zoom(-1)
+	console.step_zoom(-1)
+	check_approx(console.zoom, 0.9, "step_zoom(-1) goes back down")
+	console.set_zoom(1.6)
+	console.step_zoom(1)
+	check_approx(console.zoom, 1.75, "a level between steps steps to the next one up")
+	for i in 20:
+		console.step_zoom(1)
+	check_approx(console.zoom, ConsoleWindow.ZOOM_STEPS[-1], "zooming in stops at the largest level")
+	console.set_zoom(0.1)
+	check_approx(console.zoom, ConsoleWindow.ZOOM_STEPS[0], "set_zoom clamps to the smallest level")
+	check_eq(zooms.size(), 7, "each change emits zoom_changed once (%s)" % [zooms])
+	console.set_zoom(0.5)
+	check_eq(zooms.size(), 7, "setting the same level does not")
+
+	# --- the chords: Cmd/Ctrl with =, +, -, 0 (keypad too); not bare or Alt ---
+	console.set_zoom(1.0)
+	check(console.zoom_key(_chord(KEY_EQUAL)) and is_equal_approx(console.zoom, 1.1), "Cmd+= zooms in")
+	check(console.zoom_key(_chord(KEY_KP_ADD)) and is_equal_approx(console.zoom, 1.25), "Cmd+keypad + zooms in")
+	check(console.zoom_key(_chord(KEY_MINUS)) and is_equal_approx(console.zoom, 1.1), "Cmd+- zooms out")
+	check(console.zoom_key(_chord(KEY_0)) and is_equal_approx(console.zoom, 1.0), "Cmd+0 resets")
+	var bare := _chord(KEY_EQUAL)
+	bare.meta_pressed = false
+	bare.ctrl_pressed = false
+	check(not console.zoom_key(bare), "a bare = is not a zoom chord")
+	var alt := _chord(KEY_EQUAL)
+	alt.alt_pressed = true
+	check(not console.zoom_key(alt), "nor is Cmd+Alt+=")
+	check(not console.zoom_key(_chord(KEY_S)), "nor Cmd+S, which goes on to Main")
+	check_approx(console.zoom, 1.0, "none of those changed the zoom")
+
 	# clean up the runtime InputMap actions this test created
+	# --- each shape's groups show only while it is drawn, headings included ---
+	check(inspector.heading("Box").visible, "the Box heading shows on the Mandelbox")
+	check(not inspector.heading("KIFS").visible, "the KIFS heading hides on the Mandelbox")
+	check(not inspector.heading("Kleinian").visible, "and so does the Kleinian's")
+	check(inspector.heading("Fractal").visible and inspector.heading("Render").visible, "the shared headings show")
+	table.set_default(&"shape", FractalParams.Shape.KIFS)
+	await frames(1)
+	check(not inspector.heading("Box").visible and not inspector.heading("Julia").visible,
+		"choosing the KIFS hides the Mandelbox's headings")
+	check(inspector.heading("KIFS").visible and inspector.heading("KIFS rotation").visible, "and shows the KIFS's")
+	check(inspector.row(&"kifs_scale").visible and not inspector.row(&"box_scale").visible, "rows follow too")
+	check(not inspector.row(&"kifs_poly_k").visible, "Polyfold k waits for the Polyfold")
+	table.set_default(&"kifs_fold", KifsEstimator.FoldSet.POLYFOLD)
+	check(inspector.row(&"kifs_poly_k").visible, "and shows with it")
+	table.set_default(&"shape", FractalParams.Shape.KLEINIAN)
+	check(inspector.heading("Kleinian").visible and not inspector.heading("KIFS").visible, "the Kleinian's turn")
+	table.set_default(&"shape", FractalParams.Shape.MANDELBULB)
+	await frames(1)
+	check(inspector.heading("Mandelbulb").visible and not inspector.heading("Kleinian").visible, "the Mandelbulb's turn")
+	check(not inspector.row(&"w").visible, "W hides on the Mandelbulb, which is 3D")
+	check(not inspector.row(&"mandelbulb_c_0").visible, "its constant waits for Julia")
+	table.set_default(&"mandelbulb_julia", true)
+	check(inspector.row(&"mandelbulb_c_0").visible, "and shows with it")
+	table.set_default(&"mandelbulb_julia", false)
+	table.set_default(&"shape", FractalParams.Shape.MANDELBOX)
+	table.set_default(&"kifs_fold", KifsEstimator.FoldSet.COORDINATE)
+
 	for id in [&"a", &"ax1", &"ax2", &"ax3"]:
 		if InputMap.has_action(StringName("axis_%s_pos" % id)):
 			InputMap.erase_action(StringName("axis_%s_pos" % id))
