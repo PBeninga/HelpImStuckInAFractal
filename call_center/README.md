@@ -5,7 +5,7 @@ jump strands the ship inside the fractal, the pilot phones **Sub-Dimensional
 Support**, a real phone number. A tongue-in-cheek AI support agent answers,
 explains the disaster in breathless mathematical babble, and flies the ship to
 the exit as the pilot talks. Meanwhile a **diagnostics log** scrolls past,
-fixing problems on its own and now and then needing the pilot's answer, and
+fixing problems on its own, and
 the HUD **highlights whatever the agent is talking about**.
 
 This folder is the in-game half: the HUD, the diagnostics log, the ship's
@@ -77,9 +77,9 @@ or `server/.env`).
   #33423 Stuck in fractal space · Unable to automatically resolve, connecting
   to agent…*
 - **Self-resolving issues.** After that, a new problem arrives and fixes itself
-  every few seconds. Now and then one **needs the pilot**, and the agent asks
-  them on the call. Unanswered questions take a default answer after 25 s
-  (120 s with an agent on the line).
+  every few seconds. Random pilot questions are disabled and the demo exit
+  opens without a waiver. The voice agent asks only for clarification needed
+  to carry out a pilot request.
 - **The SUB-DIMENSIONAL SUPPORT panel** (bottom left). It shows the number to
   call, then who is on the line and for how long.
 - **The pilot chat** (McpBridge's, down the right). It holds the conversation:
@@ -112,7 +112,10 @@ or `server/.env`).
 | `highlight` / `clear_highlights` | bracket a characteristic, or flash a HUD panel |
 | `turn_ship`, `face_feature`, `thrust` | small moves; a thrust stops short of the fractal |
 | `fly_to_feature`, `full_stop` | the autopilot; it refuses blocked legs, suggests the next waypoint, and holds short of a locked exit |
-| `resolve_issue` | answer a pilot question with the pilot's words |
+| `get_console_controls` | inspect shapes, light/material/palette, view/renderer, gameplay, axes and noise |
+| `set_console_controls` | edit those settings through the same models as the console |
+| `console_action` | add/remove/select/rename shapes, resets, spawn, levels, windows, start, pause/resume |
+| `resolve_issue` | legacy game-extension API; not offered to the voice agent |
 | `post_to_log` | write an AGENT line to the diagnostics log |
 | `set_visual_filter` | change the palette, when the adapter supports it |
 | *game-registered tools* | added and removed at runtime (`tools_changed` updates a live call) |
@@ -137,11 +140,6 @@ if cc:
 
     cc.auto_begin = false          # the game has its own intro…
     cc.begin()                     # …and calls this when the ship lands: HUD in, crash report
-
-    cc.lock_exit("egress waiver unsigned")      # the autopilot holds short and says why
-    var id := cc.raise_pilot_issue("Egress waiver unsigned", "Ask the pilot for their full name.",
-        "the pilot", "Waiver signed by '%s'.", true)
-    cc.pilot_issue_resolved.connect(func(issue_id, answer, by): if issue_id == id: cc.unlock_exit())
 
     cc.notify_agent("escaped", "The pilot flew into the rift and is home. Congratulate them and sign off.")
     cc.log_line("Punch jump resuming.", "ok")

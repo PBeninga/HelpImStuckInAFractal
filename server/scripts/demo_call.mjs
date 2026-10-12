@@ -142,37 +142,14 @@ const say_id = (id) => {
   const n = String(id).replace("#", "");
   return n.length === 4 ? `${Number(n.slice(0, 2))} ${n.slice(2)}` : n;
 };
-const ANSWERS = ["Sparkles", "Forty-two", "The left one, obviously", "No. Well, maybe a little", "Smooth jazz", "Keep them all", "Practical"];
-
-async function answerQuestion(agent, text) {
-  const m = /issue (#\d+) needs the pilot: (.*?)\. Ask the pilot: (.*?) Then call resolve_issue/.exec(text);
-  if (!m) return;
-  const [, id, , question] = m;
-  const blocks = /will not open until/.test(text);
-  const q = question.replace(/^Ask the pilot to /, "Could you ").replace(/\btheir\b/g, "your").replace(/\bthey\b/g, "you");
-  if (blocks) {
-    await agent.say(`Last bit of paperwork before the exit opens, sorry. ${q}`);
-    await agent.caller("Ada Lovelace. And yes, I agree, just get me out of here.");
-    await agent.tool("resolve_issue", { issue_id: id, answer: "Ada Lovelace" });
-    await agent.say("Lovely, all signed. The exit is unlocked.");
-  } else {
-    await agent.say(`Quick one from diagnostics while we fly: ${q}`);
-    const answer = ANSWERS[Math.floor(Math.random() * ANSWERS.length)];
-    await agent.caller(`Uh... ${answer}?`);
-    await agent.tool("resolve_issue", { issue_id: id, answer });
-    await agent.say("Perfect, I've logged that. Moving on.");
-  }
-}
-
-// Wait for a waypoint or arrival, answering questions that come up meanwhile.
+// Wait for a waypoint or arrival.
 async function untilArrived(agent, seconds = 60) {
   const end = Date.now() + seconds * 1000;
   while (Date.now() < end) {
-    const ev = await agent.shipEvent(/SHIP EVENT \((waypoint_reached|arrived|escaped|pilot_input_required|exit_refused)\)/, 2);
+    const ev = await agent.shipEvent(/SHIP EVENT \((waypoint_reached|arrived|escaped|exit_refused)\)/, 2);
     if (!ev) continue;
     const text = ev.item.content[0].text;
-    if (/\(pilot_input_required\)/.test(text)) await answerQuestion(agent, text);
-    else return text;
+    return text;
   }
   return "";
 }
@@ -197,10 +174,6 @@ async function script(agent) {
     if (!s.in_flight || !s.next_waypoint) break;
     const wp = s.next_waypoint;
     if (wp.kind === "exit") {
-      if (s.exit?.locked) {
-        const ev = await agent.shipEvent(/\(pilot_input_required\)/, 5);
-        if (ev) await answerQuestion(agent, ev.item.content[0].text);
-      }
       await agent.tool("highlight", { target: wp.feature_id, label: "EXIT" });
       await agent.say(`Right, that's characteristic ${say_id(wp.feature_id)}, ${wp.name}. Hold on to something.`);
       await agent.tool("fly_to_feature", { feature_id: wp.feature_id });
@@ -219,8 +192,7 @@ async function script(agent) {
     if (!r.ok) break;
     await untilArrived(agent, 60);
   }
-  await agent.say("And you are out! Welcome back to ordinary three-space. Could you rate this call from one to five fractal dimensions?");
-  await agent.caller("Five. Definitely five.");
+  await agent.say("And you are out! Welcome back to ordinary three-space.");
   await agent.say("Wonderful. Thank you for calling Sub-Dimensional Support, and mind the folds.");
 }
 

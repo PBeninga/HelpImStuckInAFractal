@@ -10,7 +10,7 @@ Who answers is `VOICE_AGENT`:
   `/twilio/media`. The server joins that audio to an **OpenAI Realtime**
   session, which listens and speaks directly. The agent flies the ship with
   the **call centre's ship tools** (`call_center/` in the game: scan,
-  highlight, autopilot, diagnostics questions …), called through the link.
+  highlight, autopilot, console settings …), called through the link.
 - **`relay`**. Twilio's
   [ConversationRelay](https://www.twilio.com/docs/voice/conversationrelay)
   turns speech into text and back. The text goes to the game's pilot chat,
@@ -47,8 +47,9 @@ same job as a separate process next to the game; if both run, it takes over.
   game registers mid-call reaches the live session.
 - **Ship events.** The link long-polls the call centre's events
   (`ship_events`) and sends them to the server. The agent hears them as
-  `SHIP EVENT` system messages and reacts: a waypoint reached, a diagnostics
-  question for the caller (answered with `resolve_issue`), the escape.
+  `SHIP EVENT` system messages and reacts: a waypoint reached or the escape. Scripted pilot-question events are ignored.
+  The agent can inspect and edit all console sections through
+  `get_console_controls`, `set_console_controls`, and `console_action`.
 - **The pilot chat.** The conversation is mirrored there: the caller's words
   as voice messages (live in the input box while they speak), the agent's as
   "Support (phone)" lines, never spoken twice. What the pilot **types** in

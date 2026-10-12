@@ -103,7 +103,7 @@ test("a phone call with the OpenAI voice agent, through the link to the call cen
   assert.match(openai.url, /model=gpt-realtime-2\.1/);
   assert.deepEqual(update.session.audio.input.format, { type: "audio/pcmu" });
   assert.deepEqual(update.session.audio.output.format, { type: "audio/pcmu" });
-  assert.deepEqual(update.session.tools.map((t) => t.name), SHIP_TOOLS.map((t) => t.name));
+  assert.deepEqual(update.session.tools.map((t) => t.name), SHIP_TOOLS.filter((t) => t.name !== "resolve_issue").map((t) => t.name));
   assert.equal(update.session.tools[1].parameters.required[0], "feature_id");
   assert.match(update.session.instructions, /Sub-Dimensional Support/);
   await until(() => openai.of("response.create").length === 1, 3000, "greeting");
@@ -140,9 +140,9 @@ test("a phone call with the OpenAI voice agent, through the link to the call cen
 
   // the call centre's news reaches the agent as a SHIP EVENT; quiet events stay out
   bridge.pushEvent({ kind: "stage", summary: "quiet", notify_agent: false });
-  bridge.pushEvent({ kind: "pilot_input_required", summary: "Issue #48213 needs the pilot.", notify_agent: true, issue_id: "#48213" });
+  bridge.pushEvent({ kind: "waypoint_reached", summary: "Waypoint reached.", notify_agent: true });
   const sys = await until(() => openai.of("conversation.item.create").find((e) => e.item.role === "system" && /SHIP EVENT/.test(e.item.content[0].text)), 4000, "ship event");
-  assert.match(sys.item.content[0].text, /^SHIP EVENT \(pilot_input_required\): Issue #48213/);
+  assert.match(sys.item.content[0].text, /^SHIP EVENT \(waypoint_reached\): Waypoint reached/);
   assert.equal(openai.of("conversation.item.create").filter((e) => e.item.role === "system" && /quiet/.test(e.item.content[0].text)).length, 0);
 
   // what the pilot types in the chat goes to the agent

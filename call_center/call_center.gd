@@ -43,6 +43,7 @@ const Features := preload("res://call_center/features.gd")
 const IssueLog := preload("res://call_center/log/issue_log.gd")
 const IssueCatalogue := preload("res://call_center/log/issue_catalogue.gd")
 const Hud := preload("res://call_center/hud/hud.gd")
+const ConsoleTools := preload("res://call_center/mcp/console_tools.gd")
 const ShipTools := preload("res://call_center/mcp/ship_tools.gd")
 const ExplorerAdapter := preload("res://call_center/adapter/explorer_adapter.gd")
 const DemoMission := preload("res://call_center/demo/demo_mission.gd")
@@ -62,7 +63,7 @@ const COMMANDS := ["ship_tools", "ship_tool", "ship_events", "call_center"]
 ## game with its own intro sets auto_begin = false and calls begin() itself.
 @export var auto_begin := true
 @export var begin_delay := 1.5
-@export var max_random_pilot_issues := 3
+@export var max_random_pilot_issues := 0
 ## Load the sample escape route and its rules (demo/).
 @export var demo := false
 
@@ -70,6 +71,7 @@ var features := Features.new()
 var issues: IssueLog
 var hud: Hud
 var tools: ShipTools
+var console_tools: ConsoleTools
 ## The ship adapter while a game is up, else null.
 var adapter: Node
 ## Set by the game (lock_exit) while the way out is closed; the autopilot
@@ -139,6 +141,8 @@ func _attach_bridge() -> void:
 	_bridge.register_command("ship_tool", _cmd_ship_tool)
 	_bridge.register_command("ship_events", _cmd_ship_events)
 	_bridge.register_command("call_center", _cmd_call_center)
+	console_tools = ConsoleTools.new(_bridge)
+	console_tools.register(self)
 	var chat: Object = _bridge.get("chat")
 	if chat != null:
 		chat.message_added.connect(_on_chat_message)

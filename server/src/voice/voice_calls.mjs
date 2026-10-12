@@ -99,8 +99,9 @@ export class VoiceCall extends EventEmitter {
   async shipTools() {
     try {
       const { tools = [] } = await this.game.call("ship_tools", {}, 5000);
-      this.toolNames = tools.map((t) => t.name);
-      return tools.map((t) => ({ type: "function", name: t.name, description: t.description ?? "", parameters: t.inputSchema ?? { type: "object", properties: {} } }));
+      const available = tools.filter((t) => t.name !== "resolve_issue");
+      this.toolNames = available.map((t) => t.name);
+      return available.map((t) => ({ type: "function", name: t.name, description: t.description ?? "", parameters: t.inputSchema ?? { type: "object", properties: {} } }));
     } catch {
       return [];
     }
@@ -123,7 +124,8 @@ export class VoiceCall extends EventEmitter {
       this.session.requestResponse(); // the greeting
     });
     this.session.on("transcript", (t) => this.#onTranscript(t));
-    this.session.on("close", () => this.end("the AI session closed"));
+    this.session.on("close", (code, reason) => this.end(`the AI session closed (${code ?? "unknown"}): ${reason || "no reason provided"}`));
+    this.session.on("error", (err) => this.end(`the AI connection failed: ${err.message}`));
     this.session.on("api_error", (e) => this.emit("api_error", e));
     for (const [event, fn] of Object.entries(this.handlers)) this.game.on(event, fn);
     this.game.notify({ type: "call_started", callSid: this.callSid, from: mask(this.from), agent_name: this.config.agentName, voice: "openai" });
@@ -155,7 +157,7 @@ export class VoiceCall extends EventEmitter {
   }
 
   async #onShipEvent(ev) {
-    if (this.ended || !ev) return;
+    if (this.ended || !ev || ev.kind === "pilot_input_required") return;
     if (ev.kind === "tools_changed") {
       this.session.updateTools(await this.shipTools());
     } else if (ev.notify_agent) {
